@@ -18,11 +18,16 @@ def calculate_rpm(monthly_price, yearly_price, monthly_split, yearly_split, conv
     
     return adjusted_rpm
 
-def calculate_effective_cpm(total_payment, expected_views):
+def estimate_realistic_cpm(wes):
     """
-    Calculates the effective Cost Per Mille (CPM) based on influencer payment and expected views.
+    Estimates a realistic CPM based on WES, ensuring influencers with higher engagement
+    demand higher rates.
     """
-    return (total_payment / expected_views) * 1000
+    base_cpm = 2 + (wes / 10) * 13  # Ranges from $2 (low WES) to $15 (high WES)
+    negotiation_factor = 1 + ((wes - 5) / 10)  # Higher WES = better negotiation power
+
+    return base_cpm * negotiation_factor
+
 
 def estimate_expected_views(avg_views_per_post, posts_per_month, wes):
     """

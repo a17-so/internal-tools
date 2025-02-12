@@ -67,14 +67,14 @@ if st.sidebar.button("Calculate Deal"):
     with col2:
         st.subheader("Cost Metrics")
         st.markdown("---")
-        st.markdown(f"<div style='background-color:#8B0000; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Total Deal Cost</h4><h1>${result['Total Cost ($)']}</h1></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#8B0000; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Minimum Views for Profit (MVC)</h4><h1>{result['Min Views for Profit']:,}</h1></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#8B0000; padding:20px; border-radius:10px; text-align:center; color:white;'><h4>Cost for Potential Bonus</h4><h1>${result['Cost for Bonus ($)']} at {result['Bonus Threshold Views']:,} more views</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Total Deal Cost</h4><h1>${result['Total Cost ($)']}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Minimum Views for Profit (MVC)</h4><h1>{result['Min Views for Profit']:,}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white;'><h4>Cost for Potential Bonus</h4><h1>${result['Cost for Bonus ($)']} at {result['Bonus Threshold Views']:,} more views</h1></div>", unsafe_allow_html=True)
     
     with col3:
         st.subheader("Revenue Metrics")
         st.markdown("---")
-        st.markdown(f"<div style='background-color:#006400; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Total Revenue Off of Deal</h4><h1>${result['Total Revenue ($)']}</h1></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#006400; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Revenue Per Post</h4><h1>${result['Revenue per Post ($)']}</h1></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#006400; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Predicted RPM</h4><h1>${result['Predicted RPM']}</h1></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#006400; padding:20px; border-radius:10px; text-align:center; color:white;'><h4>Total Profit for Deal</h4><h1>${result['Total Profit ($)']}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Total Revenue Off of Deal</h4><h1>${result['Total Revenue ($)']}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Revenue Per Post</h4><h1>${result['Revenue per Post ($)']}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white; margin-bottom:10px;'><h4>Predicted RPM</h4><h1>${result['Predicted RPM']}</h1></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#1E1E2F; padding:20px; border-radius:10px; text-align:center; color:white;'><h4>Total Profit for Deal</h4><h1>${result['Total Profit ($)']}</h1></div>", unsafe_allow_html=True)

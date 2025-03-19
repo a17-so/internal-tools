@@ -87,7 +87,7 @@ likes = st.sidebar.number_input("Average Likes per Post", min_value=0, value=100
 comments = st.sidebar.number_input("Average Comments per Post", min_value=0, value=50, step=10)
 comment_quality = st.sidebar.slider("Average Comment Quality (1-10)", min_value=1, max_value=10, value=5)
 num_posts = st.sidebar.number_input("Number of Posts in Deal", min_value=1, value=4, step=1)
-base_cpm = st.sidebar.number_input("CPM (Cost per 1000 Views)", min_value=1.0, value=3.0, step=0.5)
+base_cpm = st.sidebar.number_input("CPM (Cost per 1000 Views)", min_value=0.01, value=3.0, step=0.5)
 
 if st.sidebar.button("Calculate Deal"):
     result = calculate_influencer_deal(avg_views, likes, comments, comment_quality, num_posts, base_cpm)

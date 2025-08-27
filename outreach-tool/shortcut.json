@@ -1,0 +1,88 @@
+{
+    "WFWorkflowActions": [
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.choosefrommenu",
+        "WFWorkflowActionParameters": {
+          "WFMenuItems": ["Macro", "Micro", "Ambassador"],
+          "WFMenuPrompt": "Choose category"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.dictionary",
+        "WFWorkflowActionParameters": {
+          "WFItems": {
+            "profileUrl": {
+              "Value": {
+                "string": "Shortcut Input"
+              },
+              "Type": "Variable"
+            },
+            "category": {
+              "Value": {
+                "string": "Provided Input"
+              },
+              "Type": "Variable"
+            }
+          }
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getcontentssofurl",
+        "WFWorkflowActionParameters": {
+          "WFHTTPMethod": "POST",
+          "WFURL": "https://script.google.com/macros/s/AKfycbyAEaeqYi0d99vrLWrjEGnQ8j_Y-ezyL70QxlHMgbw6u1WFuvSrUPOWp9whKe2nqnBN6g/exec",
+          "WFRequestBodyType": "JSON",
+          "WFJSONRequestDictionary": {
+            "profileUrl": "Shortcut Input",
+            "category": "Provided Input"
+          }
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "dmScript"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.setclipboard",
+        "WFWorkflowActionParameters": {}
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+        "WFWorkflowActionParameters": {
+          "WFDictionaryKey": "igLink"
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+        "WFWorkflowActionParameters": {
+          "WFCondition": "WFInput != IG not there",
+          "WFControlFlowMode": 0
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.openurls",
+        "WFWorkflowActionParameters": {}
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+        "WFWorkflowActionParameters": {
+          "WFCondition": "WFInput == IG not there",
+          "WFControlFlowMode": 1
+        }
+      },
+      {
+        "WFWorkflowActionIdentifier": "is.workflow.actions.showresult",
+        "WFWorkflowActionParameters": {
+          "WFInput": "Instagram not found in bio"
+        }
+      }
+    ],
+    "WFWorkflowClientRelease": "2.1",
+    "WFWorkflowIcon": {
+      "WFWorkflowIconGlyphNumber": 59505,
+      "WFWorkflowIconColor": 0
+    },
+    "WFWorkflowName": "a17 Outreach Tool"
+  }

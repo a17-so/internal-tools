@@ -1,0 +1,87 @@
+{
+  "WFWorkflowClientVersion": "1110",
+  "WFWorkflowClientRelease": "2.1",
+  "WFWorkflowImportQuestions": [],
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.getinput",
+      "WFWorkflowActionParameters": {
+        "WFInputTypes": ["WFURLContentItem"]
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.choosefromlist",
+      "WFWorkflowActionParameters": {
+        "WFItems": ["Macro", "Micro", "Ambassador"],
+        "WFSelectMultiple": false
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.dictionary",
+      "WFWorkflowActionParameters": {
+        "WFItems": {
+          "url": {
+            "Value": {
+              "Type": "Variable",
+              "VariableName": "Shortcut Input"
+            }
+          },
+          "category": {
+            "Value": {
+              "Type": "Variable",
+              "VariableName": "Chosen Item"
+            }
+          }
+        }
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.getcontentssofurl",
+      "WFWorkflowActionParameters": {
+        "WFHTTPMethod": "POST",
+        "WFRequestBodyType": "JSON",
+        "WFJSONValues": {
+          "Value": {
+            "Type": "Variable",
+            "VariableName": "Dictionary"
+          }
+        },
+        "WFURL": "https://script.google.com/macros/s/AKfycbyAEaeqYi0d99vrLWrjEGnQ8j_Y-ezyL70QxlHMgbw6u1WFuvSrUPOWp9whKe2nqnBN6g/exec"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+      "WFWorkflowActionParameters": {
+        "WFDictionaryKey": "dm"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.setclipboard",
+      "WFWorkflowActionParameters": {}
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.getdictionaryvalue",
+      "WFWorkflowActionParameters": {
+        "WFDictionaryKey": "ig"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.showresult",
+      "WFWorkflowActionParameters": {
+        "Text": {
+          "Value": {
+            "Type": "Variable",
+            "VariableName": "Get Dictionary Value"
+          }
+        }
+      }
+    }
+  ],
+  "WFWorkflowTypes": ["ActionExtension"],
+  "WFWorkflowInputContentItemClasses": ["WFURLContentItem"],
+  "WFWorkflowIcon": {
+    "WFWorkflowIconGlyphNumber": 59768,
+    "WFWorkflowIconColor": 0
+  },
+  "WFWorkflowName": "a17 outreach tool"
+}

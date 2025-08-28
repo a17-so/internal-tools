@@ -17,6 +17,12 @@ except Exception:
     service_account = None
     build = None
 
+# ADC (user OAuth) fallback
+try:
+    import google.auth  # type: ignore
+except Exception:
+    google = None  # type: ignore
+
 
 # Ensure we can import the scraper from outreach-tool/scrape_profile.py
 _LOCAL_DIR = os.path.dirname(__file__)
@@ -66,12 +72,84 @@ except Exception as import_err:
 
 app = Flask(__name__)
 
+# Load .env if present
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
+
 
 CATEGORY_TO_SHEET = {
     "macro": "Macros",
     "micro": "Micros",
     "ambassador": "Ambassadors",
 }
+
+
+# ---- Multi-app configuration -------------------------------------------------
+#
+# Support multiple outreach "apps" with distinct Google Sheets and Gmail senders.
+# Provide a JSON env var OUTREACH_APPS_JSON like:
+# {
+#   "default": {
+#     "sheets_spreadsheet_id": "<sheet-id>",
+#     "gmail_sender": "sender@example.com",
+#     "delegated_user": "sender@example.com",
+#     "link_url": "https://a17.so/brief"
+#   },
+#   "pretti": {
+#     "sheets_spreadsheet_id": "<sheet-id>",
+#     "gmail_sender": "pretti@example.com",
+#     "delegated_user": "pretti@example.com",
+#     "link_url": "https://pretti.app/brief"
+#   }
+# }
+# If not provided, falls back to legacy single-app env vars.
+
+def _load_outreach_apps_config() -> Dict[str, Dict[str, str]]:
+    raw = os.environ.get("OUTREACH_APPS_JSON") or ""
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            # ensure nested dicts
+            return {str(k): (v if isinstance(v, dict) else {}) for k, v in data.items()}
+    except Exception:
+        pass
+    return {}
+
+
+_OUTREACH_APPS: Dict[str, Dict[str, str]] = _load_outreach_apps_config()
+
+
+def _get_app_config(app_key: Optional[str]) -> Dict[str, str]:
+    key = (app_key or "").strip().lower() or "default"
+    # Merge default with app-specific
+    default_cfg = _OUTREACH_APPS.get("default", {})
+    specific_cfg = _OUTREACH_APPS.get(key, {}) if key != "default" else {}
+    merged: Dict[str, str] = {**default_cfg, **specific_cfg}
+
+    # Legacy fallbacks when JSON config not provided
+    if not merged.get("sheets_spreadsheet_id"):
+        legacy_sheet = os.environ.get("SHEETS_SPREADSHEET_ID") or ""
+        if legacy_sheet:
+            merged["sheets_spreadsheet_id"] = legacy_sheet
+    if not merged.get("gmail_sender"):
+        legacy_sender = os.environ.get("GMAIL_SENDER") or ""
+        if legacy_sender:
+            merged["gmail_sender"] = legacy_sender
+    if not merged.get("delegated_user"):
+        # Either GOOGLE_DELEGATED_USER or the sender itself
+        legacy_delegated = os.environ.get("GOOGLE_DELEGATED_USER") or merged.get("gmail_sender") or ""
+        if legacy_delegated:
+            merged["delegated_user"] = legacy_delegated
+    if not merged.get("link_url"):
+        merged["link_url"] = "https://a17.so/brief"
+
+    merged["app_key"] = key
+    return merged
 
 
 def _normalize_category(category: str) -> str:
@@ -118,25 +196,52 @@ def _load_service_account_credentials(scopes: List[str], delegated_user: Optiona
     return creds
 
 
+def _load_default_credentials(scopes: List[str]):
+    """Load Application Default Credentials for the active user.
+
+    Requires: `gcloud auth application-default login`.
+    Returns credentials or None if unavailable.
+    """
+    try:
+        if google is None:  # type: ignore
+            return None
+        creds, _ = google.auth.default(scopes=scopes)  # type: ignore[attr-defined]
+        return creds
+    except Exception:
+        return None
+
+
 def _sheets_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
     ]
     creds = _load_service_account_credentials(scopes=scopes)
+    if not creds:
+        creds = _load_default_credentials(scopes=scopes)
     if not creds or build is None:
         return None
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
-def _gmail_client():
+def _gmail_client(delegated_user_override: Optional[str] = None):
     scopes = [
         "https://www.googleapis.com/auth/gmail.send",
     ]
-    delegated_user = os.environ.get("GOOGLE_DELEGATED_USER") or os.environ.get("GMAIL_SENDER")
+    delegated_user = (
+        delegated_user_override
+        or os.environ.get("GOOGLE_DELEGATED_USER")
+        or os.environ.get("GMAIL_SENDER")
+    )
+    # Try service account with delegation first
     creds = _load_service_account_credentials(scopes=scopes, delegated_user=delegated_user)
+    user_id = delegated_user or "me"
+    # Fallback to user ADC if no SA creds configured
+    if not creds:
+        creds = _load_default_credentials(scopes=scopes)
+        user_id = "me"
     if not creds or build is None:
         return None
-    return build("gmail", "v1", credentials=creds, cache_discovery=False), (delegated_user or "me")
+    return build("gmail", "v1", credentials=creds, cache_discovery=False), user_id
 
 
 def _hyperlink_formula(url: str, label: str) -> str:
@@ -168,20 +273,56 @@ def _get_display_name(profile: Dict[str, Any]) -> str:
     return ig or tt or "there"
 
 
-def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization: str = "") -> Dict[str, Any]:
+def _get_templates_for_app(app_key: Optional[str]) -> Dict[str, Dict[str, str]]:
+    """Dynamically load TEMPLATES dict from api/scripts/<app_key>.py.
+
+    Falls back to generic templates from api/scripts.py if per-app not found.
+    """
+    key = (app_key or "").strip().lower() or "default"
+    # Try app-specific module (package import)
+    try:
+        import importlib
+        mod = importlib.import_module(f"scripts.{key}")
+        t = getattr(mod, "TEMPLATES", None)
+        if isinstance(t, dict):
+            return t
+    except Exception:
+        pass
+
+    # Try loading from file path to avoid conflicts with scripts.py module
+    try:
+        import importlib.util
+        candidate = os.path.join(_LOCAL_DIR, "scripts", f"{key}.py")
+        if os.path.exists(candidate):
+            spec = importlib.util.spec_from_file_location(f"scripts_{key}", candidate)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+                t = getattr(mod, "TEMPLATES", None)
+                if isinstance(t, dict):
+                    return t
+    except Exception:
+        pass
+    # Fallback to generic scripts.TEMPLATES
+    try:
+        from scripts import TEMPLATES as GENERIC_TEMPLATES  # type: ignore
+        if isinstance(GENERIC_TEMPLATES, dict):
+            return GENERIC_TEMPLATES  # type: ignore
+    except Exception:
+        pass
+    return {}
+
+
+def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization: str = "", link_url: Optional[str] = None, app_key: Optional[str] = None) -> Dict[str, Any]:
     name = _get_display_name(profile)
     ig_handle = profile.get("ig") or ""
     tt_handle = profile.get("tt") or ""
 
     # Load markdown templates
-    try:
-        from scripts import TEMPLATES
-    except Exception:
-        TEMPLATES = {}
-
+    templates_for_app = _get_templates_for_app(app_key)
     key = _normalize_category(category)
-    tmpl = TEMPLATES.get(key) or {}
-    link_url = "https://a17.so/brief"  # TODO: your real link
+    tmpl = templates_for_app.get(key) or {}
+    link_url = link_url or "https://a17.so/brief"
     link_text = "View brief"
 
     # Prepare Markdown strings
@@ -244,27 +385,32 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
         return {"ok": False, "error": str(e)}
 
 
-def _send_email(subject: str, body_text: str, to_email: str) -> Dict[str, Any]:
+def _send_email(subject: str, body_text: str, to_email: str, from_email_override: Optional[str] = None, delegated_user_override: Optional[str] = None) -> Dict[str, Any]:
     if not to_email:
         return {"ok": False, "error": "No recipient email"}
 
-    client_info = _gmail_client()
+    client_info = _gmail_client(delegated_user_override=delegated_user_override)
     if not client_info:
         return {"ok": False, "error": "Gmail client not configured"}
     gmail, user_id = client_info
 
-    from_email = os.environ.get("GMAIL_SENDER") or (user_id if isinstance(user_id, str) else "")
-    if not from_email:
-        return {"ok": False, "error": "Missing GMAIL_SENDER or delegated user"}
+    from_email = (
+        from_email_override
+        or os.environ.get("GMAIL_SENDER")
+        or (user_id if isinstance(user_id, str) else "")
+    )
+    # When using ADC (user_id == "me"), From can be omitted.
 
     try:
-        msg = (
-            f"From: {from_email}\r\n"
-            f"To: {to_email}\r\n"
-            f"Subject: {subject}\r\n"
-            f"Content-Type: text/plain; charset=utf-8\r\n\r\n"
-            f"{body_text}"
-        ).encode("utf-8")
+        msg_lines = []
+        if from_email:
+            msg_lines.append(f"From: {from_email}")
+        msg_lines.append(f"To: {to_email}")
+        msg_lines.append(f"Subject: {subject}")
+        msg_lines.append("Content-Type: text/plain; charset=utf-8")
+        msg_lines.append("")
+        msg_lines.append(body_text)
+        msg = ("\r\n".join(msg_lines)).encode("utf-8")
         raw = base64.urlsafe_b64encode(msg).decode("utf-8")
         resp = gmail.users().messages().send(userId=user_id, body={"raw": raw}).execute()
         return {"ok": True, "result": resp}
@@ -279,6 +425,8 @@ def healthz():
 
 @app.post("/scrape")
 def scrape_endpoint():
+    # Determine which app context to use
+    app_key_from_query = (request.args.get("app") or request.args.get("app_name") or "").strip()
     if scrape_profile is None:
         return jsonify({
             "error": "scraper not available",
@@ -287,6 +435,8 @@ def scrape_endpoint():
         }), 500
 
     payload = request.get_json(silent=True) or {}
+    app_key = (payload.get("app") or payload.get("app_name") or app_key_from_query or "").strip()
+    app_cfg = _get_app_config(app_key)
     url = payload.get("tiktok_url") or payload.get("url") or ""
     category = payload.get("category") or ""
     # New single personalization field; keep backward-compat with p1/p2
@@ -311,7 +461,13 @@ def scrape_endpoint():
     ig_lower = (profile.get("ig") or "").lower()
     if ig_lower:
         profile["name"] = ig_lower
-    comms = _build_email_and_dm(category, profile, personalization=personalization)
+    comms = _build_email_and_dm(
+        category,
+        profile,
+        personalization=personalization,
+        link_url=app_cfg.get("link_url"),
+        app_key=app_cfg.get("app_key"),
+    )
 
     # 3) Send Email (best-effort)
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
@@ -332,10 +488,12 @@ def scrape_endpoint():
             subject=comms["subject"],
             body_text=msg.as_string(),
             to_email=recipient_email,
+            from_email_override=app_cfg.get("gmail_sender"),
+            delegated_user_override=app_cfg.get("delegated_user"),
         )
 
     # 4) Write to Google Sheets after email attempt
-    spreadsheet_id = os.environ.get("SHEETS_SPREADSHEET_ID") or ""
+    spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
     sheet_name = None
     if spreadsheet_id:

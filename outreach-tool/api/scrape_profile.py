@@ -212,6 +212,19 @@ async def scrape_profile(url: str) -> dict:
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
         "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
     }
+
+    # Fallback: if TikTok username wasn't found, derive from the provided URL
+    try:
+        if out.get("platform") == "tiktok" and not out.get("tt"):
+            path = (urlparse(url).path or "").strip()
+            # Expect formats like /@handle or /@handle/video/...
+            m = re.search(r"/@([A-Za-z0-9_.-]+)", path)
+            if m:
+                handle = m.group(1)
+                out["tt"] = handle
+                out["ttProfileUrl"] = f"https://www.tiktok.com/@{handle}"
+    except Exception:
+        pass
     return out
 
 

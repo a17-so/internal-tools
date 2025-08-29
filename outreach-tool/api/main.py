@@ -17,11 +17,7 @@ except Exception:
     service_account = None
     build = None
 
-# ADC (user OAuth) fallback
-try:
-    import google.auth  # type: ignore
-except Exception:
-    google = None  # type: ignore
+# ADC fallback removed: service-account only
 
 
 # Ensure we can import the scraper from outreach-tool/scrape_profile.py
@@ -78,6 +74,29 @@ try:
     load_dotenv()
 except Exception:
     pass
+
+
+def _log(event: str, **fields: Any) -> None:
+    """Lightweight structured logging to stdout for local debugging.
+
+    Avoids leaking secrets while giving visibility into flow.
+    """
+    try:
+        safe_fields: Dict[str, Any] = {}
+        for k, v in (fields or {}).items():
+            if k.lower() in {"google_service_account_json", "credentials", "raw"}:
+                continue
+            if k.lower() in {"sheets_spreadsheet_id", "spreadsheet_id"} and isinstance(v, str):
+                safe_fields[k] = (v[:6] + "…" + v[-4:]) if len(v) > 12 else "****"
+            else:
+                safe_fields[k] = v
+        print(json.dumps({"event": event, **safe_fields}))
+    except Exception:
+        # Best-effort logging; never raise from logger
+        try:
+            print(f"LOG({event}) {fields}")
+        except Exception:
+            pass
 
 
 CATEGORY_TO_SHEET = {
@@ -186,10 +205,23 @@ def _load_service_account_credentials(scopes: List[str], delegated_user: Optiona
     if raw_json:
         info = json.loads(raw_json)
         creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        _log("auth.sa_json_loaded", delegated=bool(delegated_user))
     elif cred_path:
         creds = service_account.Credentials.from_service_account_file(cred_path, scopes=scopes)
+        _log("auth.sa_file_loaded", path=cred_path, delegated=bool(delegated_user))
     else:
-        return None
+        # Fallback to default service account path within repo for local dev
+        default_path = os.path.join(_LOCAL_DIR, "service-account.json")
+        try:
+            if os.path.exists(default_path):
+                creds = service_account.Credentials.from_service_account_file(default_path, scopes=scopes)
+                _log("auth.sa_repo_default_loaded", path=default_path, delegated=bool(delegated_user))
+            else:
+                _log("auth.sa_missing", tried_env=True, tried_default=True)
+                return None
+        except Exception:
+            _log("auth.sa_error_loading_default")
+            return None
 
     if delegated_user:
         creds = creds.with_subject(delegated_user)
@@ -197,28 +229,28 @@ def _load_service_account_credentials(scopes: List[str], delegated_user: Optiona
 
 
 def _load_default_credentials(scopes: List[str]):
-    """Load Application Default Credentials for the active user.
-
-    Requires: `gcloud auth application-default login`.
-    Returns credentials or None if unavailable.
-    """
-    try:
-        if google is None:  # type: ignore
-            return None
-        creds, _ = google.auth.default(scopes=scopes)  # type: ignore[attr-defined]
-        return creds
-    except Exception:
-        return None
+    """Deprecated: ADC disabled. Always return None."""
+    return None
 
 
-def _sheets_client():
+def _sheets_client(delegated_user: Optional[str] = None):
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
     ]
-    creds = _load_service_account_credentials(scopes=scopes)
+    has_sa_json = bool(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"))
+    has_sa_file = bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+    creds = _load_service_account_credentials(scopes=scopes, delegated_user=delegated_user)
     if not creds:
-        creds = _load_default_credentials(scopes=scopes)
+        _log(
+            "sheets.creds_missing_service_account",
+            delegated_user=bool(delegated_user),
+            has_sa_json=has_sa_json,
+            has_sa_file=has_sa_file,
+        )
+        # Service-account only: do not fallback to ADC
+        creds = None
     if not creds or build is None:
+        _log("sheets.client_unavailable", build_available=bool(build))
         return None
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
@@ -235,11 +267,11 @@ def _gmail_client(delegated_user_override: Optional[str] = None):
     # Try service account with delegation first
     creds = _load_service_account_credentials(scopes=scopes, delegated_user=delegated_user)
     user_id = delegated_user or "me"
-    # Fallback to user ADC if no SA creds configured
+    # Service-account only: if no SA creds, return None
     if not creds:
-        creds = _load_default_credentials(scopes=scopes)
-        user_id = "me"
+        creds = None
     if not creds or build is None:
+        _log("gmail.client_unavailable", build_available=bool(build))
         return None
     return build("gmail", "v1", credentials=creds, cache_discovery=False), user_id
 
@@ -366,13 +398,21 @@ def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization:
     }
 
 
-def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]) -> Dict[str, Any]:
-    service = _sheets_client()
+def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any], delegated_user: Optional[str] = None) -> Dict[str, Any]:
+    service = _sheets_client(delegated_user=delegated_user)
     if not service:
+        _log("sheets.append.no_client")
         return {"ok": False, "error": "Sheets client not configured"}
 
     body = {"values": [row_values]}
     try:
+        _log(
+            "sheets.append.request",
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            row_len=len(row_values),
+            delegated_user=bool(delegated_user),
+        )
         resp = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A:K",
@@ -380,12 +420,14 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
             insertDataOption="INSERT_ROWS",
             body=body,
         ).execute()
+        _log("sheets.append.success", updates=resp.get("updates", {}))
         return {"ok": True, "result": resp}
     except Exception as e:
+        _log("sheets.append.error", error=str(e))
         return {"ok": False, "error": str(e)}
 
 
-def _send_email(subject: str, body_text: str, to_email: str, from_email_override: Optional[str] = None, delegated_user_override: Optional[str] = None) -> Dict[str, Any]:
+def _send_email(subject: str, body_text: str, to_email: str, from_email_override: Optional[str] = None, delegated_user_override: Optional[str] = None, body_html: Optional[str] = None) -> Dict[str, Any]:
     if not to_email:
         return {"ok": False, "error": "No recipient email"}
 
@@ -402,19 +444,34 @@ def _send_email(subject: str, body_text: str, to_email: str, from_email_override
     # When using ADC (user_id == "me"), From can be omitted.
 
     try:
-        msg_lines = []
+        _log(
+            "gmail.send.prepare",
+            to=to_email,
+            subject=subject,
+            has_html=bool(body_html),
+            has_text=bool(body_text),
+            from_email=bool(from_email),
+        )
+        if body_html is not None:
+            msg = MIMEMultipart("alternative")
+            if body_text:
+                msg.attach(MIMEText(body_text, "plain", "utf-8"))
+            msg.attach(MIMEText(body_html, "html", "utf-8"))
+        else:
+            msg = MIMEText(body_text or "", "plain", "utf-8")
+
         if from_email:
-            msg_lines.append(f"From: {from_email}")
-        msg_lines.append(f"To: {to_email}")
-        msg_lines.append(f"Subject: {subject}")
-        msg_lines.append("Content-Type: text/plain; charset=utf-8")
-        msg_lines.append("")
-        msg_lines.append(body_text)
-        msg = ("\r\n".join(msg_lines)).encode("utf-8")
-        raw = base64.urlsafe_b64encode(msg).decode("utf-8")
+            msg["From"] = from_email
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        _log("gmail.send.request", user_id=user_id)
         resp = gmail.users().messages().send(userId=user_id, body={"raw": raw}).execute()
+        _log("gmail.send.success", id=(resp or {}).get("id"), labelIds=(resp or {}).get("labelIds"))
         return {"ok": True, "result": resp}
     except Exception as e:
+        _log("gmail.send.error", error=str(e))
         return {"ok": False, "error": str(e)}
 
 
@@ -447,6 +504,14 @@ def scrape_endpoint():
         parts = [p for p in [legacy_p1, legacy_p2] if p]
         personalization = "\n".join(parts)
 
+    _log(
+        "scrape.request",
+        app_key=app_cfg.get("app_key"),
+        has_sheet=bool(app_cfg.get("sheets_spreadsheet_id")),
+        has_sender=bool(app_cfg.get("gmail_sender")),
+        has_delegated=bool(app_cfg.get("delegated_user")),
+        category=category,
+    )
     if not url:
         return jsonify({"error": "Missing tiktok_url or url"}), 400
 
@@ -454,6 +519,7 @@ def scrape_endpoint():
     try:
         profile = asyncio.run(scrape_profile(url))
     except Exception as e:
+        _log("scrape.error", error=str(e))
         return jsonify({"error": f"scrape failed: {e}"}), 500
 
     # 2) Build comms (email + DM)
@@ -468,6 +534,12 @@ def scrape_endpoint():
         link_url=app_cfg.get("link_url"),
         app_key=app_cfg.get("app_key"),
     )
+    _log(
+        "scrape.comms_built",
+        subject=comms.get("subject"),
+        dm_len=len(comms.get("dm_md") or ""),
+        has_email=bool(profile.get("email")),
+    )
 
     # 3) Send Email (best-effort)
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
@@ -480,17 +552,16 @@ def scrape_endpoint():
         except Exception:
             html_body = comms["email_md"].replace("\n", "<br/>")
 
-        # Build MIME message
-        msg = MIMEMultipart("alternative")
-        msg.attach(MIMEText(comms["email_md"], "plain", "utf-8"))
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        # Send through Gmail API using the helper (constructs proper MIME)
         email_send_result = _send_email(
             subject=comms["subject"],
-            body_text=msg.as_string(),
+            body_text=comms["email_md"],
+            body_html=html_body,
             to_email=recipient_email,
             from_email_override=app_cfg.get("gmail_sender"),
             delegated_user_override=app_cfg.get("delegated_user"),
         )
+        _log("gmail.send.result", ok=email_send_result.get("ok"), error=email_send_result.get("error"))
 
     # 4) Write to Google Sheets after email attempt
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
@@ -528,9 +599,19 @@ def scrape_endpoint():
                 email_addr,
                 status_val,
             ]
-            sheet_status = _append_to_sheet(spreadsheet_id, sheet_name, row)
+            _log("sheets.append.row_preview", sheet=sheet_name, row_sample=row[:3], totals=total_followers)
+            sheet_status = _append_to_sheet(
+                spreadsheet_id,
+                sheet_name,
+                row,
+                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+            )
+            _log("sheets.append.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=sheet_name)
         else:
             sheet_status = {"ok": False, "error": f"Unknown category: {category}"}
+            _log("sheets.append.skipped_unknown_category", category=category)
+    else:
+        _log("sheets.append.skipped_no_spreadsheet")
 
     # Response for Shortcuts
     # Build minimal DM response

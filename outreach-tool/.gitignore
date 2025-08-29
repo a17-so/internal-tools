@@ -1,8 +1,4 @@
-# Service account keys (DO NOT COMMIT)
-api/service-account.json
-api/service-account-*.json
-**/service-account.json
-**/service-account-*.json
+
 api/.env
 
 # Python venvs

@@ -6,6 +6,142 @@ import sys
 from urllib.parse import urlparse
 
 from playwright.async_api import async_playwright
+from threading import Thread, Lock
+
+# ----------------------------------------------------------------------------
+# Shared Playwright browser (for faster requests on Cloud Run)
+# ----------------------------------------------------------------------------
+_loop = None  # type: ignore
+_loop_thread = None  # type: ignore
+_playwright = None  # type: ignore
+_browser = None  # type: ignore
+_browser_lock: Lock = Lock()
+
+_LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+]
+
+def _ensure_loop() -> None:
+    global _loop, _loop_thread
+    if _loop and _loop.is_running():
+        return
+    _loop = asyncio.new_event_loop()
+
+    def _runner() -> None:
+        asyncio.set_event_loop(_loop)
+        _loop.run_forever()
+
+    _loop_thread = Thread(target=_runner, daemon=True)
+    _loop_thread.start()
+
+
+async def _ensure_browser_async() -> None:
+    global _playwright, _browser
+    # Double-checked locking to avoid race on warm instances
+    if _playwright is not None and _browser is not None:
+        return
+    async with _browser_lock_async():
+        if _playwright is None:
+            _playwright = await async_playwright().start()
+        if _browser is None:
+            _browser = await _playwright.chromium.launch(headless=True, args=_LAUNCH_ARGS)
+
+
+class _AsyncLockWrapper:
+    def __init__(self, lock: Lock) -> None:
+        self._lock = lock
+
+    async def __aenter__(self):
+        await asyncio.get_event_loop().run_in_executor(None, self._lock.acquire)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._lock.release()
+
+
+def _browser_lock_async() -> _AsyncLockWrapper:
+    return _AsyncLockWrapper(_browser_lock)
+
+
+async def _scrape_with_persistent_browser(url: str) -> dict:
+    await _ensure_browser_async()
+    assert _browser is not None
+    context = await _browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/121.0.0.0 Safari/537.36"
+        ),
+        viewport={"width": 1280, "height": 800},
+    )
+    page = await context.new_page()
+    # Keep nav/timeouts bounded to avoid Cloud Run request timeouts
+    try:
+        page.set_default_navigation_timeout(15000)
+        page.set_default_timeout(15000)
+    except Exception:
+        pass
+    try:
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+        if "tiktok.com" in host:
+            data = await scrape_tiktok(page, url)
+            ig_handle = data.get("ig_handle")
+            if ig_handle:
+                ig_url = f"https://www.instagram.com/{ig_handle}"
+                try:
+                    ig_data = await scrape_instagram(page, ig_url)
+                    if isinstance(ig_data, dict) and ig_data.get("followers"):
+                        data["ig_followers_from_ig"] = int(ig_data.get("followers") or 0)
+                except Exception:
+                    pass
+        elif "instagram.com" in host:
+            data = await scrape_instagram(page, url)
+        else:
+            data = {"error": "Unsupported URL", "url": url}
+    finally:
+        await context.close()
+
+    # Normalize to the same output shape as scrape_profile()
+    out = {
+        "platform": data.get("platform"),
+        "name": data.get("name") or "",
+        "email": data.get("email") or "",
+        "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
+        "tt": data.get("username") if data.get("platform") == "tiktok" else "",
+        "igFollowers": (
+            data.get("followers") if data.get("platform") == "instagram" else int(data.get("ig_followers_from_ig") or 0)
+        ),
+        "ttFollowers": data.get("followers") if data.get("platform") == "tiktok" else 0,
+        "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
+        "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
+    }
+
+    try:
+        if out.get("platform") == "tiktok" and not out.get("tt"):
+            path = (urlparse(url).path or "").strip()
+            m = re.search(r"/@([A-Za-z0-9_.-]+)", path)
+            if m:
+                handle = m.group(1)
+                out["tt"] = handle
+                out["ttProfileUrl"] = f"https://www.tiktok.com/@{handle}"
+    except Exception:
+        pass
+    return out
+
+
+def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
+    """Synchronous wrapper that reuses a persistent Playwright browser.
+
+    - Starts a background event loop on first call
+    - Starts Playwright/Chromium once and reuses the browser across requests
+    - Opens a fresh context/page per request for isolation
+    """
+    _ensure_loop()
+    fut = asyncio.run_coroutine_threadsafe(_scrape_with_persistent_browser(url), _loop)  # type: ignore[arg-type]
+    return fut.result(timeout=timeout_seconds)
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+(?:\s*\(at\)\s*|@)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.I)
 
@@ -27,7 +163,11 @@ def parse_int_from_text(text: str) -> int:
 
 
 async def scrape_tiktok(page, url: str) -> dict:
-    await page.goto(url, wait_until="domcontentloaded")
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+    except Exception:
+        # Proceed with whatever we have; we'll try HTML-based fallbacks
+        pass
     # Give TT a moment to inject SIGI_STATE
     await page.wait_for_timeout(1200)
     data = {
@@ -116,7 +256,10 @@ async def scrape_tiktok(page, url: str) -> dict:
 
 
 async def scrape_instagram(page, url: str) -> dict:
-    await page.goto(url, wait_until="domcontentloaded")
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+    except Exception:
+        pass
     await page.wait_for_timeout(800)
 
     data = {
@@ -183,10 +326,25 @@ async def scrape_profile(url: str) -> dict:
             viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
+        try:
+            page.set_default_navigation_timeout(15000)
+            page.set_default_timeout(15000)
+        except Exception:
+            pass
 
         try:
             if "tiktok.com" in host:
                 data = await scrape_tiktok(page, url)
+                # If TT bio contains an IG handle, fetch IG followers too
+                ig_handle = data.get("ig_handle")
+                if ig_handle:
+                    ig_url = f"https://www.instagram.com/{ig_handle}"
+                    try:
+                        ig_data = await scrape_instagram(page, ig_url)
+                        if isinstance(ig_data, dict) and ig_data.get("followers"):
+                            data["ig_followers_from_ig"] = int(ig_data.get("followers") or 0)
+                    except Exception:
+                        pass
             elif "instagram.com" in host:
                 data = await scrape_instagram(page, url)
             else:
@@ -207,7 +365,9 @@ async def scrape_profile(url: str) -> dict:
         "email": data.get("email") or "",
         "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
         "tt": data.get("username") if data.get("platform") == "tiktok" else "",
-        "igFollowers": data.get("followers") if data.get("platform") == "instagram" else 0,
+        "igFollowers": (
+            data.get("followers") if data.get("platform") == "instagram" else int(data.get("ig_followers_from_ig") or 0)
+        ),
         "ttFollowers": data.get("followers") if data.get("platform") == "tiktok" else 0,
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
         "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",

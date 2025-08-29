@@ -1,11 +1,13 @@
 import os
 import sys
 import json
+import re
 import base64
 import asyncio
 from typing import Dict, Any, List, Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
+import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -30,10 +32,16 @@ for _p in (_LOCAL_DIR, _SCRAPER_DIR):
 
 SCRAPER_IMPORT_ERROR = None
 scrape_profile = None  # type: ignore
+scrape_profile_sync = None  # type: ignore
 try:
     # First attempt: import by module name with sys.path including outreach-tool
     from scrape_profile import scrape_profile as _scrape_profile  # type: ignore
     scrape_profile = _scrape_profile
+    try:
+        from scrape_profile import scrape_profile_sync as _scrape_profile_sync  # type: ignore
+        scrape_profile_sync = _scrape_profile_sync
+    except Exception:
+        pass
 except Exception as import_err:
     # Fallback: load directly from file path
     try:
@@ -52,6 +60,7 @@ except Exception as import_err:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
                     scrape_profile = getattr(mod, "scrape_profile", None)
+                    scrape_profile_sync = getattr(mod, "scrape_profile_sync", None)
                     if scrape_profile is not None:
                         last_err = None
                         break
@@ -104,6 +113,9 @@ CATEGORY_TO_SHEET = {
     "micro": "Micros",
     "ambassador": "Ambassadors",
 }
+
+# Cache for sheetId lookups (key: (spreadsheet_id, sheet_name) -> sheetId)
+_SHEET_ID_CACHE: Dict[str, int] = {}
 
 
 # ---- Multi-app configuration -------------------------------------------------
@@ -421,6 +433,69 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
             body=body,
         ).execute()
         _log("sheets.append.success", updates=resp.get("updates", {}))
+        # After a successful append, set data validation dropdown for Status (column J)
+        try:
+            updates = resp.get("updates", {}) if isinstance(resp, dict) else {}
+            updated_range = updates.get("updatedRange") or ""
+            # Example: "Macros!A10:K10" → row 10
+            m = re.search(r"![A-Z]+(\d+):", updated_range)
+            if m:
+                appended_row_one_based = int(m.group(1))
+                row_index_zero_based = appended_row_one_based - 1
+
+                # Lookup sheetId (cached)
+                cache_key = f"{spreadsheet_id}:{sheet_name}"
+                sheet_id = _SHEET_ID_CACHE.get(cache_key)
+                if sheet_id is None:
+                    meta = service.spreadsheets().get(
+                        spreadsheetId=spreadsheet_id,
+                        fields="sheets(properties(sheetId,title))",
+                    ).execute()
+                    for s in (meta.get("sheets") or []):
+                        props = s.get("properties") or {}
+                        if props.get("title") == sheet_name:
+                            sheet_id = int(props.get("sheetId"))
+                            _SHEET_ID_CACHE[cache_key] = sheet_id
+                            break
+                if sheet_id is not None:
+                    # Build setDataValidation request for J column (index 9)
+                    request_body = {
+                        "requests": [
+                            {
+                                "setDataValidation": {
+                                    "range": {
+                                        "sheetId": sheet_id,
+                                        "startRowIndex": row_index_zero_based,
+                                        "endRowIndex": row_index_zero_based + 1,
+                                        "startColumnIndex": 9,
+                                        "endColumnIndex": 10,
+                                    },
+                                    "rule": {
+                                        "condition": {
+                                            "type": "ONE_OF_LIST",
+                                            "values": [
+                                                {"userEnteredValue": "Sent"},
+                                                {"userEnteredValue": "Followup Sent"},
+                                                {"userEnteredValue": "Closed"},
+                                                {"userEnteredValue": "Not Interested"},
+                                            ],
+                                        },
+                                        "strict": True,
+                                        "showCustomUi": True,
+                                    },
+                                }
+                            }
+                        ]
+                    }
+                    _log("sheets.dv.set.request", sheetId=sheet_id, row=row_index_zero_based)
+                    dv_resp = service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body=request_body,
+                    ).execute()
+                    _log("sheets.dv.set.success", replies=(dv_resp or {}).get("replies", []))
+        except Exception as e:
+            _log("sheets.dv.set.error", error=str(e))
+
         return {"ok": True, "result": resp}
     except Exception as e:
         _log("sheets.append.error", error=str(e))
@@ -431,7 +506,11 @@ def _send_email(subject: str, body_text: str, to_email: str, from_email_override
     if not to_email:
         return {"ok": False, "error": "No recipient email"}
 
-    client_info = _gmail_client(delegated_user_override=delegated_user_override)
+    try:
+        client_info = _gmail_client(delegated_user_override=delegated_user_override)
+    except Exception as e:
+        _log("gmail.client_init.error", error=str(e))
+        return {"ok": False, "error": f"Gmail client init failed: {e}"}
     if not client_info:
         return {"ok": False, "error": "Gmail client not configured"}
     gmail, user_id = client_info
@@ -480,6 +559,59 @@ def healthz():
     return jsonify({"ok": True})
 
 
+@app.before_request
+def _http_request_logger_start():
+    try:
+        g._req_start_time = time.perf_counter()
+        _log(
+            "http.request",
+            method=request.method,
+            path=request.path,
+            query=dict(request.args or {}),
+            content_length=request.content_length or 0,
+            remote_addr=request.headers.get("X-Forwarded-For") or request.remote_addr,
+            user_agent=(request.user_agent.string if getattr(request, "user_agent", None) else ""),
+        )
+    except Exception:
+        pass
+
+
+@app.after_request
+def _http_request_logger_end(response):
+    try:
+        start = getattr(g, "_req_start_time", None)
+        dur_ms = int((time.perf_counter() - start) * 1000) if start else None
+        _log(
+            "http.response",
+            path=request.path,
+            status=response.status_code,
+            duration_ms=dur_ms,
+            resp_length=response.calculate_content_length() if hasattr(response, "calculate_content_length") else None,
+        )
+    except Exception:
+        pass
+    return response
+
+
+@app.get("/warmup")
+def warmup():
+    """Ensure the persistent Playwright browser is started to avoid cold-start cost."""
+    try:
+        t0 = time.perf_counter()
+        # Prefer the persistent browser path if available
+        if scrape_profile_sync is not None:
+            scrape_profile_sync("about:blank", timeout_seconds=10.0)
+            _log("warmup.success", persistent=True, duration_ms=int((time.perf_counter()-t0)*1000))
+            return jsonify({"ok": True, "persistent": True})
+        # Fallback: touch the async scraper (does not persist browser)
+        _ = asyncio.run(scrape_profile("about:blank"))
+        _log("warmup.success", persistent=False, duration_ms=int((time.perf_counter()-t0)*1000))
+        return jsonify({"ok": True, "persistent": False})
+    except Exception as e:
+        _log("warmup.error", error=str(e))
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.post("/scrape")
 def scrape_endpoint():
     # Determine which app context to use
@@ -517,7 +649,13 @@ def scrape_endpoint():
 
     # 1) Scrape
     try:
-        profile = asyncio.run(scrape_profile(url))
+        t_scrape = time.perf_counter()
+        # Prefer persistent browser path to avoid per-request Chromium launch
+        if scrape_profile_sync is not None:
+            profile = scrape_profile_sync(url, timeout_seconds=45.0)
+        else:
+            profile = asyncio.run(scrape_profile(url))
+        _log("scrape.done", duration_ms=int((time.perf_counter()-t_scrape)*1000))
     except Exception as e:
         _log("scrape.error", error=str(e))
         return jsonify({"error": f"scrape failed: {e}"}), 500
@@ -574,18 +712,21 @@ def scrape_endpoint():
             name = profile.get("name") or ""
             ig_handle = profile.get("ig") or ""
             tt_handle = profile.get("tt") or ""
-            yt_handle = profile.get("yt") or ""
+            yt_handle = ""
             ig_followers = int(profile.get("igFollowers") or 0)
             tt_followers = int(profile.get("ttFollowers") or 0)
-            yt_followers = int(profile.get("ytFollowers") or 0)
-            total_followers = ig_followers + tt_followers + yt_followers
+            # Leave YouTube followers empty for now
+            yt_followers = ""
+            # Total is IG + TT only
+            total_followers = ig_followers + tt_followers
             email_addr = profile.get("email") or ""
             # Only mark as Sent if email successfully sent; otherwise leave blank
             status_val = "Sent" if email_send_result.get("ok") else ""
 
             ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
             tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
-            yt_link = _hyperlink_formula("", yt_handle or "")
+            # Leave YouTube cells empty
+            yt_link = ""
 
             row = [
                 name,

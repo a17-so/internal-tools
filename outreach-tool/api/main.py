@@ -10,6 +10,7 @@ from flask import Flask, request, jsonify, g
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 
 # Google APIs (Sheets + Gmail)
 try:
@@ -141,13 +142,17 @@ _SHEET_ID_CACHE: Dict[str, int] = {}
 def _load_outreach_apps_config() -> Dict[str, Dict[str, str]]:
     raw = os.environ.get("OUTREACH_APPS_JSON") or ""
     if not raw.strip():
+        _log("config.outreach_apps_missing", env_var_set=False)
         return {}
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
             # ensure nested dicts
-            return {str(k): (v if isinstance(v, dict) else {}) for k, v in data.items()}
-    except Exception:
+            result = {str(k): (v if isinstance(v, dict) else {}) for k, v in data.items()}
+            _log("config.outreach_apps_loaded", app_count=len(result), apps=list(result.keys()))
+            return result
+    except Exception as e:
+        _log("config.outreach_apps_parse_error", error=str(e))
         pass
     return {}
 
@@ -161,6 +166,12 @@ def _get_app_config(app_key: Optional[str]) -> Dict[str, str]:
     default_cfg = _OUTREACH_APPS.get("default", {})
     specific_cfg = _OUTREACH_APPS.get(key, {}) if key != "default" else {}
     merged: Dict[str, str] = {**default_cfg, **specific_cfg}
+
+    _log("config.app_config_lookup", 
+         app_key=key, 
+         has_default=bool(default_cfg), 
+         has_specific=bool(specific_cfg),
+         json_gmail_sender=merged.get("gmail_sender"))
 
     # Legacy fallbacks when JSON config not provided
     if not merged.get("sheets_spreadsheet_id"):
@@ -180,6 +191,13 @@ def _get_app_config(app_key: Optional[str]) -> Dict[str, str]:
         merged["link_url"] = "https://a17.so/brief"
 
     merged["app_key"] = key
+    
+    _log("config.app_config_final",
+         app_key=key,
+         final_gmail_sender=merged.get("gmail_sender"),
+         final_delegated_user=merged.get("delegated_user"),
+         used_legacy_fallback=not bool(specific_cfg.get("gmail_sender")))
+    
     return merged
 
 
@@ -296,12 +314,35 @@ def _hyperlink_formula(url: str, label: str) -> str:
     return f"=HYPERLINK(\"{safe_url}\", \"{safe_label}\")"
 
 
+def _markdown_to_text(markdown_str: str) -> str:
+    """Convert a small subset of Markdown to readable plain text.
+
+    Avoids leaving raw**Asterisks** and [links](url) which can hurt deliverability.
+    Best-effort and safe to use for short outreach templates.
+    """
+    try:
+        import re as _re
+
+        text = markdown_str or ""
+        # Convert [text](url) → text (url)
+        text = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", text)
+        # Remove bold/italic markers **text** or *text*
+        text = _re.sub(r"(\*\*|\*)([^*]+?)\1", r"\2", text)
+        # Strip heading markers at line starts
+        text = _re.sub(r"^\s*#{1,6}\s*", "", text, flags=_re.MULTILINE)
+        # Replace multiple consecutive blank lines with a single blank line
+        text = _re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+    except Exception:
+        return markdown_str or ""
+
+
 def _get_display_name(profile: Dict[str, Any]) -> str:
     """Choose a friendly display name, avoiding generic TikTok titles."""
-    # Prefer IG handle (lowercased) per requirement
-    ig_handle = (profile.get("ig") or "").strip()
-    if ig_handle:
-        return ig_handle.lower()
+    # Prefer TikTok handle (lowercased) as the creator name
+    tt_handle = (profile.get("tt") or "").strip()
+    if tt_handle:
+        return tt_handle.lower()
     raw = (profile.get("name") or "").strip()
     if raw:
         lowered = raw.lower()
@@ -312,9 +353,9 @@ def _get_display_name(profile: Dict[str, Any]) -> str:
         ):
             return raw
     # Fallback to handles when name is missing or generic
-    ig = (profile.get("ig") or "").strip()
     tt = (profile.get("tt") or "").strip()
-    return ig or tt or "there"
+    ig = (profile.get("ig") or "").strip()
+    return tt or ig or "there"
 
 
 def _get_templates_for_app(app_key: Optional[str]) -> Dict[str, Dict[str, str]]:
@@ -502,7 +543,7 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
         return {"ok": False, "error": str(e)}
 
 
-def _send_email(subject: str, body_text: str, to_email: str, from_email_override: Optional[str] = None, delegated_user_override: Optional[str] = None, body_html: Optional[str] = None) -> Dict[str, Any]:
+def _send_email(subject: str, body_text: str, to_email: str, from_email_override: Optional[str] = None, delegated_user_override: Optional[str] = None, body_html: Optional[str] = None, from_name: Optional[str] = None, reply_to: Optional[str] = None, list_unsubscribe: Optional[str] = None, to_name: Optional[str] = None) -> Dict[str, Any]:
     if not to_email:
         return {"ok": False, "error": "No recipient email"}
 
@@ -539,9 +580,28 @@ def _send_email(subject: str, body_text: str, to_email: str, from_email_override
         else:
             msg = MIMEText(body_text or "", "plain", "utf-8")
 
+        # Headers
         if from_email:
-            msg["From"] = from_email
-        msg["To"] = to_email
+            msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
+        if reply_to:
+            msg["Reply-To"] = reply_to
+        if list_unsubscribe:
+            try:
+                # Ensure RFC-compliant angle brackets around URIs
+                parts = []
+                for token in str(list_unsubscribe).split(","):
+                    t = token.strip()
+                    if not t:
+                        continue
+                    if not (t.startswith("<") and t.endswith(">")):
+                        t = f"<{t}>"
+                    parts.append(t)
+                if parts:
+                    msg["List-Unsubscribe"] = ", ".join(parts)
+            except Exception:
+                pass
+
+        msg["To"] = formataddr((to_name, to_email)) if to_name else to_email
         msg["Subject"] = subject
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
@@ -557,6 +617,34 @@ def _send_email(subject: str, body_text: str, to_email: str, from_email_override
 @app.get("/healthz")
 def healthz():
     return jsonify({"ok": True})
+
+
+@app.get("/debug/config")
+def debug_config():
+    """Debug endpoint to check configuration loading"""
+    # Test specific app configs
+    test_results = {}
+    for app_name in ["default", "lifemaxx", "pretti", "rizzard"]:
+        config = _get_app_config(app_name)
+        test_results[app_name] = {
+            "gmail_sender": config.get("gmail_sender"),
+            "sheets_spreadsheet_id": config.get("sheets_spreadsheet_id", "")[:20] + "..." if config.get("sheets_spreadsheet_id") else None,
+            "delegated_user": config.get("delegated_user"),
+            "link_url": config.get("link_url")
+        }
+    
+    return jsonify({
+        "outreach_apps_env_var_set": bool(os.environ.get("OUTREACH_APPS_JSON")),
+        "outreach_apps_count": len(_OUTREACH_APPS),
+        "outreach_apps_keys": list(_OUTREACH_APPS.keys()),
+        "legacy_env_vars": {
+            "SHEETS_SPREADSHEET_ID": bool(os.environ.get("SHEETS_SPREADSHEET_ID")),
+            "GMAIL_SENDER": bool(os.environ.get("GMAIL_SENDER")),
+            "GOOGLE_DELEGATED_USER": bool(os.environ.get("GOOGLE_DELEGATED_USER")),
+            "GOOGLE_APPLICATION_CREDENTIALS": bool(os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+        },
+        "app_configs": test_results
+    })
 
 
 @app.before_request
@@ -661,10 +749,6 @@ def scrape_endpoint():
         return jsonify({"error": f"scrape failed: {e}"}), 500
 
     # 2) Build comms (email + DM)
-    # Force name to be the IG handle (lowercased) if available
-    ig_lower = (profile.get("ig") or "").lower()
-    if ig_lower:
-        profile["name"] = ig_lower
     comms = _build_email_and_dm(
         category,
         profile,
@@ -683,21 +767,48 @@ def scrape_endpoint():
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
     recipient_email = profile.get("email")
     if recipient_email:
-        # Render HTML from Markdown for email, plain text fallback
+        # Render HTML from Markdown for email, with improved fallback
         try:
             import markdown as md
             html_body = md.markdown(comms["email_md"], extensions=["extra", "sane_lists"])
-        except Exception:
-            html_body = comms["email_md"].replace("\n", "<br/>")
+            _log("markdown.conversion_success", method="library")
+        except Exception as e:
+            _log("markdown.conversion_fallback", error=str(e), method="manual")
+            # Better fallback that handles basic markdown elements
+            html_body = comms["email_md"]
+            # Convert **bold** to <strong>
+            import re
+            html_body = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', html_body)
+            # Convert [text](url) to <a href="url">text</a>
+            html_body = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html_body)
+            # Convert line breaks
+            html_body = html_body.replace("\n", "<br/>")
+
+        # Prepare plain text and friendly headers for deliverability
+        plain_text = _markdown_to_text(comms["email_md"])
+        to_friendly_name = _get_display_name(profile)
+        from_friendly_name = app_cfg.get("from_name") or os.environ.get("FROM_NAME") or "Abhay Chebium"
+        sender_email = app_cfg.get("gmail_sender") or app_cfg.get("delegated_user")
+        # unsubscribe_mailto = f"mailto:{sender_email}?subject=unsubscribe" if sender_email else None
+        
+        _log("email.headers_debug", 
+             from_friendly_name=from_friendly_name,
+             sender_email=sender_email,
+             to_friendly_name=to_friendly_name,
+             app_key=app_cfg.get("app_key"))
 
         # Send through Gmail API using the helper (constructs proper MIME)
         email_send_result = _send_email(
             subject=comms["subject"],
-            body_text=comms["email_md"],
+            body_text=plain_text,
             body_html=html_body,
             to_email=recipient_email,
             from_email_override=app_cfg.get("gmail_sender"),
             delegated_user_override=app_cfg.get("delegated_user"),
+            from_name=from_friendly_name,
+            # reply_to=sender_email,  # Removed - redundant when same as From, triggers spam filters
+            # list_unsubscribe=unsubscribe_mailto,  # Commented out for now
+            to_name=to_friendly_name,
         )
         _log("gmail.send.result", ok=email_send_result.get("ok"), error=email_send_result.get("error"))
 
@@ -709,7 +820,7 @@ def scrape_endpoint():
         cat_key = _normalize_category(category)
         sheet_name = CATEGORY_TO_SHEET.get(cat_key)
         if sheet_name:
-            name = profile.get("name") or ""
+            name = _get_display_name(profile)
             ig_handle = profile.get("ig") or ""
             tt_handle = profile.get("tt") or ""
             yt_handle = ""
@@ -756,14 +867,38 @@ def scrape_endpoint():
 
     # Response for Shortcuts
     # Build minimal DM response
-    ig_handle = (profile.get("ig") or "").lower()
+    # Prepare response for Shortcuts / client
+    handle_raw = profile.get("ig")
+    normalized_handle = (handle_raw or "").strip().lstrip("@")
+    ig_handle = normalized_handle.lower() if normalized_handle else None
     dm_text = comms.get("dm_md") or ""
+    ig_app_url = None
+    if ig_handle:
+        ig_app_url = comms.get("ig_app_url") or f"instagram://user?username={ig_handle}"
+
     resp = {
+        # Convenience top-level fields for Shortcuts
+        "ig_handle": ig_handle,  # null when not found
+        "ig_app_url": ig_app_url,  # null when not found
+        "dm_text": dm_text,
+        # Backward-compatible nested payload
         "dm": {
             "ig_handle": ig_handle,
             "text": dm_text,
-        }
+        },
     }
+
+    # Console log a preview and the full response for debugging
+    try:
+        _log(
+            "scrape.response_preview",
+            ig_handle=ig_handle,
+            dm_len=len(dm_text),
+            has_ig_url=bool(ig_app_url),
+        )
+        print(json.dumps({"api_response": resp}, ensure_ascii=False))
+    except Exception:
+        pass
 
     return jsonify(resp)
 

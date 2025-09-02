@@ -224,7 +224,11 @@ async def scrape_tiktok(page, url: str) -> dict:
     for pattern in ig_patterns:
         ig_match = re.search(pattern, html, re.I)
         if ig_match:
-            data["ig_handle"] = ig_match.group(1)
+            handle = (ig_match.group(1) or "").strip().lstrip("@")
+            # Treat '@media' false positives as no IG handle
+            if handle.lower() == "media":
+                continue
+            data["ig_handle"] = handle
             break
 
     # Followers from various patterns
@@ -372,6 +376,15 @@ async def scrape_profile(url: str) -> dict:
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
         "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
     }
+
+    # Normalize bad IG handle '@media' → treat as not found
+    try:
+        ig_val = (out.get("ig") or "").strip().lstrip("@")
+        if ig_val.lower() == "media":
+            out["ig"] = ""
+            out["igProfileUrl"] = ""
+    except Exception:
+        pass
 
     # Fallback: if TikTok username wasn't found, derive from the provided URL
     try:

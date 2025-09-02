@@ -1,6 +1,6 @@
 TEMPLATES = {
     "macro": {
-        "subject": "PAID PARTNERSHIP OPPORTUNITY - Rizzard App",
+        "subject": "Rizzard collab?",
         "email_md": (
             "hey {name}\n\n"
             
@@ -19,7 +19,7 @@ TEMPLATES = {
         ),
     },
     "micro": {
-        "subject": "PAID PARTNERSHIP OPPORTUNITY - Rizzard App",
+        "subject": "Idea for a Rizzard collab",
         "email_md": (
             "hey {name}\n\n"
             
@@ -38,7 +38,7 @@ TEMPLATES = {
         ),
     },
     "ambassador": {
-        "subject": "PAID PARTNERSHIP OPPORTUNITY - Rizzard App",
+        "subject": "Rizzard ambassador idea",
         "email_md": (
             "hey {name}\n\n"
             

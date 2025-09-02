@@ -1,6 +1,6 @@
 TEMPLATES = {
     "macro": {
-        "subject": "Quick collab idea for LifeMaxx?",
+        "subject": "PAID PROMO OPPORTUNITY - LifeMaxx App",
         "email_md": (
             "Hey {name},\n\n"
             "paid promo?\n\n"
@@ -23,7 +23,7 @@ TEMPLATES = {
         ),
     },
     "micro": {
-        "subject": "LifeMaxx collab idea",
+        "subject": "PAID PROMO OPPORTUNITY - LifeMaxx App",
         "email_md": (
             "Hey {name},\n\n"
             "paid promo?\n\n"
@@ -46,7 +46,7 @@ TEMPLATES = {
         ),
     },
     "ambassador": {
-        "subject": "LifeMaxx ambassador idea",
+        "subject": "PAID PROMO OPPORTUNITY - LifeMaxx App",
         "email_md": (
             "Hey {name},\n\n"
             "paid promo?\n\n"

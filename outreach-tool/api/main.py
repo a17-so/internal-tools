@@ -765,8 +765,11 @@ def scrape_endpoint():
 
     # 3) Send Email (best-effort)
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
-    recipient_email = profile.get("email")
-    if recipient_email:
+    recipient_email_raw = str(profile.get("email") or "").strip()
+    is_placeholder_email = recipient_email_raw.lower() == "example@example.com"
+    has_valid_recipient = bool(recipient_email_raw) and not is_placeholder_email
+    recipient_email = recipient_email_raw if has_valid_recipient else ""
+    if has_valid_recipient:
         # Render HTML from Markdown for email, with improved fallback
         try:
             import markdown as md
@@ -816,7 +819,7 @@ def scrape_endpoint():
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
     sheet_name = None
-    if spreadsheet_id:
+    if spreadsheet_id and has_valid_recipient:
         cat_key = _normalize_category(category)
         sheet_name = CATEGORY_TO_SHEET.get(cat_key)
         if sheet_name:
@@ -863,7 +866,10 @@ def scrape_endpoint():
             sheet_status = {"ok": False, "error": f"Unknown category: {category}"}
             _log("sheets.append.skipped_unknown_category", category=category)
     else:
-        _log("sheets.append.skipped_no_spreadsheet")
+        if not spreadsheet_id:
+            _log("sheets.append.skipped_no_spreadsheet")
+        elif not has_valid_recipient:
+            _log("sheets.append.skipped_no_email")
 
     # Response for Shortcuts
     # Build minimal DM response

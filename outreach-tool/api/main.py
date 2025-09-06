@@ -11,6 +11,7 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from urllib.parse import quote
 
 # Google APIs (Sheets + Gmail)
 try:
@@ -113,6 +114,7 @@ CATEGORY_TO_SHEET = {
     "macro": "Macros",
     "micro": "Micros",
     "ambassador": "Ambassadors",
+    "themepage": "Theme Pages",
 }
 
 # Cache for sheetId lookups (key: (spreadsheet_id, sheet_name) -> sheetId)
@@ -212,6 +214,8 @@ def _normalize_category(category: str) -> str:
         return "micro"
     if c.startswith("ambas"):
         return "ambassador"
+    if c.replace(" ", "") in {"themepage", "themepages", "themecreator", "themepagecreator"} or c.startswith("theme page"):
+        return "themepage"
     return c
 
 
@@ -763,64 +767,38 @@ def scrape_endpoint():
         has_email=bool(profile.get("email")),
     )
 
-    # 3) Send Email (best-effort)
+    # Determine category flags
+    cat_key_normalized = _normalize_category(category)
+    is_theme_pages = cat_key_normalized == "themepage"
+
+    # 3) Prepare client-side email compose data (no backend sending)
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
     recipient_email_raw = str(profile.get("email") or "").strip()
     is_placeholder_email = recipient_email_raw.lower() == "example@example.com"
     has_valid_recipient = bool(recipient_email_raw) and not is_placeholder_email
     recipient_email = recipient_email_raw if has_valid_recipient else ""
-    if has_valid_recipient:
-        # Render HTML from Markdown for email, with improved fallback
+    plain_text = ""
+    mailto_url: Optional[str] = None
+    if has_valid_recipient and not is_theme_pages:
+        # Build mailto URL and plain-text body; let device handle sending
         try:
-            import markdown as md
-            html_body = md.markdown(comms["email_md"], extensions=["extra", "sane_lists"])
-            _log("markdown.conversion_success", method="library")
-        except Exception as e:
-            _log("markdown.conversion_fallback", error=str(e), method="manual")
-            # Better fallback that handles basic markdown elements
-            html_body = comms["email_md"]
-            # Convert **bold** to <strong>
-            import re
-            html_body = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', html_body)
-            # Convert [text](url) to <a href="url">text</a>
-            html_body = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html_body)
-            # Convert line breaks
-            html_body = html_body.replace("\n", "<br/>")
+            # Prefer plain text for mailto body
+            plain_text = _markdown_to_text(comms["email_md"]) or ""
+        except Exception:
+            plain_text = comms.get("email_md") or ""
+        # Encode subject/body for URL
+        subj_enc = quote(comms.get("subject") or "")
+        body_enc = quote(plain_text)
+        mailto_url = f"mailto:{recipient_email}?subject={subj_enc}&body={body_enc}"
+        email_send_result = {"ok": False, "error": "Skipped (compose on device)", "mailto_url": mailto_url, "to": recipient_email}
+        _log("email.compose.prepared", to=recipient_email, has_mailto=bool(mailto_url))
 
-        # Prepare plain text and friendly headers for deliverability
-        plain_text = _markdown_to_text(comms["email_md"])
-        to_friendly_name = _get_display_name(profile)
-        from_friendly_name = app_cfg.get("from_name") or os.environ.get("FROM_NAME") or "Abhay Chebium"
-        sender_email = app_cfg.get("gmail_sender") or app_cfg.get("delegated_user")
-        # unsubscribe_mailto = f"mailto:{sender_email}?subject=unsubscribe" if sender_email else None
-        
-        _log("email.headers_debug", 
-             from_friendly_name=from_friendly_name,
-             sender_email=sender_email,
-             to_friendly_name=to_friendly_name,
-             app_key=app_cfg.get("app_key"))
-
-        # Send through Gmail API using the helper (constructs proper MIME)
-        email_send_result = _send_email(
-            subject=comms["subject"],
-            body_text=plain_text,
-            body_html=html_body,
-            to_email=recipient_email,
-            from_email_override=app_cfg.get("gmail_sender"),
-            delegated_user_override=app_cfg.get("delegated_user"),
-            from_name=from_friendly_name,
-            # reply_to=sender_email,  # Removed - redundant when same as From, triggers spam filters
-            # list_unsubscribe=unsubscribe_mailto,  # Commented out for now
-            to_name=to_friendly_name,
-        )
-        _log("gmail.send.result", ok=email_send_result.get("ok"), error=email_send_result.get("error"))
-
-    # 4) Write to Google Sheets after email attempt
+    # 4) Write to Google Sheets after email attempt (always for Theme Pages)
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
     sheet_name = None
-    if spreadsheet_id and has_valid_recipient:
-        cat_key = _normalize_category(category)
+    if spreadsheet_id and (has_valid_recipient or is_theme_pages):
+        cat_key = cat_key_normalized
         sheet_name = CATEGORY_TO_SHEET.get(cat_key)
         if sheet_name:
             name = _get_display_name(profile)
@@ -833,9 +811,9 @@ def scrape_endpoint():
             yt_followers = ""
             # Total is IG + TT only
             total_followers = ig_followers + tt_followers
-            email_addr = profile.get("email") or ""
-            # Only mark as Sent if email successfully sent; otherwise leave blank
-            status_val = "Sent" if email_send_result.get("ok") else ""
+            email_addr = "" if is_theme_pages else (profile.get("email") or "")
+            # For Theme Pages we skip email entirely; leave status blank
+            status_val = "Sent" if (not is_theme_pages and email_send_result.get("ok")) else ""
 
             ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
             tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
@@ -868,7 +846,7 @@ def scrape_endpoint():
     else:
         if not spreadsheet_id:
             _log("sheets.append.skipped_no_spreadsheet")
-        elif not has_valid_recipient:
+        elif not (has_valid_recipient or is_theme_pages):
             _log("sheets.append.skipped_no_email")
 
     # Response for Shortcuts
@@ -879,20 +857,33 @@ def scrape_endpoint():
     ig_handle = normalized_handle.lower() if normalized_handle else None
     dm_text = comms.get("dm_md") or ""
     ig_app_url = None
-    if ig_handle:
+    if ig_handle and not is_theme_pages:
         ig_app_url = comms.get("ig_app_url") or f"instagram://user?username={ig_handle}"
 
+    # Minimal response by default; optional extras via include_extras flag
+    include_extras_val = (request.args.get("include_extras") if request else None) or (payload.get("include_extras") if isinstance(payload, dict) else None)
+    include_extras = str(include_extras_val).strip().lower() in {"1", "true", "yes", "y"}
+
     resp = {
-        # Convenience top-level fields for Shortcuts
-        "ig_handle": ig_handle,  # null when not found
-        "ig_app_url": ig_app_url,  # null when not found
+        "ig_handle": ig_handle,
         "dm_text": dm_text,
-        # Backward-compatible nested payload
-        "dm": {
-            "ig_handle": ig_handle,
-            "text": dm_text,
-        },
+        "email_to": (recipient_email if (has_valid_recipient and not is_theme_pages) else None),
+        "email_subject": comms.get("subject"),
+        "email_body_text": (plain_text or None),
     }
+
+    if include_extras:
+        resp.update({
+            "ig_app_url": ig_app_url,
+            "dmScript": dm_text,
+            "igLink": ig_app_url or "IG not there",
+            "mailto_url": mailto_url,
+            "email_from_hint": (app_cfg.get("gmail_sender") or app_cfg.get("delegated_user") or None),
+            "dm": {
+                "ig_handle": ig_handle,
+                "text": dm_text,
+            },
+        })
 
     # Console log a preview and the full response for debugging
     try:

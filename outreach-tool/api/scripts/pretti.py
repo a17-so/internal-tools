@@ -56,6 +56,21 @@ TEMPLATES = {
             "-Abhay Chebium from the Pretti App\n"
         ),
     },
+    "themepages": {
+        "subject": "PAID PROMO OPPORTUNITY - Pretti App",
+        "email_md": (
+            "hey {name},\n\n"
+            "we run the Pretti app and we love your theme page. we'd love to do a paid promotion posts with you.\n\n"
+            "what is your current RPM rates for posts? looking to do a long term partnership.\n\n"
+            "-Abhay from Pretti\n"
+        ),
+        "dm_md": (
+            "hey {name},\n\n"
+            "we run the Pretti app and we love your theme page. we'd love to do a paid promotion posts with you.\n\n"
+            "what is your current RPM rates for posts? looking to do a long term partnership.\n\n"
+            "-Abhay from Pretti\n"
+        ),
+    },
 }
 
 

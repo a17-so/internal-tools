@@ -57,6 +57,18 @@ TEMPLATES = {
             "-Abhay Chebium | a17.so\n"
         ),
     },
+    "themepages": {
+        "subject": "Rizzard x Theme Page DM",
+        "email_md": (
+            "hey {name}\n\n"
+            "we run Rizzard (by a17) and love your theme page. we'd love to get featured posts with you.\n\n"
+            "what are your rates for posts/stories?\n\n"
+            "-Abhay | a17.so\n"
+        ),
+        "dm_md": (
+            "hey {name}, we run Rizzard (by a17) and love your theme page. what are your rates for posts/stories? -Abhay | a17.so"
+        ),
+    },
 }
 
 

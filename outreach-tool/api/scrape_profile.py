@@ -215,21 +215,38 @@ async def scrape_tiktok(page, url: str) -> dict:
             title = m.group(1)
             data["name"] = title.split("(")[0].strip()
 
-    # Look for IG handle in bio
-    ig_patterns = [
-        r"(?:ig|insta|instagram):\s*@?([A-Za-z0-9_.]+)",
-        r"(?:ig|insta|instagram)\s+@?([A-Za-z0-9_.]+)",
-        r"@([A-Za-z0-9_.]+)",
-    ]
-    for pattern in ig_patterns:
-        ig_match = re.search(pattern, html, re.I)
-        if ig_match:
-            handle = (ig_match.group(1) or "").strip().lstrip("@")
-            # Treat '@media' false positives as no IG handle
-            if handle.lower() == "media":
-                continue
-            data["ig_handle"] = handle
-            break
+    # Look for an explicit Instagram profile link on TikTok profile (bio link area)
+    # Example: <a href="https://instagram.com/username">instagram.com/username</a>
+    try:
+        if not data.get("ig_handle"):
+            ig_link_match = re.search(
+                r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?!p\/|reel\/|stories\/|explore\/|direct\/|accounts\/)([A-Za-z0-9_.]+)(?:[\/?#]|$)",
+                html,
+                re.I,
+            )
+            if ig_link_match:
+                handle = (ig_link_match.group(1) or "").strip().lstrip("@")
+                if handle and handle.lower() not in {"media"}:
+                    data["ig_handle"] = handle
+    except Exception:
+        pass
+
+    # Look for IG handle in bio text as a fallback
+    if not data.get("ig_handle"):
+        ig_patterns = [
+            r"(?:ig|insta|instagram):\s*@?([A-Za-z0-9_.]+)",
+            r"(?:ig|insta|instagram)\s+@?([A-Za-z0-9_.]+)",
+            r"@([A-Za-z0-9_.]+)",
+        ]
+        for pattern in ig_patterns:
+            ig_match = re.search(pattern, html, re.I)
+            if ig_match:
+                handle = (ig_match.group(1) or "").strip().lstrip("@")
+                # Treat '@media' false positives as no IG handle
+                if handle.lower() == "media":
+                    continue
+                data["ig_handle"] = handle
+                break
 
     # Followers from various patterns
     follower_patterns = [

@@ -68,6 +68,18 @@ TEMPLATES = {
             "—Ad Akella\n"
         ),
     },
+    "themepages": {
+        "subject": "LifeMaxx x Theme Page DM",
+        "email_md": (
+            "Hey {name},\n\n"
+            "we run LifeMaxx and love your theme page. we'd love to get featured posts with you.\n\n"
+            "what are your rates for posts/stories?\n\n"
+            "—Ad from LifeMaxx\n"
+        ),
+        "dm_md": (
+            "Hey {name}, we run LifeMaxx and love your theme page. what are your rates for posts/stories? —Ad from LifeMaxx"
+        ),
+    },
 }
 
 

@@ -3,7 +3,7 @@ import asyncio
 import json
 import re
 import sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 
 from playwright.async_api import async_playwright
 from threading import Thread, Lock
@@ -179,10 +179,12 @@ async def scrape_tiktok(page, url: str) -> dict:
     }
 
     # 1) Prefer SIGI_STATE JSON
+    sigi_text = ""
     try:
         sigi = await page.locator("script#SIGI_STATE").first.text_content(timeout=1500)
         if sigi:
             j = json.loads(sigi)
+            sigi_text = sigi or ""
             users = j.get("UserModule", {}).get("users", {})
             stats_map = j.get("UserModule", {}).get("stats", {})
             for _, u in users.items():
@@ -215,13 +217,119 @@ async def scrape_tiktok(page, url: str) -> dict:
             title = m.group(1)
             data["name"] = title.split("(")[0].strip()
 
-    # Look for an explicit Instagram profile link on TikTok profile (bio link area)
-    # Example: <a href="https://instagram.com/username">instagram.com/username</a>
+    # Look for an explicit Instagram profile link on TikTok profile (bio/link section)
+    # Covers:
+    # - Direct links: https://instagram.com/username
+    # - Instagram deep links: instagram://user?username=username
+    # - IG login redirect links: https://instagram.com/accounts/login/?next=/username/
+    # - IG redirector links: https://l.instagram.com/?u=<encoded instagram url>
     try:
         if not data.get("ig_handle"):
+            # instagram:// deep link
+            m_deeplink = re.search(r"instagram:\/\/user\?username=([A-Za-z0-9_.]+)", html or "", re.I)
+            if m_deeplink:
+                handle = (m_deeplink.group(1) or "").strip().lstrip("@")
+                if handle and handle.lower() != "media":
+                    data["ig_handle"] = handle
+
+        if not data.get("ig_handle"):
+            # Extract from hrefs referencing instagram domains (including redirectors)
+            hrefs = re.findall(r"href=\"([^\"]+)\"", html or "", re.I)
+            for href in hrefs:
+                raw_href = href
+                try:
+                    href_l = raw_href.lower()
+                    # l.instagram.com redirector
+                    if "l.instagram.com" in href_l:
+                        parsed = urlparse(raw_href)
+                        q = parse_qs(parsed.query)
+                        u_vals = q.get("u") or q.get("url") or []
+                        if u_vals:
+                            target = unquote(u_vals[0])
+                            href_l = target.lower()
+                            raw_href = target
+                    # instagram login redirect with next=
+                    if ("instagram.com/accounts/login" in href_l) and ("next=" in raw_href):
+                        parsed = urlparse(raw_href)
+                        q = parse_qs(parsed.query)
+                        next_vals = q.get("next") or []
+                        if next_vals:
+                            next_path = unquote(next_vals[0])
+                            raw_href = f"https://www.instagram.com{next_path}"
+                            href_l = raw_href.lower()
+                    # instagram:// deep link surfaced in hrefs
+                    if href_l.startswith("instagram://user?username="):
+                        handle = raw_href.split("instagram://user?username=")[-1].split("&")[0]
+                        handle = (handle or "").strip().lstrip("@").strip()
+                        if handle and handle.lower() != "media":
+                            data["ig_handle"] = handle
+                            break
+                    # Direct instagram.com/username
+                    m = re.search(
+                        r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?!p\/|reel\/|stories\/|explore\/|direct\/|accounts\/)([A-Za-z0-9_.]+)(?:[\/?#]|$)",
+                        raw_href,
+                        re.I,
+                    )
+                    if m:
+                        handle = (m.group(1) or "").strip().lstrip("@")
+                        if handle and handle.lower() != "media":
+                            data["ig_handle"] = handle
+                            break
+                except Exception:
+                    continue
+
+        # Also consider any links present inside SIGI_STATE JSON when multiple links exist
+        if not data.get("ig_handle") and sigi_text:
+            try:
+                # Collect candidate URLs found in the JSON blob
+                json_urls = re.findall(r"(?:https?:\/\/|instagram\.com\/)[^\"\s]+", sigi_text or "", re.I)
+                for href in json_urls:
+                    raw_href = href
+                    href_l = raw_href.lower()
+                    # l.instagram.com redirector
+                    if "l.instagram.com" in href_l:
+                        parsed = urlparse(raw_href)
+                        q = parse_qs(parsed.query)
+                        u_vals = q.get("u") or q.get("url") or []
+                        if u_vals:
+                            target = unquote(u_vals[0])
+                            href_l = target.lower()
+                            raw_href = target
+                    # instagram login redirect with next=
+                    if ("instagram.com/accounts/login" in href_l) and ("next=" in raw_href):
+                        parsed = urlparse(raw_href)
+                        q = parse_qs(parsed.query)
+                        next_vals = q.get("next") or []
+                        if next_vals:
+                            next_path = unquote(next_vals[0])
+                            raw_href = f"https://www.instagram.com{next_path}"
+                            href_l = raw_href.lower()
+                    # instagram:// deep link
+                    if href_l.startswith("instagram://user?username="):
+                        handle = raw_href.split("instagram://user?username=")[-1].split("&")[0]
+                        handle = (handle or "").strip().lstrip("@").strip()
+                        if handle and handle.lower() != "media":
+                            data["ig_handle"] = handle
+                            break
+                    # Direct instagram.com/username
+                    m = re.search(
+                        r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?!p\/|reel\/|stories\/|explore\/|direct\/|accounts\/)([A-Za-z0-9_.]+)(?:[\/?#]|$)",
+                        raw_href,
+                        re.I,
+                    )
+                    if m:
+                        handle = (m.group(1) or "").strip().lstrip("@")
+                        if handle and handle.lower() != "media":
+                            data["ig_handle"] = handle
+                            break
+            except Exception:
+                pass
+
+        if not data.get("ig_handle"):
+            # Last-resort regex anywhere in HTML (may catch IG in JSON/script text)
             ig_link_match = re.search(
                 r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?!p\/|reel\/|stories\/|explore\/|direct\/|accounts\/)([A-Za-z0-9_.]+)(?:[\/?#]|$)",
-                html,
+                html or "",
                 re.I,
             )
             if ig_link_match:

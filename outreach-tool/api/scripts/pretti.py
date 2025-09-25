@@ -5,7 +5,7 @@ TEMPLATES = {
             "hey {name},\n\n"
             "paid promo?\n\n"
             "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
-            "we're inviting a few, **bigtime beauty creators** who have a **cultlike following** to try it out. if you vibe with it we want to pay you to promote the app :)\n\n"
+            "we're inviting a few, **bigtime beauty creators** who have a **cultlike following** to try it out & pay you to promote the app :)\n\n"
             "Let me know if you're interested!\n\n"
             "-**Abhay Chebium** from the [Pretti App](https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903)\n"
         ),
@@ -13,7 +13,7 @@ TEMPLATES = {
             "hey {name},\n\n"
             "paid promo?\n\n"
             "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
-            "we're inviting a few, bigtime beauty creators who have a cultlike following to try it out. if you vibe with it we want to pay you to promote the app :)\n\n"
+            "we're inviting a few, bigtime beauty creators who have a cultlike following to try it out & pay you to promote the app :)\n\n"
             "Let me know if you're interested!\n\n"
             "-Abhay Chebium from the Pretti App\n"
         ),
@@ -24,7 +24,7 @@ TEMPLATES = {
             "hey {name},\n\n"
             "paid promo?\n\n"
             "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
-            "we're inviting a few, **niche beauty creators** who have a lot of **talent** to try it out. if you vibe with it we want to pay you to promote the app :)\n\n"
+            "we're inviting a few, **niche beauty creators** who have a lot of **talent** to try it out & pay you to promote the app :)\n\n"
             "Let me know if you're interested!\n\n"
             "-**Abhay Chebium** from the [Pretti App](https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903)\n"
         ),
@@ -32,7 +32,26 @@ TEMPLATES = {
             "hey {name},\n\n"
             "paid promo?\n\n"
             "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
-            "we're inviting a few, niche beauty creators who have a lot of talent to try it out. if you vibe with it we want to pay you to promote the app :)\n\n"
+            "we're inviting a few, niche beauty creators who have a lot of talent to try it out & pay you to promote the app :)\n\n"
+            "Let me know if you're interested!\n\n"
+            "-Abhay Chebium from the Pretti App\n"
+        ),
+    },
+    "submicro": {
+        "subject": "PAID PROMO OPPORTUNITY - Pretti App",
+        "email_md": (
+            "hey {name},\n\n"
+            "paid promo?\n\n"
+            "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
+            "we're inviting a few, **niche beauty creators** who have a lot of **talent** to try it out & pay you to promote the app :)\n\n"
+            "Let me know if you're interested!\n\n"
+            "-**Abhay Chebium** from the [Pretti App](https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903)\n"
+        ),
+        "dm_md": (
+            "hey {name},\n\n"
+            "paid promo?\n\n"
+            "Pretti is an AI beauty app that gives you step-by-step guides to recreate any makeup look and helps you shop for the right products that match your style and skin.\n\n"
+            "we're inviting a few, niche beauty creators who have a lot of talent to try it out & pay you to promote the app :)\n\n"
             "Let me know if you're interested!\n\n"
             "-Abhay Chebium from the Pretti App\n"
         ),

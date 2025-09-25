@@ -113,6 +113,7 @@ def _log(event: str, **fields: Any) -> None:
 CATEGORY_TO_SHEET = {
     "macro": "Macros",
     "micro": "Micros",
+    "submicro": "Submicros",
     "ambassador": "Ambassadors",
     "themepage": "Theme Pages",
 }
@@ -212,6 +213,8 @@ def _normalize_category(category: str) -> str:
         return "macro"
     if c.startswith("micro"):
         return "micro"
+    if c.startswith("submicro"):
+        return "submicro"
     if c.startswith("ambas"):
         return "ambassador"
     if c.replace(" ", "") in {"themepage", "themepages", "themecreator", "themepagecreator"} or c.startswith("theme page"):
@@ -523,6 +526,7 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
                                                 {"userEnteredValue": "Followup Sent"},
                                                 {"userEnteredValue": "Closed"},
                                                 {"userEnteredValue": "Not Interested"},
+                                                {"userEnteredValue": "No Email"},
                                             ],
                                         },
                                         "strict": True,
@@ -797,7 +801,9 @@ def scrape_endpoint():
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
     sheet_name = None
-    if spreadsheet_id and (has_valid_recipient or is_theme_pages):
+    # Always append a row for tracking when a spreadsheet is configured,
+    # even if there is no valid recipient email (email column will be blank).
+    if spreadsheet_id:
         cat_key = cat_key_normalized
         sheet_name = CATEGORY_TO_SHEET.get(cat_key)
         if sheet_name:
@@ -812,8 +818,19 @@ def scrape_endpoint():
             # Total is IG + TT only
             total_followers = ig_followers + tt_followers
             email_addr = "" if is_theme_pages else (profile.get("email") or "")
-            # For Theme Pages we skip email entirely; leave status blank
-            status_val = "Sent" if (not is_theme_pages and email_send_result.get("ok")) else ""
+            # Status rules:
+            # - Theme Pages: leave blank (tracking DM only)
+            # - If email sent OK: "Sent"
+            # - If no valid recipient email: "No Email"
+            # - Else (prepared compose but not sent on device): leave blank
+            if is_theme_pages:
+                status_val = ""
+            elif email_send_result.get("ok"):
+                status_val = "Sent"
+            elif not has_valid_recipient:
+                status_val = "No Email"
+            else:
+                status_val = ""
 
             ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
             tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
@@ -844,10 +861,7 @@ def scrape_endpoint():
             sheet_status = {"ok": False, "error": f"Unknown category: {category}"}
             _log("sheets.append.skipped_unknown_category", category=category)
     else:
-        if not spreadsheet_id:
-            _log("sheets.append.skipped_no_spreadsheet")
-        elif not (has_valid_recipient or is_theme_pages):
-            _log("sheets.append.skipped_no_email")
+        _log("sheets.append.skipped_no_spreadsheet")
 
     # Response for Shortcuts
     # Build minimal DM response

@@ -365,17 +365,19 @@ def _get_display_name(profile: Dict[str, Any]) -> str:
     return tt or ig or "there"
 
 
-def _get_templates_for_app(app_key: Optional[str]) -> Dict[str, Dict[str, str]]:
-    """Dynamically load TEMPLATES dict from api/scripts/<app_key>.py.
+def _get_templates_for_app(app_key: Optional[str], followup: bool = False) -> Dict[str, Dict[str, str]]:
+    """Dynamically load TEMPLATES or FOLLOWUP_TEMPLATES dict from api/scripts/<app_key>.py.
 
     Falls back to generic templates from api/scripts.py if per-app not found.
     """
     key = (app_key or "").strip().lower() or "default"
+    template_attr = "FOLLOWUP_TEMPLATES" if followup else "TEMPLATES"
+    
     # Try app-specific module (package import)
     try:
         import importlib
         mod = importlib.import_module(f"scripts.{key}")
-        t = getattr(mod, "TEMPLATES", None)
+        t = getattr(mod, template_attr, None)
         if isinstance(t, dict):
             return t
     except Exception:
@@ -390,30 +392,37 @@ def _get_templates_for_app(app_key: Optional[str]) -> Dict[str, Dict[str, str]]:
             if spec and spec.loader:
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-                t = getattr(mod, "TEMPLATES", None)
+                t = getattr(mod, template_attr, None)
                 if isinstance(t, dict):
                     return t
     except Exception:
         pass
     # Fallback to generic scripts.TEMPLATES
-    try:
-        from scripts import TEMPLATES as GENERIC_TEMPLATES  # type: ignore
-        if isinstance(GENERIC_TEMPLATES, dict):
-            return GENERIC_TEMPLATES  # type: ignore
-    except Exception:
-        pass
+    if not followup:
+        try:
+            from scripts import TEMPLATES as GENERIC_TEMPLATES  # type: ignore
+            if isinstance(GENERIC_TEMPLATES, dict):
+                return GENERIC_TEMPLATES  # type: ignore
+        except Exception:
+            pass
     return {}
 
 
-def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization: str = "", link_url: Optional[str] = None, app_key: Optional[str] = None) -> Dict[str, Any]:
+def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization: str = "", link_url: Optional[str] = None, app_key: Optional[str] = None, is_followup: bool = False) -> Dict[str, Any]:
     name = _get_display_name(profile)
     ig_handle = profile.get("ig") or ""
     tt_handle = profile.get("tt") or ""
 
-    # Load markdown templates
-    templates_for_app = _get_templates_for_app(app_key)
+    # Load markdown templates (use followup templates if this is a followup)
+    templates_for_app = _get_templates_for_app(app_key, followup=is_followup)
     key = _normalize_category(category)
     tmpl = templates_for_app.get(key) or {}
+    
+    # If followup templates not found, fall back to regular templates
+    if is_followup and not tmpl:
+        templates_for_app = _get_templates_for_app(app_key, followup=False)
+        tmpl = templates_for_app.get(key) or {}
+    
     link_url = link_url or "https://a17.so/brief"
     link_text = "View brief"
 
@@ -443,19 +452,98 @@ def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization:
         "ig_app_url": f"instagram://user?username={ig_handle}" if ig_handle else "",
     }
 
-    key = _normalize_category(category)
-    t = templates.get(key, templates["micro"])  # default to micro
 
-    ig_app_url = ""
-    if ig_handle:
-        ig_app_url = f"instagram://user?username={ig_handle}"
+def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
+    """Check if a creator already exists in the spreadsheet by IG or TT handle.
+    
+    Returns:
+        {
+            "exists": bool,
+            "row_index": int or None (1-based row number),
+            "email_message_id": str or None (for threading),
+            "status": str or None (current status in sheet)
+        }
+    """
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("sheets.check_exists.no_client")
+        return {"exists": False, "error": "Sheets client not configured"}
+    
+    try:
+        # Read all data from the sheet (columns A-K which includes: Name, IG, TT, YT, IG Followers, TT Followers, YT Followers, Total, Email, Status, Message ID)
+        _log("sheets.check_exists.request", spreadsheet_id=spreadsheet_id, sheet_name=sheet_name, ig=ig_handle, tt=tt_handle)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A:K"
+        ).execute()
+        
+        values = result.get("values", [])
+        if not values:
+            return {"exists": False}
+        
+        # Normalize handles for comparison
+        ig_normalized = (ig_handle or "").strip().lower().lstrip("@")
+        tt_normalized = (tt_handle or "").strip().lower().lstrip("@")
+        
+        # Skip header row (index 0), start from row 1
+        for idx, row in enumerate(values[1:], start=2):  # start=2 because row 1 is header, data starts at row 2
+            if len(row) < 3:
+                continue
+            
+            # Column B (index 1) is IG link, Column C (index 2) is TT link
+            # Extract handle from HYPERLINK formula or direct text
+            ig_cell = row[1] if len(row) > 1 else ""
+            tt_cell = row[2] if len(row) > 2 else ""
+            
+            # Extract handle from HYPERLINK formula like =HYPERLINK("url", "@handle")
+            ig_match = re.search(r'@([A-Za-z0-9_.]+)', ig_cell)
+            tt_match = re.search(r'@([A-Za-z0-9_.]+)', tt_cell)
+            
+            existing_ig = (ig_match.group(1) if ig_match else "").strip().lower()
+            existing_tt = (tt_match.group(1) if tt_match else "").strip().lower()
+            
+            # Check if either handle matches
+            if (ig_normalized and existing_ig == ig_normalized) or (tt_normalized and existing_tt == tt_normalized):
+                status = row[9] if len(row) > 9 else ""
+                message_id = row[10] if len(row) > 10 else ""
+                
+                _log("sheets.check_exists.found", row_index=idx, status=status, has_message_id=bool(message_id))
+                return {
+                    "exists": True,
+                    "row_index": idx,
+                    "email_message_id": message_id or None,
+                    "status": status or None
+                }
+        
+        _log("sheets.check_exists.not_found")
+        return {"exists": False}
+    
+    except Exception as e:
+        _log("sheets.check_exists.error", error=str(e))
+        return {"exists": False, "error": str(e)}
 
-    return {
-        "subject": t["subject"],
-        "email_body": t["email_body"],
-        "dm_text": t["dm"],
-        "ig_app_url": ig_app_url,
-    }
+
+def _update_sheet_row(spreadsheet_id: str, sheet_name: str, row_index: int, row_values: List[Any], delegated_user: Optional[str] = None) -> Dict[str, Any]:
+    """Update an existing row in the spreadsheet."""
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("sheets.update.no_client")
+        return {"ok": False, "error": "Sheets client not configured"}
+    
+    body = {"values": [row_values]}
+    try:
+        _log("sheets.update.request", spreadsheet_id=spreadsheet_id, sheet_name=sheet_name, row_index=row_index)
+        resp = service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A{row_index}:K{row_index}",
+            valueInputOption="USER_ENTERED",
+            body=body,
+        ).execute()
+        _log("sheets.update.success", updated_cells=resp.get("updatedCells", 0))
+        return {"ok": True, "result": resp}
+    except Exception as e:
+        _log("sheets.update.error", error=str(e))
+        return {"ok": False, "error": str(e)}
 
 
 def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any], delegated_user: Optional[str] = None) -> Dict[str, Any]:
@@ -756,26 +844,50 @@ def scrape_endpoint():
         _log("scrape.error", error=str(e))
         return jsonify({"error": f"scrape failed: {e}"}), 500
 
-    # 2) Build comms (email + DM)
+    # 2) Check if creator already exists in spreadsheet
+    spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
+    cat_key_normalized = _normalize_category(category)
+    is_theme_pages = cat_key_normalized == "themepage"
+    sheet_name = CATEGORY_TO_SHEET.get(cat_key_normalized)
+    
+    is_followup = False
+    existing_data = {"exists": False}
+    if spreadsheet_id and sheet_name:
+        ig_handle = profile.get("ig") or ""
+        tt_handle = profile.get("tt") or ""
+        existing_data = _check_creator_exists(
+            spreadsheet_id,
+            sheet_name,
+            ig_handle,
+            tt_handle,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+        is_followup = existing_data.get("exists", False)
+        _log(
+            "scrape.duplicate_check",
+            is_followup=is_followup,
+            row_index=existing_data.get("row_index"),
+            status=existing_data.get("status"),
+        )
+
+    # 3) Build comms (email + DM) - use followup templates if creator already exists
     comms = _build_email_and_dm(
         category,
         profile,
         personalization=personalization,
         link_url=app_cfg.get("link_url"),
         app_key=app_cfg.get("app_key"),
+        is_followup=is_followup,
     )
     _log(
         "scrape.comms_built",
         subject=comms.get("subject"),
         dm_len=len(comms.get("dm_md") or ""),
         has_email=bool(profile.get("email")),
+        is_followup=is_followup,
     )
 
-    # Determine category flags
-    cat_key_normalized = _normalize_category(category)
-    is_theme_pages = cat_key_normalized == "themepage"
-
-    # 3) Prepare client-side email compose data (no backend sending)
+    # 4) Prepare client-side email compose data (no backend sending)
     email_send_result = {"ok": False, "error": "Skipped (no recipient)"}
     recipient_email_raw = str(profile.get("email") or "").strip()
     is_placeholder_email = recipient_email_raw.lower() == "example@example.com"
@@ -783,6 +895,13 @@ def scrape_endpoint():
     recipient_email = recipient_email_raw if has_valid_recipient else ""
     plain_text = ""
     mailto_url: Optional[str] = None
+    
+    # For follow-ups, include In-Reply-To header if we have the original message ID
+    email_thread_id = None
+    if is_followup and existing_data.get("email_message_id"):
+        email_thread_id = existing_data.get("email_message_id")
+        _log("email.thread.detected", message_id=email_thread_id)
+    
     if has_valid_recipient and not is_theme_pages:
         # Build mailto URL and plain-text body; let device handle sending
         try:
@@ -795,60 +914,74 @@ def scrape_endpoint():
         body_enc = quote(plain_text)
         mailto_url = f"mailto:{recipient_email}?subject={subj_enc}&body={body_enc}"
         email_send_result = {"ok": False, "error": "Skipped (compose on device)", "mailto_url": mailto_url, "to": recipient_email}
-        _log("email.compose.prepared", to=recipient_email, has_mailto=bool(mailto_url))
+        _log("email.compose.prepared", to=recipient_email, has_mailto=bool(mailto_url), is_followup=is_followup)
 
-    # 4) Write to Google Sheets after email attempt (always for Theme Pages)
-    spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
+    # 5) Write to Google Sheets or update existing row
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
-    sheet_name = None
-    # Always append a row for tracking when a spreadsheet is configured,
+    # Always append/update a row for tracking when a spreadsheet is configured,
     # even if there is no valid recipient email (email column will be blank).
-    if spreadsheet_id:
-        cat_key = cat_key_normalized
-        sheet_name = CATEGORY_TO_SHEET.get(cat_key)
-        if sheet_name:
-            name = _get_display_name(profile)
-            ig_handle = profile.get("ig") or ""
-            tt_handle = profile.get("tt") or ""
-            yt_handle = ""
-            ig_followers = int(profile.get("igFollowers") or 0)
-            tt_followers = int(profile.get("ttFollowers") or 0)
-            # Leave YouTube followers empty for now
-            yt_followers = ""
-            # Total is IG + TT only
-            total_followers = ig_followers + tt_followers
-            email_addr = "" if is_theme_pages else (profile.get("email") or "")
-            # Status rules:
-            # - Theme Pages: leave blank (tracking DM only)
-            # - If email sent OK: "Sent"
-            # - If no valid recipient email: "No Email"
-            # - Else (prepared compose but not sent on device): leave blank
-            if is_theme_pages:
-                status_val = ""
-            elif email_send_result.get("ok"):
-                status_val = "Sent"
-            elif not has_valid_recipient:
-                status_val = "No Email"
-            else:
-                status_val = ""
+    if spreadsheet_id and sheet_name:
+        name = _get_display_name(profile)
+        ig_handle = profile.get("ig") or ""
+        tt_handle = profile.get("tt") or ""
+        yt_handle = ""
+        ig_followers = int(profile.get("igFollowers") or 0)
+        tt_followers = int(profile.get("ttFollowers") or 0)
+        # Leave YouTube followers empty for now
+        yt_followers = ""
+        # Total is IG + TT only
+        total_followers = ig_followers + tt_followers
+        email_addr = "" if is_theme_pages else (profile.get("email") or "")
+        
+        # Status rules:
+        # - For follow-ups: "Followup Sent" if email prepared/sent
+        # - Theme Pages: leave blank (tracking DM only)
+        # - If email sent OK: "Sent"
+        # - If no valid recipient email: "No Email"
+        # - Else (prepared compose but not sent on device): leave blank
+        if is_followup and (has_valid_recipient or is_theme_pages):
+            status_val = "Followup Sent"
+        elif is_theme_pages:
+            status_val = ""
+        elif email_send_result.get("ok"):
+            status_val = "Sent"
+        elif not has_valid_recipient:
+            status_val = "No Email"
+        else:
+            status_val = ""
 
-            ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
-            tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
-            # Leave YouTube cells empty
-            yt_link = ""
+        ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
+        tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
+        # Leave YouTube cells empty
+        yt_link = ""
 
-            row = [
-                name,
-                ig_link,
-                tt_link,
-                yt_link,
-                ig_followers,
-                tt_followers,
-                yt_followers,
-                total_followers,
-                email_addr,
-                status_val,
-            ]
+        row = [
+            name,
+            ig_link,
+            tt_link,
+            yt_link,
+            ig_followers,
+            tt_followers,
+            yt_followers,
+            total_followers,
+            email_addr,
+            status_val,
+            email_thread_id or "",  # Column K: Message ID for threading
+        ]
+        
+        if is_followup:
+            # Update existing row
+            _log("sheets.update.row_preview", sheet=sheet_name, row_index=existing_data.get("row_index"), status=status_val)
+            sheet_status = _update_sheet_row(
+                spreadsheet_id,
+                sheet_name,
+                existing_data.get("row_index"),
+                row,
+                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+            )
+            _log("sheets.update.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=sheet_name)
+        else:
+            # Append new row
             _log("sheets.append.row_preview", sheet=sheet_name, row_sample=row[:3], totals=total_followers)
             sheet_status = _append_to_sheet(
                 spreadsheet_id,
@@ -857,9 +990,6 @@ def scrape_endpoint():
                 delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
             )
             _log("sheets.append.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=sheet_name)
-        else:
-            sheet_status = {"ok": False, "error": f"Unknown category: {category}"}
-            _log("sheets.append.skipped_unknown_category", category=category)
     else:
         _log("sheets.append.skipped_no_spreadsheet")
 
@@ -884,6 +1014,8 @@ def scrape_endpoint():
         "email_to": (recipient_email if (has_valid_recipient and not is_theme_pages) else None),
         "email_subject": comms.get("subject"),
         "email_body_text": (plain_text or None),
+        "is_followup": is_followup,
+        "email_thread_id": email_thread_id,
     }
 
     if include_extras:
@@ -893,6 +1025,7 @@ def scrape_endpoint():
             "igLink": ig_app_url or "IG not there",
             "mailto_url": mailto_url,
             "email_from_hint": (app_cfg.get("gmail_sender") or app_cfg.get("delegated_user") or None),
+            "existing_status": existing_data.get("status") if is_followup else None,
             "dm": {
                 "ig_handle": ig_handle,
                 "text": dm_text,

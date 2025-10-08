@@ -88,17 +88,10 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
         host = (parsed.netloc or "").lower()
         if "tiktok.com" in host:
             data = await scrape_tiktok(page, url)
-            ig_handle = data.get("ig_handle")
-            if ig_handle:
-                ig_url = f"https://www.instagram.com/{ig_handle}"
-                try:
-                    ig_data = await scrape_instagram(page, ig_url)
-                    if isinstance(ig_data, dict) and ig_data.get("followers"):
-                        data["ig_followers_from_ig"] = int(ig_data.get("followers") or 0)
-                except Exception:
-                    pass
         elif "instagram.com" in host:
             data = await scrape_instagram(page, url)
+        elif any(domain in host for domain in LINK_AGGREGATOR_DOMAINS):
+            data = await scrape_link_aggregator(page, url)
         else:
             data = {"error": "Unsupported URL", "url": url}
     finally:
@@ -111,13 +104,18 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
         "email": data.get("email") or "",
         "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
         "tt": data.get("username") if data.get("platform") == "tiktok" else "",
-        "igFollowers": (
-            data.get("followers") if data.get("platform") == "instagram" else int(data.get("ig_followers_from_ig") or 0)
-        ),
-        "ttFollowers": data.get("followers") if data.get("platform") == "tiktok" else 0,
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
         "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
     }
+    
+    # For link aggregator platforms, add the source URL
+    if data.get("platform") == "link_aggregator":
+        out["linkAggregatorUrl"] = data.get("source_url") or ""
+    # Add average views if present
+    if "ttAvgViews" in data:
+        out["ttAvgViews"] = data["ttAvgViews"]
+    if "igAvgViews" in data:
+        out["igAvgViews"] = data["igAvgViews"]
 
     try:
         if out.get("platform") == "tiktok" and not out.get("tt"):
@@ -145,6 +143,29 @@ def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+(?:\s*\(at\)\s*|@)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.I)
 
+# Link aggregator domains to detect
+LINK_AGGREGATOR_DOMAINS = [
+    "linktr.ee",
+    "beacons.ai", 
+    "hoo.be",
+    "lnk.bio",
+    "linkin.bio",
+    "taplink.cc",
+    "msha.ke",
+    "allmylinks.com",
+    "bio.link",
+    "linkkle.com",
+    "campsite.bio"
+]
+
+
+def _log(event: str, **kwargs) -> None:
+    """Simple logging function for debugging"""
+    try:
+        print(f"LOG({event}) {kwargs}")
+    except Exception:
+        pass
+
 
 def parse_int_from_text(text: str) -> int:
     if not text:
@@ -162,6 +183,135 @@ def parse_int_from_text(text: str) -> int:
     return int(round(val))
 
 
+async def scrape_link_aggregator(page, url: str) -> dict:
+    """Scrape email and Instagram info from link aggregator services like Linktree, Beacons.ai, Hoo.be"""
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+    except Exception:
+        pass
+    
+    await page.wait_for_timeout(2000)  # Give page time to load
+    
+    data = {
+        "email": "",
+        "ig_handle": "",
+        "platform": "link_aggregator",
+        "source_url": url
+    }
+    
+    html = await page.content()
+    
+    # Look for email addresses anywhere on the page
+    email_match = EMAIL_RE.search(html or "")
+    if email_match:
+        data["email"] = email_match.group(0).replace("(at)", "@").replace(" ", "")
+    
+    # Look for Instagram links/mentions
+    # Common patterns for Instagram links on these platforms
+    ig_patterns = [
+        r"instagram\.com/([A-Za-z0-9_.]+)",
+        r"@([A-Za-z0-9_.]+)",
+        r"instagram.*?([A-Za-z0-9_.]+)",
+        r"ig.*?([A-Za-z0-9_.]+)",
+    ]
+    
+    for pattern in ig_patterns:
+        ig_matches = re.findall(pattern, html, re.I)
+        for match in ig_matches:
+            handle = match.strip().lstrip("@").lower()
+            # Filter out common false positives
+            if handle and handle not in ["media", "instagram", "com", "www"] and len(handle) > 1:
+                # Filter out link aggregator domains
+                if any(domain in handle for domain in LINK_AGGREGATOR_DOMAINS):
+                    _log("link_aggregator.filtered_link_aggregator_as_ig", handle=handle)
+                    continue
+                # Filter out URLs that contain dots but are likely domains (not IG handles)
+                # IG handles can contain dots, but domains typically have TLD patterns
+                if "." in handle and not handle.startswith("www."):
+                    # Check if it looks like a domain (has common TLDs or link aggregator patterns)
+                    if any(tld in handle for tld in [".com", ".org", ".net", ".io", ".co", ".ee", ".ai", ".be", ".bio", ".cc", ".ke"]):
+                        _log("link_aggregator.filtered_domain_as_ig", handle=handle)
+                        continue
+                data["ig_handle"] = handle
+                _log("link_aggregator.found_ig_handle", handle=handle)
+                break
+        if data["ig_handle"]:
+            break
+    
+    # Try to find Instagram links in href attributes specifically
+    if not data["ig_handle"]:
+        hrefs = re.findall(r'href=["\']([^"\']+)["\']', html)
+        for href in hrefs:
+            if "instagram.com" in href.lower():
+                m = re.search(r"instagram\.com/([A-Za-z0-9_.]+)", href, re.I)
+                if m:
+                    handle = m.group(1).strip().lstrip("@").lower()
+                    if handle and handle not in ["media", "instagram", "com", "www"] and len(handle) > 1:
+                        # Filter out link aggregator domains
+                        if any(domain in handle for domain in LINK_AGGREGATOR_DOMAINS):
+                            _log("link_aggregator.href_filtered_link_aggregator_as_ig", handle=handle)
+                            continue
+                        # Filter out URLs that contain dots but are likely domains (not IG handles)
+                        # IG handles can contain dots, but domains typically have TLD patterns
+                        if "." in handle and not handle.startswith("www."):
+                            # Check if it looks like a domain (has common TLDs or link aggregator patterns)
+                            if any(tld in handle for tld in [".com", ".org", ".net", ".io", ".co", ".ee", ".ai", ".be", ".bio", ".cc", ".ke"]):
+                                _log("link_aggregator.href_filtered_domain_as_ig", handle=handle)
+                                continue
+                        data["ig_handle"] = handle
+                        _log("link_aggregator.href_found_ig_handle", handle=handle)
+                        break
+    
+    return data
+
+
+def detect_link_aggregator_urls(text: str) -> list:
+    """Detect link aggregator URLs in text content"""
+    if not text:
+        return []
+    
+    urls = []
+    # Improved URL pattern that captures more URL formats
+    url_patterns = [
+        # Standard HTTP/HTTPS URLs
+        r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.-])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?',
+        # URLs without protocol (common in bio sections)
+        r'(?:^|\s)([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.(?:linktr\.ee|beacons\.ai|hoo\.be|lnk\.bio|linkin\.bio|taplink\.cc|msha\.ke|allmylinks\.com|bio\.link|linkkle\.com|campsite\.bio)(?:/[^\s]*)?)',
+        # Simple domain patterns without protocol (more flexible)
+        r'(?:^|\s|"|\')((?:linktr\.ee|beacons\.ai|hoo\.be|lnk\.bio|linkin\.bio|taplink\.cc|msha\.ke|allmylinks\.com|bio\.link|linkkle\.com|campsite\.bio)(?:/[^\s"\'<>]*)?)',
+        # URLs in quotes or parentheses
+        r'["\'](https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.-])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?)["\']',
+    ]
+    
+    all_found_urls = []
+    for pattern in url_patterns:
+        found_urls = re.findall(pattern, text, re.IGNORECASE)
+        all_found_urls.extend(found_urls)
+    
+    # Remove duplicates and normalize URLs
+    seen_urls = set()
+    for url in all_found_urls:
+        # Clean up the URL
+        url = url.strip().rstrip('.,;:!?')
+        if not url:
+            continue
+            
+        # Add protocol if missing
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            
+        # Check if it's a link aggregator domain
+        for domain in LINK_AGGREGATOR_DOMAINS:
+            if domain in url.lower() and url not in seen_urls:
+                urls.append(url)
+                seen_urls.add(url)
+                _log("detect_link_aggregator_urls.found", url=url, domain=domain)
+                break
+    
+    _log("detect_link_aggregator_urls.result", found_count=len(urls), urls=urls)
+    return urls
+
+
 async def scrape_tiktok(page, url: str) -> dict:
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
@@ -174,7 +324,6 @@ async def scrape_tiktok(page, url: str) -> dict:
         "platform": "tiktok",
         "name": "",
         "username": "",
-        "followers": 0,
         "email": "",
     }
 
@@ -186,18 +335,13 @@ async def scrape_tiktok(page, url: str) -> dict:
             j = json.loads(sigi)
             sigi_text = sigi or ""
             users = j.get("UserModule", {}).get("users", {})
-            stats_map = j.get("UserModule", {}).get("stats", {})
+            # Set average views to 0 (view scraping disabled)
+            data["ttAvgViews"] = 0
             for _, u in users.items():
                 if not isinstance(u, dict):
                     continue
                 data["username"] = data["username"] or u.get("uniqueId") or ""
                 data["name"] = data["name"] or u.get("nickname") or ""
-                stat = (
-                    stats_map.get(str(u.get("id")))
-                    or stats_map.get(u.get("uniqueId") or "")
-                    or {}
-                )
-                data["followers"] = int(stat.get("followerCount") or 0)
                 break
     except Exception:
         pass
@@ -350,36 +494,94 @@ async def scrape_tiktok(page, url: str) -> dict:
             ig_match = re.search(pattern, html, re.I)
             if ig_match:
                 handle = (ig_match.group(1) or "").strip().lstrip("@")
-                # Treat '@media' false positives as no IG handle
-                if handle.lower() == "media":
+                # Filter out known false positives
+                handle_lower = handle.lower()
+                if handle_lower in ["media", "instagram", "com", "www"]:
                     continue
+                # Filter out link aggregator domains
+                if any(domain in handle_lower for domain in LINK_AGGREGATOR_DOMAINS):
+                    _log("tiktok.filtered_link_aggregator_as_ig", handle=handle)
+                    continue
+                # Filter out URLs that contain dots but are likely domains (not IG handles)
+                # IG handles can contain dots, but domains typically have TLD patterns
+                if "." in handle and not handle_lower.startswith("www."):
+                    # Check if it looks like a domain (has common TLDs or link aggregator patterns)
+                    if any(tld in handle_lower for tld in [".com", ".org", ".net", ".io", ".co", ".ee", ".ai", ".be", ".bio", ".cc", ".ke"]):
+                        _log("tiktok.filtered_domain_as_ig", handle=handle)
+                        continue
                 data["ig_handle"] = handle
+                _log("tiktok.found_ig_handle", handle=handle)
                 break
 
-    # Followers from various patterns
-    follower_patterns = [
-        r'"followerCount":\s*(\d+)',
-        r'"followers":\s*(\d+)',
-        r'"stats":\s*\{"followerCount":(\d+)',
-        r'followerCount["\']:\s*["\']?(\d+)',
-        r'data-e2e="followers-count"[^>]*>(\d+)',
-        r'followers["\']:\s*["\']?(\d+)',
-        r'<strong[^>]*>(\d+)</strong>[^<]*[Ff]ollower',
-        r'class="[^"]*follower[^"]*"[^>]*>(\d+)',
-        r'>(\d+)\s*<[^>]*[Ff]ollower(?!s\s+content)',
-    ]
-    for pattern in follower_patterns:
-        m = re.search(pattern, html, re.I)
-        if m:
-            followers = parse_int_from_text(m.group(1))
-            if followers > 0:
-                data["followers"] = followers
-                break
 
     # Emails anywhere on page
     email_match = EMAIL_RE.search(html or "")
     if email_match:
         data["email"] = email_match.group(0).replace("(at)", "@").replace(" ", "")
+
+    # Look for link aggregator URLs in specific sections and general page content
+    link_aggregator_urls = []
+    
+    # 1. Look for links in specific TikTok bio/link sections using selectors
+    try:
+        # Common TikTok link selectors - include all link aggregator domains
+        link_selectors = [
+            'a[data-e2e="user-bio-link"]',  # TikTok bio link
+            'a[data-e2e="user-link"]',      # TikTok user link
+            '[data-e2e="user-bio"] a',      # Links in bio text
+            '.bio a',                       # Bio links
+            '.user-bio a',                  # User bio links
+        ]
+        
+        # Add selectors for each link aggregator domain
+        for domain in LINK_AGGREGATOR_DOMAINS:
+            link_selectors.append(f'a[href*="{domain}"]')
+        
+        for selector in link_selectors:
+            try:
+                elements = await page.locator(selector).all()
+                for element in elements:
+                    href = await element.get_attribute('href')
+                    if href:
+                        link_aggregator_urls.append(href)
+                        _log("tiktok.found_link_selector", selector=selector, href=href)
+            except Exception:
+                continue
+    except Exception as e:
+        _log("tiktok.link_selector_error", error=str(e))
+    
+    # 2. Also check SIGI_STATE JSON for links (TikTok specific)
+    if sigi_text:
+        sigi_urls = detect_link_aggregator_urls(sigi_text)
+        link_aggregator_urls.extend(sigi_urls)
+        _log("tiktok.sigi_state_urls", urls=sigi_urls)
+    
+    # 3. Also check general HTML content with improved detection
+    html_urls = detect_link_aggregator_urls(html)
+    link_aggregator_urls.extend(html_urls)
+    
+    # Remove duplicates
+    link_aggregator_urls = list(set(link_aggregator_urls))
+    
+    _log("tiktok.all_link_aggregator_urls", urls=link_aggregator_urls)
+    
+    # Scrape each found link aggregator URL
+    for link_url in link_aggregator_urls:
+        try:
+            _log("tiktok.scraping_link_aggregator", url=link_url)
+            link_data = await scrape_link_aggregator(page, link_url)
+            
+            # Use email from link aggregator if we don't have one yet
+            if not data["email"] and link_data.get("email"):
+                data["email"] = link_data["email"]
+            
+            # Use IG handle from link aggregator if we don't have one yet
+            if not data.get("ig_handle") and link_data.get("ig_handle"):
+                data["ig_handle"] = link_data["ig_handle"]
+                
+        except Exception as e:
+            _log("tiktok.link_aggregator_error", url=link_url, error=str(e))
+            continue
 
     return data
 
@@ -395,7 +597,6 @@ async def scrape_instagram(page, url: str) -> dict:
         "platform": "instagram",
         "name": "",
         "username": "",
-        "followers": 0,
         "email": "",
     }
 
@@ -409,15 +610,6 @@ async def scrape_instagram(page, url: str) -> dict:
     except Exception:
         pass
 
-    # og:description often contains followers, following, posts
-    try:
-        desc = await page.locator('meta[property="og:description"]').first.get_attribute("content")
-        if desc:
-            m = re.search(r"([\d,\.]+)\s+Followers", desc, re.I)
-            if m:
-                data["followers"] = parse_int_from_text(m.group(1))
-    except Exception:
-        pass
 
     # og:title often contains the display name
     try:
@@ -427,11 +619,85 @@ async def scrape_instagram(page, url: str) -> dict:
     except Exception:
         pass
 
+    # Set average views to 0 (view scraping disabled)
+    data["igAvgViews"] = 0
+
     # Emails anywhere on the page
     html = await page.content()
     email_match = EMAIL_RE.search(html or "")
     if email_match:
         data["email"] = email_match.group(0).replace("(at)", "@").replace(" ", "")
+
+    # Look for link aggregator URLs in specific sections and general page content
+    link_aggregator_urls = []
+    
+    # 1. Look for links in specific Instagram bio/link sections using selectors
+    try:
+        # Common Instagram link selectors
+        link_selectors = [
+            'a[href^="https://l.instagram.com"]',  # Instagram redirect links
+            'a[data-e2e="user-bio-link"]',        # Instagram bio link
+            '[data-testid="user-bio"] a',         # Bio links
+            '.bio a',                             # Bio links
+            '.user-bio a',                        # User bio links
+            'a[href*="instagram.com/accounts/login"]',  # Instagram login redirects
+        ]
+        
+        # Add selectors for each link aggregator domain
+        for domain in LINK_AGGREGATOR_DOMAINS:
+            link_selectors.append(f'a[href*="{domain}"]')
+        
+        for selector in link_selectors:
+            try:
+                elements = await page.locator(selector).all()
+                for element in elements:
+                    href = await element.get_attribute('href')
+                    if href:
+                        # Handle Instagram redirect links
+                        if "l.instagram.com" in href or "instagram.com/accounts/login" in href:
+                            try:
+                                parsed = urlparse(href)
+                                q = parse_qs(parsed.query)
+                                u_vals = q.get("u") or q.get("url") or q.get("next") or []
+                                if u_vals:
+                                    target = unquote(u_vals[0])
+                                    if not target.startswith(('http://', 'https://')):
+                                        target = 'https://' + target
+                                    link_aggregator_urls.append(target)
+                                    _log("instagram.found_redirect_link", original=href, target=target)
+                                    continue
+                            except Exception:
+                                pass
+                        
+                        link_aggregator_urls.append(href)
+                        _log("instagram.found_link_selector", selector=selector, href=href)
+            except Exception:
+                continue
+    except Exception as e:
+        _log("instagram.link_selector_error", error=str(e))
+    
+    # 2. Also check general HTML content with improved detection
+    html_urls = detect_link_aggregator_urls(html)
+    link_aggregator_urls.extend(html_urls)
+    
+    # Remove duplicates
+    link_aggregator_urls = list(set(link_aggregator_urls))
+    
+    _log("instagram.all_link_aggregator_urls", urls=link_aggregator_urls)
+    
+    # Scrape each found link aggregator URL
+    for link_url in link_aggregator_urls:
+        try:
+            _log("instagram.scraping_link_aggregator", url=link_url)
+            link_data = await scrape_link_aggregator(page, link_url)
+            
+            # Use email from link aggregator if we don't have one yet
+            if not data["email"] and link_data.get("email"):
+                data["email"] = link_data["email"]
+                
+        except Exception as e:
+            _log("instagram.link_aggregator_error", url=link_url, error=str(e))
+            continue
 
     return data
 
@@ -464,18 +730,10 @@ async def scrape_profile(url: str) -> dict:
         try:
             if "tiktok.com" in host:
                 data = await scrape_tiktok(page, url)
-                # If TT bio contains an IG handle, fetch IG followers too
-                ig_handle = data.get("ig_handle")
-                if ig_handle:
-                    ig_url = f"https://www.instagram.com/{ig_handle}"
-                    try:
-                        ig_data = await scrape_instagram(page, ig_url)
-                        if isinstance(ig_data, dict) and ig_data.get("followers"):
-                            data["ig_followers_from_ig"] = int(ig_data.get("followers") or 0)
-                    except Exception:
-                        pass
             elif "instagram.com" in host:
                 data = await scrape_instagram(page, url)
+            elif any(domain in host for domain in LINK_AGGREGATOR_DOMAINS):
+                data = await scrape_link_aggregator(page, url)
             else:
                 data = {"error": "Unsupported URL", "url": url}
         finally:
@@ -494,13 +752,18 @@ async def scrape_profile(url: str) -> dict:
         "email": data.get("email") or "",
         "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
         "tt": data.get("username") if data.get("platform") == "tiktok" else "",
-        "igFollowers": (
-            data.get("followers") if data.get("platform") == "instagram" else int(data.get("ig_followers_from_ig") or 0)
-        ),
-        "ttFollowers": data.get("followers") if data.get("platform") == "tiktok" else 0,
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
         "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
     }
+    
+    # For link aggregator platforms, add the source URL
+    if data.get("platform") == "link_aggregator":
+        out["linkAggregatorUrl"] = data.get("source_url") or ""
+    # Add average views if present
+    if "ttAvgViews" in data:
+        out["ttAvgViews"] = data["ttAvgViews"]
+    if "igAvgViews" in data:
+        out["igAvgViews"] = data["igAvgViews"]
 
     # Normalize bad IG handle '@media' → treat as not found
     try:

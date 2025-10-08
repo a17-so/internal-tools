@@ -1,4 +1,21 @@
 
+### Google Sheets Schema
+
+The outreach tool tracks creator outreach in Google Sheets with the following columns:
+
+| Column | Field | Description |
+|--------|-------|-------------|
+| A | Name | Creator's display name |
+| B | Instagram @ | Instagram handle (with hyperlink) |
+| C | TikTok @ | TikTok handle (with hyperlink) |
+| D | Email | Creator's email address |
+| E | Average Views (Instagram) | Average Instagram post views |
+| F | Average Views (TikTok) | Average TikTok video views |
+| G | Status | Outreach status (Sent, Followup Sent, etc.) |
+| H | Sent from Email | Email address used for outreach |
+| I | Sent from IG @ | Instagram account used for DM |
+| J | Sent from TT @ | TikTok account used for DM |
+| K | Initial Outreach Date | Date/time when first outreach was sent |
 
 ### Local Run Command
 
@@ -16,15 +33,14 @@ python3 -m flask --app index  run --host 0.0.0.0 --port 8000
 
 ```
 
-gcloud run deploy outreach-tool-api \                       
+gcloud run deploy outreach-tool-api \
   --source /Users/abhay/Desktop/internal-tools/outreach-tool \
-  --region=us-central1 \
-  --platform=managed \
+  --region us-central1 \
+  --platform managed \
   --allow-unauthenticated \
-  --timeout=60 \
-  --concurrency=8 \
-  --min-instances=1 \
-  --set-secrets=GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:1 \
-  --set-env-vars '^|^SHEETS_SPREADSHEET_ID=1xJtBo5T4hXTGu1kEMdr-GVa1QFLFdcQDtnX9JkOM-Ys|OUTREACH_APPS_JSON={"default":{"sheets_spreadsheet_id":"1xJtBo5T4hXTGu1kEMdr-GVa1QFLFdcQDtnX9JkOM-Ys","gmail_sender":"abhay@a17.so","delegated_user":"abhay@a17.so","link_url":"https://a17.so","from_name":"Abhay Chebium"},"pretti":{"sheets_spreadsheet_id":"1xJtBo5T4hXTGu1kEMdr-GVa1QFLFdcQDtnX9JkOM-Ys","gmail_sender":"abhay@a17.so","delegated_user":"abhay@a17.so","link_url":"https://a17.so","from_name":"Abhay Chebium"},"lifemaxx":{"sheets_spreadsheet_id":"1qY3dyWpGV1oTvP3a-bz7sN3uoVUWhDWHStkJdaMzSHs","gmail_sender":"advaith@a17.so","delegated_user":"advaith@a17.so","link_url":"https://a17.so","from_name":"Advaith Akella"},"rizzard":{"sheets_spreadsheet_id":"18yDsu35QZSmhGDiEaQLR26sBzNE--v5xi5TAdW8d7n4","gmail_sender":"ethan@a17.so","delegated_user":"ethan@a17.so","link_url":"https://a17.so","from_name":"Ethan Leonard"}}'
+  --timeout 60 \
+  --concurrency 8 \
+  --min-instances 1 \
+  --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:1
 
 ```

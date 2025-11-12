@@ -1,0 +1,12 @@
+hey {username},
+
+this is my final follow-up about the {app_name} collaboration.
+
+if you're interested, great! if not, no worries at all - I'll stop reaching out.
+
+just leaving this here because your audience would genuinely benefit.
+
+thanks for your time!
+
+-{from_name} from the {app_name} App ({link_url})
+

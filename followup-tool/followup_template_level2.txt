@@ -1,0 +1,12 @@
+hey {username},
+
+hope you're doing well! just wanted to follow up one more time about the {app_name} collaboration.
+
+we think you'd be perfect for this and would love to work with you. no pressure if you're not interested!
+
+it meaningfully serves your audience's confidence and routines.
+
+let me know either way :)
+
+-{from_name} from the {app_name} App ({link_url})
+

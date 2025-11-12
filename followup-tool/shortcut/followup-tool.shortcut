@@ -1,0 +1,31 @@
+{
+  "WFWorkflowClientVersion": "1110",
+  "WFWorkflowClientRelease": "2.1",
+  "WFWorkflowImportQuestions": [],
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.run shell script",
+      "WFWorkflowActionParameters": {
+        "WFShellScriptAction": "cd /Users/adzter/internal-tools/followup-tool && python3 followup_gmail.py --profile pretti --arc",
+        "WFShellScriptActionRunAsAdministrator": false
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.showresult",
+      "WFWorkflowActionParameters": {
+        "Text": {
+          "Value": {
+            "Type": "Variable",
+            "VariableName": "Shell Script Result"
+          }
+        }
+      }
+    }
+  ],
+  "WFWorkflowTypes": ["ActionExtension"],
+  "WFWorkflowIcon": {
+    "WFWorkflowIconGlyphNumber": 59768,
+    "WFWorkflowIconColor": 0
+  },
+  "WFWorkflowName": "Follow-up Tool"
+}

@@ -3,12 +3,24 @@
 # Template variables: {username}, {app_name}, {from_name}, {link_url}
 
 profiles:
-  pretti:
+  advaith:
     gmail_sender: "abhay@a17.so"
     from_name: "Advaith"
     link_url: "https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903"
     app_name: "Pretti"
+  
+  abhay:
+    gmail_sender: "abhay@a17.so"
+    from_name: "Abhay"
+    link_url: "https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903"
+    app_name: "Pretti"
+  
+  ethan:
+    gmail_sender: "abhay@a17.so"
+    from_name: "Ethan"
+    link_url: "https://apps.apple.com/us/app/pretti-ai-makeup-assistant/id6749188903"
+    app_name: "Pretti"
 
 # Default profile to use if not specified
-default_profile: "pretti"
+default_profile: "advaith"
 

@@ -88,6 +88,7 @@ class GmailFollowUp:
         self._sent_search_initialized = False
         self._last_search_query: Optional[str] = None
         self._in_thread_view = False
+        self._is_paginating = False  # Flag to prevent re-search during pagination
         self.followup_markers: Dict[int, List[str]] = {}
         
         # Load profile config
@@ -323,7 +324,9 @@ class GmailFollowUp:
         
         self._in_thread_view = False
         
-        if not self._is_in_sent_list_view():
+        # Only navigate to sent folder if we're NOT in the middle of pagination
+        # During pagination, the back button should return us to the current page
+        if not self._is_in_sent_list_view() and not self._is_paginating:
             await self.go_to_sent_folder()
         
     async def navigate_to_gmail(self):
@@ -1563,67 +1566,249 @@ class GmailFollowUp:
         return formatted
     
     async def run(self, followup_templates: Dict[int, str], dry_run: bool = False, max_emails: Optional[int] = None):
-        """Run the follow-up process."""
+        """Run the follow-up process page by page."""
         try:
             await self.start_browser()
             await self.navigate_to_gmail()
             await self.go_to_sent_folder()
             
-            # Scan emails (will scroll to load more if needed)
-            # If max_emails is None, process ALL emails
-            emails = await self.get_sent_emails(limit=max_emails)
-            
             if max_emails:
                 print(f"Processing up to {max_emails} emails...")
             else:
-                print(f"Processing ALL {len(emails)} emails found in Sent folder...")
+                print(f"Processing ALL emails in Sent folder (page by page)...")
             
-            if not emails:
-                print("✓ No emails found that need follow-ups")
-                return
-            
-            print(f"\nFound {len(emails)} potential follow-up candidates")
-            
-            if dry_run:
-                print("\n🔍 DRY RUN MODE - No emails will be sent\n")
-                for i, email in enumerate(emails[:20], 1):
-                    date_str = email.get('date_text', 'unknown date')
-                    print(f"  {i}. {email['recipient']}: {email['subject']} ({date_str})")
-                if len(emails) > 20:
-                    print(f"  ... and {len(emails) - 20} more emails")
-                print(f"\nTotal: {len(emails)} emails would receive follow-ups")
-                return
-            
-            # Process each email - FAST VERSION
+            # Process page by page
             sent_count = 0
             failed_count = 0
+            total_processed = 0
+            page_num = 1
+            max_pages = 100  # Safety limit
             
-            for i, email in enumerate(emails, 1):
-                print(f"\n[{i}/{len(emails)}] Processing: {email['subject'][:50]}...")
-                
-                # Process email (detect level, extract username, send follow-up)
-                success, username, level = await self.process_email_fast(email, followup_templates)
-                
-                if success:
-                    sent_count += 1
-                    print(f"   ✓ Follow-up sent! (username: {username or 'unknown'}, level: {level})")
-                else:
-                    failed_count += 1
-                    print(f"   ⏭ Failed to send (error or skipped)")
-                
-                # Small delay between emails to avoid rate limiting
-                await asyncio.sleep(1)
+            # Set pagination flag to prevent accidental re-search during email processing
+            self._is_paginating = True
             
-            print(f"\n✓ Follow-up process complete!")
+            while page_num <= max_pages:
+                print(f"\n{'='*60}")
+                print(f"📄 PAGE {page_num}")
+                print(f"{'='*60}\n")
+                
+                # Get pagination info
+                pagination = await self.get_pagination_info()
+                if pagination:
+                    print(f"   Gmail showing: {pagination['current_start']}-{pagination['current_end']} of {pagination['total']}")
+                
+                # Wait for emails to load on current page
+                await asyncio.sleep(2)
+                
+                # Get emails from current page only
+                sender_email = (self.profile_config.get("gmail_sender") or "").lower()
+                email_data = await self.page.evaluate(
+                    """
+                    (args) => {
+                        const mainArea = document.querySelector('div[role=\"main\"]') || document.body;
+                        const rows = mainArea.querySelectorAll('tbody tr[role=\"row\"], tr[role=\"row\"]:has(td[role=\"gridcell\"])');
+                        const emails = [];
+                        
+                        for (let i = 0; i < rows.length; i++) {
+                            const row = rows[i];
+                            if (!row.querySelector('td')) continue;
+                            
+                            const text = row.innerText || row.textContent || '';
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length < 2 || text.trim().length < 10) continue;
+                            
+                            let subject = '';
+                            let maxLength = 0;
+                            for (let cell of cells) {
+                                const cellText = cell.innerText || '';
+                                if (cellText.length > maxLength && 
+                                    !cellText.match(/^\\d+[:]\\d+\\s*(AM|PM)$/i) &&
+                                    !cellText.match(/^\\s*[★☆✓]\\s*$/)) {
+                                    subject = cellText.trim();
+                                    maxLength = cellText.length;
+                                }
+                            }
+                            
+                            let dateText = '';
+                            for (let cell of Array.from(cells).reverse()) {
+                                const cellText = cell.innerText || '';
+                                if (cellText.match(/\\d+[:]\\d+|AM|PM|ago|day|week|month|Nov|Dec|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct/i)) {
+                                    dateText = cellText.trim();
+                                    break;
+                                }
+                            }
+                            
+                            let recipient = '';
+                            const emailMatch = text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}/);
+                            if (emailMatch) {
+                                recipient = emailMatch[0];
+                            }
+                            
+                            const threadId = row.getAttribute('data-legacy-thread-id') || row.dataset?.legacyThreadId || '';
+                            
+                            let displayName = '';
+                            const displaySelectors = ['.yW span[email]', '.yW span', 'span[email]', '.bA4 span', '.y2'];
+                            for (const sel of displaySelectors) {
+                                const el = row.querySelector(sel);
+                                if (el && el.innerText && el.innerText.trim().length > 0) {
+                                    displayName = el.innerText.trim();
+                                    break;
+                                }
+                            }
+                            
+                            if (subject || text.trim().length > 10) {
+                                emails.push({
+                                    index: i,
+                                    subject: subject.substring(0, 150) || '(no subject)',
+                                    recipient: recipient,
+                                    date_text: dateText,
+                                    row_text: text.substring(0, 300),
+                                    thread_id: threadId,
+                                    display_name: displayName
+                                });
+                            }
+                        }
+                        return emails;
+                    }
+                    """,
+                    {},
+                )
+                
+                # Process emails from JavaScript data
+                page_emails = []
+                for email_info in email_data:
+                    try:
+                        subject = email_info.get('subject', '').strip()
+                        recipient = email_info.get('recipient', '').strip()
+                        date_text = email_info.get('date_text', '').strip()
+                        row_text = email_info.get('row_text', '').strip()
+                        display_name = email_info.get('display_name', '').strip()
+                        username_hint = (
+                            self._extract_username_from_text(row_text)
+                            or self._extract_username_from_text(subject)
+                            or self._extract_username_from_text(display_name)
+                        )
+                        if not username_hint and recipient:
+                            username_hint = self._sanitize_username(recipient.split("@")[0])
+                        
+                        email_date = self._parse_email_date(date_text)
+                        if not email_date:
+                            email_date = datetime.now() - timedelta(days=1)
+                        
+                        days_old = (datetime.now() - email_date).days if email_date else 0
+                        
+                        page_emails.append({
+                            "recipient": recipient or "unknown",
+                            "subject": subject or "(no subject)",
+                            "date": email_date,
+                            "date_text": date_text or "unknown",
+                            "index": email_info['index'],
+                            "days_old": days_old,
+                            "page": page_num,
+                            "username_hint": username_hint,
+                            "thread_id": email_info.get('thread_id', '').strip(),
+                            "display_name": display_name,
+                        })
+                    except Exception as e:
+                        continue
+                
+                print(f"   Found {len(page_emails)} emails on this page")
+                
+                if not page_emails:
+                    print(f"   No emails found on page {page_num}, stopping.")
+                    break
+                
+                # DRY RUN: Just show what would be processed
+                if dry_run:
+                    print("\n   🔍 DRY RUN - Emails on this page:\n")
+                    for i, email in enumerate(page_emails, 1):
+                        date_str = email.get('date_text', 'unknown date')
+                        print(f"      {i}. {email['recipient']}: {email['subject'][:50]} ({date_str})")
+                    total_processed += len(page_emails)
+                    
+                    # Check if we should continue to next page
+                    if max_emails and total_processed >= max_emails:
+                        print(f"\n   ✓ Reached limit of {max_emails} emails")
+                        break
+                    
+                    # Try to go to next page
+                    if pagination and pagination['current_end'] >= pagination['total']:
+                        print(f"\n   ✓ Reached last page")
+                        break
+                    
+                    has_next = await self.go_to_next_page()
+                    if not has_next:
+                        print(f"\n   ✓ No more pages")
+                        break
+                    
+                    page_num += 1
+                    continue
+                
+                # REAL RUN: Process each email on this page
+                for i, email in enumerate(page_emails, 1):
+                    # Check if we've hit the max_emails limit
+                    if max_emails and total_processed >= max_emails:
+                        print(f"\n✓ Reached limit of {max_emails} emails")
+                        break
+                    
+                    print(f"\n[Page {page_num}, Email {i}/{len(page_emails)}] Processing: {email['subject'][:50]}...")
+                    
+                    # Make sure we're on the sent folder page before processing
+                    if not self._is_in_sent_list_view():
+                        print("   ⚠ Not in sent list view, navigating back...")
+                        await self.go_to_sent_folder()
+                        await asyncio.sleep(2)
+                    
+                    # Process email (detect level, extract username, send follow-up)
+                    success, username, level = await self.process_email_fast(email, followup_templates)
+                    
+                    if success:
+                        sent_count += 1
+                        print(f"   ✓ Follow-up sent! (username: {username or 'unknown'}, level: {level})")
+                    else:
+                        failed_count += 1
+                        print(f"   ⏭ Failed to send (error or skipped)")
+                    
+                    total_processed += 1
+                    
+                    # Small delay between emails to avoid rate limiting
+                    await asyncio.sleep(1)
+                
+                # Check if we've hit the max_emails limit
+                if max_emails and total_processed >= max_emails:
+                    print(f"\n✓ Reached limit of {max_emails} emails")
+                    break
+                
+                # Check if there's a next page
+                if pagination:
+                    if pagination['current_end'] >= pagination['total']:
+                        print(f"\n✓ Reached last page ({pagination['current_end']} of {pagination['total']})")
+                        break
+                
+                # Try to go to next page
+                print(f"\n   Moving to next page...")
+                has_next = await self.go_to_next_page()
+                if not has_next:
+                    print(f"   ✓ No more pages available")
+                    break
+                
+                page_num += 1
+            
+            print(f"\n{'='*60}")
+            print(f"✓ Follow-up process complete!")
             print(f"   Sent: {sent_count} follow-up emails")
             print(f"   Failed/Skipped: {failed_count} emails")
-            print(f"   Total processed: {len(emails)} emails")
+            print(f"   Total processed: {total_processed} emails across {page_num} page(s)")
+            print(f"{'='*60}\n")
             
         except Exception as e:
             print(f"✗ Error: {e}")
             import traceback
             traceback.print_exc()
         finally:
+            # Reset pagination flag
+            self._is_paginating = False
+            
             # Only close browser/context if we launched it ourselves
             # Don't close when connected to Arc browser
             if not self.use_arc:
@@ -1676,12 +1861,7 @@ async def main():
     parser.add_argument(
         "--profile",
         type=str,
-        help="Sender profile to use (e.g., 'pretti'). Defaults to profile in config.yaml"
-    )
-    parser.add_argument(
-        "--profile-advaith",
-        action="store_true",
-        help="Shortcut flag to use the 'profile_advaith' sender profile"
+        help="Sender profile to use ('advaith', 'abhay', or 'ethan'). Defaults to profile in config.yaml"
     )
     parser.add_argument(
         "--config",
@@ -1717,7 +1897,7 @@ also, your audience looks to you for guidance—{app_name} makes that guidance t
 """
     
     # Initialize and run
-    profile_name = args.profile or ("profile_advaith" if args.profile_advaith else None)
+    profile_name = args.profile
     
     tool = GmailFollowUp(
         followup_days=args.days,

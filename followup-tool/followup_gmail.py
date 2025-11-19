@@ -44,6 +44,7 @@ GENERIC_NAME_TOKENS = {
     "ya'll",
     "you",
     "unknown",
+    "me",  # Filter out "me" as it's not a valid username
 }
 
 USERNAME_REGEXES = [
@@ -800,6 +801,42 @@ class GmailFollowUp:
                             }
                         }
                         
+                        // Extract Gmail labels/tags
+                        let labels = [];
+                        const labelSelectors = [
+                            '.ar', // Label chip class
+                            '.at', // Another label class
+                            '.aZ', // Label badge class
+                            'span[aria-label*="Label:"]',
+                            'div[aria-label*="Label:"]',
+                            '.aZo', // Label container
+                            '[data-label-name]'
+                        ];
+                        
+                        for (const sel of labelSelectors) {
+                            const labelEls = row.querySelectorAll(sel);
+                            labelEls.forEach(el => {
+                                const labelText = el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('data-label-name') || '';
+                                if (labelText && labelText.trim()) {
+                                    // Clean up label text (remove "Label:" prefix if present)
+                                    let cleanLabel = labelText.trim().replace(/^Label:\s*/i, '');
+                                    if (cleanLabel && !labels.includes(cleanLabel)) {
+                                        labels.push(cleanLabel);
+                                    }
+                                }
+                            });
+                        }
+                        
+                        // Also check for labels in the row text directly
+                        const labelPattern = /\[([^\]]+)\]/g;
+                        let match;
+                        while ((match = labelPattern.exec(text)) !== null) {
+                            const labelText = match[1].trim();
+                            if (labelText && !labels.includes(labelText)) {
+                                labels.push(labelText);
+                            }
+                        }
+                        
                         if (subject || text.trim().length > 10) {
                             emails.push({
                                 index: i,
@@ -808,7 +845,8 @@ class GmailFollowUp:
                                 date_text: dateText,
                                 row_text: text.substring(0, 300),
                                 thread_id: threadId,
-                                display_name: displayName
+                                display_name: displayName,
+                                labels: labels
                             });
                         }
                     }
@@ -851,6 +889,7 @@ class GmailFollowUp:
                         "username_hint": username_hint,
                         "thread_id": email_info.get('thread_id', '').strip(),
                         "display_name": display_name,
+                        "labels": email_info.get('labels', []),  # Include labels/tags
                     })
                     processed_count += 1
                     page_emails_count += 1
@@ -1081,14 +1120,18 @@ class GmailFollowUp:
             
             highest_level = 0
             detected_name: Optional[str] = None
-            for msg in messages:
+            # Process messages in reverse order (most recent first) to get name from latest follow-up
+            for msg in reversed(messages):
                 if not msg.get("fromMe"):
                     continue
                 text = (msg.get("text") or "")
                 text_lower = text.lower()
-                name_candidate = self._extract_username_from_text(text)
-                if name_candidate:
-                    detected_name = name_candidate
+                # Extract name from this message (prioritize most recent)
+                if not detected_name:
+                    name_candidate = self._extract_username_from_text(text)
+                    if name_candidate:
+                        detected_name = name_candidate
+                # Check for follow-up level markers
                 for level in sorted(markers.keys(), reverse=True):
                     phrases = markers[level]
                     if any((phrase or "").lower() in text_lower for phrase in phrases):
@@ -1272,12 +1315,25 @@ class GmailFollowUp:
                     };
                     
                     const scanTexts = (texts) => {
-                        const pattern = /(hey|hi)\s+([a-z0-9_.''-]+)/i;
+                        // Try multiple patterns to catch usernames
+                        const patterns = [
+                            /(?:hey|hi|hello|heyyy|hiya|yo|sup)\s+@?([a-z0-9_.''-]{2,})/i,
+                            /^([a-z0-9_.''-]{2,})\s*[,–—-]/i,
+                            /@([a-z0-9_.''-]{2,})/i,
+                        ];
+                        
                         for (const text of texts) {
                             if (!text) continue;
-                            const match = text.match(pattern);
-                            if (match && match[2]) {
-                                return match[2];
+                            for (const pattern of patterns) {
+                                const match = text.match(pattern);
+                                if (match && match[1]) {
+                                    const candidate = match[1].trim();
+                                    // Filter out generic words
+                                    const generic = ['me', 'there', 'you', 'friend', 'friends', 'everyone', 'everybody'];
+                                    if (candidate && candidate.length >= 2 && !generic.includes(candidate.toLowerCase())) {
+                                        return candidate;
+                                    }
+                                }
                             }
                         }
                         return null;
@@ -1289,7 +1345,9 @@ class GmailFollowUp:
                     const fromMeTexts = [];
                     const otherTexts = [];
                     
-                    for (const msg of messages) {
+                    // Process messages in reverse order (most recent first)
+                    for (let i = messages.length - 1; i >= 0; i--) {
+                        const msg = messages[i];
                         const text = stripQuotes(msg);
                         if (!text) continue;
                         if (determineFromMe(msg)) {
@@ -1299,6 +1357,7 @@ class GmailFollowUp:
                         }
                     }
                     
+                    // Prioritize most recent follow-up (first in fromMeTexts since we reversed)
                     const name = scanTexts(fromMeTexts) || scanTexts(otherTexts);
                     return name ? name.trim() : null;
                 }
@@ -1307,14 +1366,28 @@ class GmailFollowUp:
             )
             
             username = self._sanitize_username(username)
+            
+            # If we didn't get a username from the thread, try extracting from the original email data
             if not username:
-                username = self._sanitize_username(email.get("display_name"))
+                # Try display name first (often has the Instagram handle)
+                display_name = email.get("display_name", "")
+                if display_name:
+                    username = self._sanitize_username(display_name)
+                    if not username:
+                        # Try extracting from display name text
+                        username = self._extract_username_from_text(display_name)
+                        username = self._sanitize_username(username)
+            
             if not username:
+                # Try username hint (extracted from subject/row text)
                 username = self._sanitize_username(email.get("username_hint"))
+            
             if not username:
+                # Try extracting from recipient email
                 recipient = (email.get("recipient") or "").strip()
                 if recipient:
                     username = self._sanitize_username(recipient.split("@")[0])
+            
             if not username:
                 username = "there"
                 print("   ⚠ Could not determine username from thread – defaulting to 'there'")
@@ -1780,6 +1853,16 @@ class GmailFollowUp:
                         break
                     
                     print(f"\n[Page {page_num}, Email {i}/{len(page_emails)}] Processing: {email['subject'][:50]}...")
+                    
+                    # Check for labels/tags on this email
+                    labels = email.get('labels', [])
+                    if labels:
+                        print(f"   🏷️  Found labels: {', '.join(labels)}")
+                        if 'pretti responses' in [l.lower() for l in labels]:
+                            print(f"   ✓✓✓ FOUND 'pretti responses' TAG! ✓✓✓")
+                    else:
+                        # Debug: show that we checked but found no labels
+                        print(f"   🏷️  No labels found (checked)")
                     
                     # Make sure we're on the sent folder page before processing
                     # Skip this check during pagination as we're already in the right place

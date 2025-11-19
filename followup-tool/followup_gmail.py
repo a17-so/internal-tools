@@ -269,18 +269,19 @@ class GmailFollowUp:
         if not self.page:
             return False
         url = (self.page.url or "").lower()
-        if "thread" in url:
+        # If URL contains "thread/" followed by a thread ID, we're in thread view
+        if re.search(r'thread/[a-f0-9]+', url):
             return False
         if "#" not in url:
             return False
         fragment = url.split("#", 1)[1]
-        fragment = fragment.split("?")[0]
-        if fragment.startswith("sent"):
-            remainder = fragment[len("sent"):]
-            return remainder == "" or remainder.startswith("?")
-        if fragment.startswith("search/"):
-            remainder = fragment[len("search/"):]
-            return remainder != "" and "/" not in remainder
+        # Remove query parameters for checking
+        fragment_base = fragment.split("?")[0]
+        if fragment_base.startswith("sent"):
+            return True
+        if fragment_base.startswith("search/"):
+            # Allow search URLs that don't have thread IDs
+            return "/" not in fragment_base[len("search/"):]
         return False
     
     async def _return_to_sent_list(self):
@@ -730,7 +731,7 @@ class GmailFollowUp:
             limit_val = limit if limit else 999999
             sender_email = (self.profile_config.get("gmail_sender") or "").lower()
             email_data = await self.page.evaluate(
-                """
+                r"""
                 (args) => {
                     const mainArea = document.querySelector('div[role=\"main\"]') || document.body;
                     const rows = mainArea.querySelectorAll('tbody tr[role=\"row\"], tr[role=\"row\"]:has(td[role=\"gridcell\"])');
@@ -751,8 +752,8 @@ class GmailFollowUp:
                         for (let cell of cells) {
                             const cellText = cell.innerText || '';
                             if (cellText.length > maxLength && 
-                                !cellText.match(/^\\d+[:]\\d+\\s*(AM|PM)$/i) &&
-                                !cellText.match(/^\\s*[★☆✓]\\s*$/)) {
+                                !cellText.match(/^\d+[:]\d+\s*(AM|PM)$/i) &&
+                                !cellText.match(/^\s*[★☆✓]\s*$/)) {
                                 subject = cellText.trim();
                                 maxLength = cellText.length;
                             }
@@ -1075,6 +1076,9 @@ class GmailFollowUp:
             if messages and not any(m.get("fromMe") for m in messages):
                 messages[0]["fromMe"] = True
             
+            # Count messages from us for debugging
+            my_messages = [m for m in messages if m.get("fromMe")]
+            
             highest_level = 0
             detected_name: Optional[str] = None
             for msg in messages:
@@ -1120,7 +1124,8 @@ class GmailFollowUp:
 
         try:
             # Verify we're still in sent folder before clicking
-            if not self._is_in_sent_list_view():
+            # Skip this check during pagination as we're already in the right place
+            if not self._is_paginating and not self._is_in_sent_list_view():
                 print("   ⚠ Not in sent folder, navigating...")
                 await self.go_to_sent_folder()
                 await asyncio.sleep(2)
@@ -1193,6 +1198,29 @@ class GmailFollowUp:
             except Exception:
                 pass
             
+            # Expand all collapsed messages in the thread before detecting level
+            try:
+                expanded = await self.page.evaluate(
+                    """
+                    () => {
+                        let count = 0;
+                        // Expand any collapsed messages
+                        const expanders = document.querySelectorAll('.ajT .ajV, .ajT span[role="link"], .ajT span[role="button"], span[role="button"][aria-label*="Show trimmed"]');
+                        expanders.forEach(btn => {
+                            try { 
+                                btn.click(); 
+                                count++;
+                            } catch (e) {}
+                        });
+                        return count;
+                    }
+                    """
+                )
+                if expanded > 0:
+                    await asyncio.sleep(1.5)  # Wait for expansion to complete
+            except:
+                pass
+            
             # Step 2: Detect follow-up level
             followup_level, followups_sent, detected_name = await self.detect_followup_level(thread_id)
             if followups_sent >= 3:
@@ -1204,7 +1232,7 @@ class GmailFollowUp:
             username = detected_name
             if not username:
                 username = await self.page.evaluate(
-            """
+            r"""
             (args) => {
                 const senderEmail = (args?.senderEmail || "").toLowerCase();
                 const senderName = (args?.senderName || "").toLowerCase();
@@ -1244,7 +1272,7 @@ class GmailFollowUp:
                     };
                     
                     const scanTexts = (texts) => {
-                        const pattern = /(hey|hi)\s+([a-z0-9_.'’-]+)/i;
+                        const pattern = /(hey|hi)\s+([a-z0-9_.''-]+)/i;
                         for (const text of texts) {
                             if (!text) continue;
                             const match = text.match(pattern);
@@ -1754,7 +1782,8 @@ class GmailFollowUp:
                     print(f"\n[Page {page_num}, Email {i}/{len(page_emails)}] Processing: {email['subject'][:50]}...")
                     
                     # Make sure we're on the sent folder page before processing
-                    if not self._is_in_sent_list_view():
+                    # Skip this check during pagination as we're already in the right place
+                    if not self._is_paginating and not self._is_in_sent_list_view():
                         print("   ⚠ Not in sent list view, navigating back...")
                         await self.go_to_sent_folder()
                         await asyncio.sleep(2)

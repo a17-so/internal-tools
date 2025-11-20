@@ -45,6 +45,8 @@ GENERIC_NAME_TOKENS = {
     "you",
     "unknown",
     "me",  # Filter out "me" as it's not a valid username
+    "a17",  # Filter out company name
+    "a17.so",  # Filter out company domain
 }
 
 USERNAME_REGEXES = [
@@ -85,7 +87,7 @@ class GmailFollowUp:
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         self.profile_config: Dict[str, str] = {}
-        self.sent_search_query = "in:sent PAID PROMO OPPORTUNITY - Pretti App"
+        self.sent_search_query = 'in:sent PAID PROMO OPPORTUNITY - Pretti App -label:"pretti responses"'
         self._sent_search_initialized = False
         self._last_search_query: Optional[str] = None
         self._in_thread_view = False
@@ -995,7 +997,7 @@ class GmailFollowUp:
         cleaned = (
             username.strip()
             .strip(",.!?;:\"'()[]{}<>")
-            .replace("’", "'")
+            .replace("'", "'")
             .replace("`", "'")
         )
         cleaned = re.sub(r"\s+", "", cleaned)
@@ -1006,6 +1008,23 @@ class GmailFollowUp:
             return None
         if cleaned.lower() in GENERIC_NAME_TOKENS:
             return None
+        
+        # Reject domain-like patterns (contains dots and looks like a domain)
+        if "." in cleaned:
+            # Common TLDs that indicate this is a domain, not a username
+            common_tlds = ['.com', '.net', '.org', '.io', '.so', '.co', '.app', '.dev', '.ai', '.me']
+            cleaned_lower = cleaned.lower()
+            for tld in common_tlds:
+                if cleaned_lower.endswith(tld):
+                    return None
+            # If it has a dot and is short (likely a domain like "a17.so")
+            if len(cleaned) <= 10 and "." in cleaned:
+                return None
+        
+        # Reject patterns that look like email domains (e.g., "a17.so", "gmail.com")
+        if re.match(r'^[a-z0-9]+\.(com|net|org|io|so|co|app|dev|ai|me)$', cleaned.lower()):
+            return None
+        
         if len(cleaned) < 2 or len(cleaned) > 30:
             return None
         return cleaned
@@ -1271,8 +1290,44 @@ class GmailFollowUp:
                 return False, None, followup_level
             print(f"   📊 Detected follow-up level: {followup_level}")
             
-            # Step 3: Extract username intelligently from the thread
-            username = detected_name
+            # Step 3: Extract username intelligently - PRIORITIZE current email's subject/row text FIRST
+            # This prevents reusing old usernames from previous follow-ups in the thread
+            username = None
+            
+            # FIRST: Try to extract from the current email's subject/row text (most reliable)
+            username_hint = email.get("username_hint")
+            if username_hint:
+                username = self._sanitize_username(username_hint)
+                if username:
+                    print(f"   📝 Found username from subject/row: {username}")
+                else:
+                    print(f"   ⚠ Username hint found but rejected after sanitization: {username_hint}")
+            else:
+                # Debug: show what we're working with
+                subject = email.get("subject", "")[:50]
+                row_text = email.get("row_text", "")[:100] if email.get("row_text") else ""
+                print(f"   🔍 No username_hint. Subject: {subject}, Row text preview: {row_text}")
+            
+            # SECOND: Try display name from the email row
+            if not username:
+                display_name = email.get("display_name", "")
+                if display_name:
+                    username = self._sanitize_username(display_name)
+                    if not username:
+                        username = self._extract_username_from_text(display_name)
+                        username = self._sanitize_username(username)
+                    if username:
+                        print(f"   📝 Found username from display name: {username}")
+            
+            # THIRD: Try detected_name from detect_followup_level (might have old username)
+            if not username:
+                username = detected_name
+                if username:
+                    username = self._sanitize_username(username)
+                    if username:
+                        print(f"   📝 Found username from thread detection: {username}")
+            
+            # FOURTH: Try extracting from thread messages (last resort - might have old usernames)
             if not username:
                 username = await self.page.evaluate(
             r"""
@@ -1322,15 +1377,32 @@ class GmailFollowUp:
                             /@([a-z0-9_.''-]{2,})/i,
                         ];
                         
+                        // Helper to check if candidate looks like a domain
+                        const isDomainLike = (candidate) => {
+                            const lower = candidate.toLowerCase();
+                            // Reject if it contains a dot and ends with common TLD
+                            const commonTlds = ['.com', '.net', '.org', '.io', '.so', '.co', '.app', '.dev', '.ai', '.me'];
+                            for (const tld of commonTlds) {
+                                if (lower.endsWith(tld)) return true;
+                            }
+                            // Reject short strings with dots (likely domains like "a17.so")
+                            if (candidate.includes('.') && candidate.length <= 10) return true;
+                            // Reject domain patterns
+                            if (/^[a-z0-9]+\.(com|net|org|io|so|co|app|dev|ai|me)$/i.test(candidate)) return true;
+                            return false;
+                        };
+                        
                         for (const text of texts) {
                             if (!text) continue;
                             for (const pattern of patterns) {
                                 const match = text.match(pattern);
                                 if (match && match[1]) {
                                     const candidate = match[1].trim();
-                                    // Filter out generic words
-                                    const generic = ['me', 'there', 'you', 'friend', 'friends', 'everyone', 'everybody'];
-                                    if (candidate && candidate.length >= 2 && !generic.includes(candidate.toLowerCase())) {
+                                    // Filter out generic words and domain-like patterns
+                                    const generic = ['me', 'there', 'you', 'friend', 'friends', 'everyone', 'everybody', 'a17', 'a17.so'];
+                                    if (candidate && candidate.length >= 2 && 
+                                        !generic.includes(candidate.toLowerCase()) &&
+                                        !isDomainLike(candidate)) {
                                         return candidate;
                                     }
                                 }
@@ -1364,29 +1436,26 @@ class GmailFollowUp:
                 """,
                 {"senderEmail": sender_email, "senderName": sender_name},
             )
+                username = self._sanitize_username(username)
+                if username:
+                    print(f"   📝 Found username from thread messages: {username}")
             
-            username = self._sanitize_username(username)
-            
-            # If we didn't get a username from the thread, try extracting from the original email data
+            # LAST RESORT: Try extracting from recipient email (but be careful - only if it looks like a real username)
             if not username:
-                # Try display name first (often has the Instagram handle)
-                display_name = email.get("display_name", "")
-                if display_name:
-                    username = self._sanitize_username(display_name)
-                    if not username:
-                        # Try extracting from display name text
-                        username = self._extract_username_from_text(display_name)
-                        username = self._sanitize_username(username)
-            
-            if not username:
-                # Try username hint (extracted from subject/row text)
-                username = self._sanitize_username(email.get("username_hint"))
-            
-            if not username:
-                # Try extracting from recipient email
                 recipient = (email.get("recipient") or "").strip()
                 if recipient:
-                    username = self._sanitize_username(recipient.split("@")[0])
+                    email_local = recipient.split("@")[0]
+                    # Only use email local part if it doesn't look like a domain/company name
+                    # and is reasonable length (not too short, not too long)
+                    if email_local and len(email_local) >= 3 and len(email_local) <= 25:
+                        # Check if it's not obviously a domain-like pattern
+                        if not re.match(r'^[a-z0-9]+\.(com|net|org|io|so|co|app|dev|ai|me)$', email_local.lower()):
+                            username = self._sanitize_username(email_local)
+                            # Double-check it's not a domain-like pattern after sanitization
+                            if username and "." in username and len(username) <= 10:
+                                username = None  # Reject short domain-like patterns
+                            if username:
+                                print(f"   📝 Found username from recipient email: {username}")
             
             if not username:
                 username = "there"
@@ -1681,7 +1750,9 @@ class GmailFollowUp:
             # Process page by page
             sent_count = 0
             failed_count = 0
-            total_processed = 0
+            skipped_count = 0  # Emails skipped due to tags
+            total_processed = 0  # Total emails examined (including skipped)
+            total_attempted = 0  # Emails actually attempted (excluding skipped)
             page_num = 1
             max_pages = 100  # Safety limit
             
@@ -1704,7 +1775,7 @@ class GmailFollowUp:
                 # Get emails from current page only
                 sender_email = (self.profile_config.get("gmail_sender") or "").lower()
                 email_data = await self.page.evaluate(
-                    """
+                    r"""
                     (args) => {
                         const mainArea = document.querySelector('div[role=\"main\"]') || document.body;
                         const rows = mainArea.querySelectorAll('tbody tr[role=\"row\"], tr[role=\"row\"]:has(td[role=\"gridcell\"])');
@@ -1757,6 +1828,42 @@ class GmailFollowUp:
                                 }
                             }
                             
+                            // Extract Gmail labels/tags
+                            let labels = [];
+                            const labelSelectors = [
+                                '.ar', // Label chip class
+                                '.at', // Another label class
+                                '.aZ', // Label badge class
+                                'span[aria-label*="Label:"]',
+                                'div[aria-label*="Label:"]',
+                                '.aZo', // Label container
+                                '[data-label-name]'
+                            ];
+                            
+                            for (const sel of labelSelectors) {
+                                const labelEls = row.querySelectorAll(sel);
+                                labelEls.forEach(el => {
+                                    const labelText = el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('data-label-name') || '';
+                                    if (labelText && labelText.trim()) {
+                                        // Clean up label text (remove "Label:" prefix if present)
+                                        let cleanLabel = labelText.trim().replace(/^Label:\s*/i, '');
+                                        if (cleanLabel && !labels.includes(cleanLabel)) {
+                                            labels.push(cleanLabel);
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            // Also check for labels in the row text directly
+                            const labelPattern = /\[([^\]]+)\]/g;
+                            let match;
+                            while ((match = labelPattern.exec(text)) !== null) {
+                                const labelText = match[1].trim();
+                                if (labelText && !labels.includes(labelText)) {
+                                    labels.push(labelText);
+                                }
+                            }
+                            
                             if (subject || text.trim().length > 10) {
                                 emails.push({
                                     index: i,
@@ -1765,7 +1872,8 @@ class GmailFollowUp:
                                     date_text: dateText,
                                     row_text: text.substring(0, 300),
                                     thread_id: threadId,
-                                    display_name: displayName
+                                    display_name: displayName,
+                                    labels: labels
                                 });
                             }
                         }
@@ -1809,6 +1917,7 @@ class GmailFollowUp:
                             "username_hint": username_hint,
                             "thread_id": email_info.get('thread_id', '').strip(),
                             "display_name": display_name,
+                            "labels": email_info.get('labels', []),  # Include labels/tags
                         })
                     except Exception as e:
                         continue
@@ -1819,13 +1928,27 @@ class GmailFollowUp:
                     print(f"   No emails found on page {page_num}, stopping.")
                     break
                 
+                # Initialize page counters
+                page_skipped = 0
+                page_attempted = 0
+                
                 # DRY RUN: Just show what would be processed
                 if dry_run:
                     print("\n   🔍 DRY RUN - Emails on this page:\n")
+                    page_skipped_dry = 0
                     for i, email in enumerate(page_emails, 1):
                         date_str = email.get('date_text', 'unknown date')
-                        print(f"      {i}. {email['recipient']}: {email['subject'][:50]} ({date_str})")
+                        labels = email.get('labels', [])
+                        label_str = f" [Labels: {', '.join(labels)}]" if labels else ""
+                        skip_marker = ""
+                        if labels and 'pretti responses' in [l.lower() for l in labels]:
+                            skip_marker = " ⏭ SKIP"
+                            page_skipped_dry += 1
+                        print(f"      {i}. {email['recipient']}: {email['subject'][:50]} ({date_str}){label_str}{skip_marker}")
                     total_processed += len(page_emails)
+                    skipped_count += page_skipped_dry
+                    print(f"\n   📊 DRY RUN Page {page_num} Summary:")
+                    print(f"      Would attempt: {len(page_emails) - page_skipped_dry} | Would skip (tagged): {page_skipped_dry} | Total on page: {len(page_emails)}")
                     
                     # Check if we should continue to next page
                     if max_emails and total_processed >= max_emails:
@@ -1854,15 +1977,23 @@ class GmailFollowUp:
                     
                     print(f"\n[Page {page_num}, Email {i}/{len(page_emails)}] Processing: {email['subject'][:50]}...")
                     
-                    # Check for labels/tags on this email
+                    # Check for labels/tags on this email - skip if "pretti responses" tag is present
                     labels = email.get('labels', [])
                     if labels:
                         print(f"   🏷️  Found labels: {', '.join(labels)}")
                         if 'pretti responses' in [l.lower() for l in labels]:
-                            print(f"   ✓✓✓ FOUND 'pretti responses' TAG! ✓✓✓")
+                            print(f"   ⏭ Skipping email - has 'pretti responses' tag")
+                            skipped_count += 1
+                            page_skipped += 1
+                            total_processed += 1
+                            continue
                     else:
                         # Debug: show that we checked but found no labels
                         print(f"   🏷️  No labels found (checked)")
+                    
+                    # If we get here, we're actually attempting to process this email
+                    total_attempted += 1
+                    page_attempted += 1
                     
                     # Make sure we're on the sent folder page before processing
                     # Skip this check during pagination as we're already in the right place
@@ -1885,6 +2016,10 @@ class GmailFollowUp:
                     
                     # Small delay between emails to avoid rate limiting
                     await asyncio.sleep(1)
+                
+                # Print page statistics
+                print(f"\n   📊 Page {page_num} Summary:")
+                print(f"      Attempted: {page_attempted} | Skipped (tagged): {page_skipped} | Total on page: {len(page_emails)}")
                 
                 # Check if we've hit the max_emails limit
                 if max_emails and total_processed >= max_emails:
@@ -1909,8 +2044,10 @@ class GmailFollowUp:
             print(f"\n{'='*60}")
             print(f"✓ Follow-up process complete!")
             print(f"   Sent: {sent_count} follow-up emails")
-            print(f"   Failed/Skipped: {failed_count} emails")
-            print(f"   Total processed: {total_processed} emails across {page_num} page(s)")
+            print(f"   Failed: {failed_count} emails")
+            print(f"   Skipped (tagged): {skipped_count} emails")
+            print(f"   Attempted: {total_attempted} emails (excluding skipped)")
+            print(f"   Total examined: {total_processed} emails across {page_num} page(s)")
             print(f"{'='*60}\n")
             
         except Exception as e:

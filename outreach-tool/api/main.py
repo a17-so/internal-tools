@@ -123,6 +123,7 @@ CATEGORY_TO_SHEET = {
     "submicro": "Submicros",
     "ambassador": "Ambassadors",
     "themepage": "Theme Pages",
+    "rawlead": "Raw Leads",
 }
 
 # Cache for sheetId lookups (key: (spreadsheet_id, sheet_name) -> sheetId)
@@ -237,6 +238,15 @@ def _get_app_config(app_key: Optional[str]) -> Dict[str, str]:
 
     merged["app_key"] = key
     
+    # Ensure sender_profiles is a dict if present
+    if "sender_profiles" not in merged:
+        merged["sender_profiles"] = {}
+    elif isinstance(merged["sender_profiles"], str):
+         try:
+             merged["sender_profiles"] = json.loads(merged["sender_profiles"])
+         except:
+             merged["sender_profiles"] = {}
+
     _log("config.app_config_final",
          app_key=key,
          final_gmail_sender=merged.get("gmail_sender"),
@@ -261,6 +271,8 @@ def _normalize_category(category: str) -> str:
         return "ambassador"
     if c.replace(" ", "") in {"themepage", "themepages", "themecreator", "themepagecreator"} or c.startswith("theme page"):
         return "themepage"
+    if c.replace(" ", "") in {"rawlead", "rawleads"} or c.startswith("raw lead"):
+        return "rawlead"
     return c
 
 
@@ -681,7 +693,7 @@ def _check_creator_exists_across_all_sheets(spreadsheet_id: str, ig_handle: str,
         return {"exists": False, "error": "No spreadsheet ID provided"}
     
     # Check all subtabs
-    all_sheets = ["Macros", "Micros", "Submicros", "Ambassadors", "Theme Pages"]
+    all_sheets = ["Macros", "Micros", "Submicros", "Ambassadors", "Theme Pages", "Raw Leads"]
     
     for sheet_name in all_sheets:
         result = _check_creator_exists(spreadsheet_id, sheet_name, ig_handle, tt_handle, delegated_user)
@@ -692,6 +704,36 @@ def _check_creator_exists_across_all_sheets(spreadsheet_id: str, ig_handle: str,
     
     _log("sheets.check_all_sheets.not_found")
     return {"exists": False}
+
+
+def _check_creator_exists_in_raw_leads(spreadsheet_id: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
+    """Fast duplicate check ONLY in Raw Leads sheet for performance.
+    
+    This is used specifically for raw leads to avoid checking all sheets.
+    
+    Returns:
+        {
+            "exists": bool,
+            "row_index": int or None (1-based row number),
+            "email_message_id": str or None (for threading),
+            "status": str or None (current status in sheet),
+            "initial_outreach_date": str or None (date of initial outreach)
+        }
+    """
+    if not spreadsheet_id:
+        return {"exists": False, "error": "No spreadsheet ID provided"}
+    
+    _log("sheets.check_raw_leads_only.start", ig=ig_handle, tt=tt_handle)
+    result = _check_creator_exists(spreadsheet_id, "Raw Leads", ig_handle, tt_handle, delegated_user)
+    
+    if result.get("exists", False):
+        result["sheet_name"] = "Raw Leads"
+        _log("sheets.check_raw_leads_only.found", row_index=result.get("row_index"), status=result.get("status"))
+    else:
+        _log("sheets.check_raw_leads_only.not_found")
+    
+    return result
+
 
 
 def _get_email_from_existing_row(spreadsheet_id: str, sheet_name: str, row_index: int, delegated_user: Optional[str] = None) -> str:
@@ -736,6 +778,122 @@ def _update_sheet_row(spreadsheet_id: str, sheet_name: str, row_index: int, row_
         return {"ok": True, "result": resp}
     except Exception as e:
         _log("sheets.update.error", error=str(e))
+        return {"ok": False, "error": str(e)}
+
+
+
+
+def col_num_to_letter(n):
+    """Convert 0-based column index to Excel-style letter (0->A, 25->Z, 26->AA)."""
+    result = ""
+    while n >= 0:
+        result = chr(n % 26 + ord('A')) + result
+        n = n // 26 - 1
+    return result
+
+
+def _append_url_to_raw_leads_column(spreadsheet_id: str, url: str, sender_name: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
+    """Append URL to a column in Raw Leads sheet with header format 'Jan 17 (Abhay)'.
+    
+    Creates a new column if one doesn't exist for today + sender.
+    Checks for duplicates within the column.
+    
+    Args:
+        spreadsheet_id: Google Sheets spreadsheet ID
+        url: The URL to append
+        sender_name: Name of the sender (e.g., "Abhay", "Ethan")
+        delegated_user: Optional delegated user for service account
+        
+    Returns:
+        {"ok": bool, "column_header": str, "row_added": int, "error": str}
+    """
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("rawleads.column.no_client")
+        return {"ok": False, "error": "Sheets client not configured"}
+    
+    # Generate column header: "Jan 17 (Abhay)"
+    date_str = datetime.now().strftime("%b %d")  # "Jan 17"
+    column_header = f"{date_str} ({sender_name})"
+    
+    try:
+        # Step 1: Read the first row (headers) to find or create the column
+        _log("rawleads.column.read_headers", spreadsheet_id=spreadsheet_id, header=column_header)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range="Raw Leads!1:1"
+        ).execute()
+        
+        headers = result.get("values", [[]])[0] if result.get("values") else []
+        
+        # Find column index (0-based)
+        column_index = None
+        for idx, header in enumerate(headers):
+            if header == column_header:
+                column_index = idx
+                break
+        
+        # If column doesn't exist, create it
+        if column_index is None:
+            column_index = len(headers)  # Add to the end
+            _log("rawleads.column.create_new", column_index=column_index, header=column_header)
+            
+            col_letter = col_num_to_letter(column_index)
+            
+            # Write header
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"Raw Leads!{col_letter}1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[column_header]]}
+            ).execute()
+            _log("rawleads.column.header_created", column=col_letter, header=column_header)
+        else:
+            _log("rawleads.column.found_existing", column_index=column_index, header=column_header)
+        
+        # Step 2: Read all values in this column to check for duplicates and find next empty row
+        col_letter = col_num_to_letter(column_index)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"Raw Leads!{col_letter}:{col_letter}"
+        ).execute()
+        
+        column_values = result.get("values", [])
+        
+        # Check for duplicates (skip header row)
+        for idx, row in enumerate(column_values[1:], start=2):
+            if row and len(row) > 0 and row[0] == url:
+                _log("rawleads.column.duplicate_found", url=url, row=idx)
+                return {
+                    "ok": False,
+                    "error": "Duplicate URL",
+                    "message": f"URL already exists in column '{column_header}' at row {idx}",
+                    "column_header": column_header,
+                    "duplicate_row": idx
+                }
+        
+        # Find next empty row (add 1 because we're 1-indexed)
+        next_row = len(column_values) + 1
+        
+        # Step 3: Append URL to the column
+        _log("rawleads.column.append_url", column=col_letter, row=next_row, url=url)
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"Raw Leads!{col_letter}{next_row}",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[url]]}
+        ).execute()
+        
+        _log("rawleads.column.success", column_header=column_header, row=next_row)
+        return {
+            "ok": True,
+            "column_header": column_header,
+            "row_added": next_row,
+            "column_letter": col_letter
+        }
+        
+    except Exception as e:
+        _log("rawleads.column.error", error=str(e))
         return {"ok": False, "error": str(e)}
 
 
@@ -994,6 +1152,7 @@ def warmup():
 
 
 @app.post("/scrape")
+@app.post("/add_raw_leads")
 def scrape_endpoint():
     # Determine which app context to use
     app_key_from_query = (request.args.get("app") or request.args.get("app_name") or "").strip()
@@ -1008,7 +1167,11 @@ def scrape_endpoint():
     app_key = (payload.get("app") or payload.get("app_name") or app_key_from_query or "").strip()
     app_cfg = _get_app_config(app_key)
     url = payload.get("tiktok_url") or payload.get("url") or ""
+    
     category = payload.get("category") or ""
+    # Default to "rawlead" for legacy /add_raw_leads endpoint if category missing
+    if not category and request.path.endswith("/add_raw_leads"):
+        category = "rawlead"
     # New single personalization field; keep backward-compat with p1/p2
     legacy_p1 = payload.get("p1") or payload.get("personalization1") or ""
     legacy_p2 = payload.get("p2") or payload.get("personalization2") or ""
@@ -1017,6 +1180,40 @@ def scrape_endpoint():
         parts = [p for p in [legacy_p1, legacy_p2] if p]
         personalization = "\n".join(parts)
 
+    # Valid keys: "sender", "sender_profile", "profile"
+    sender_profile_key = (payload.get("sender_profile") or payload.get("sender") or payload.get("profile") or "").strip().lower()
+    
+    # Override app_cfg with sender profile if found
+    sender_override_log = {}
+    if sender_profile_key:
+        profiles = app_cfg.get("sender_profiles") or {}
+        # Try exact match or case-insensitive match
+        matched_profile = profiles.get(sender_profile_key)
+        if not matched_profile and isinstance(profiles, dict):
+             for k, v in profiles.items():
+                 if k.lower() == sender_profile_key:
+                     matched_profile = v
+                     break
+        
+        if matched_profile and isinstance(matched_profile, dict):
+            # Apply overrides
+            if matched_profile.get("email"):
+                app_cfg["gmail_sender"] = matched_profile["email"]
+                # Usually delegated user matches the email for these individual profiles
+                app_cfg["delegated_user"] = matched_profile["email"]
+            if matched_profile.get("name"):
+                app_cfg["from_name"] = matched_profile["name"]
+            if matched_profile.get("instagram"):
+                 app_cfg["instagram_account"] = matched_profile["instagram"]
+            if matched_profile.get("tiktok"):
+                 app_cfg["tiktok_account"] = matched_profile["tiktok"]
+            
+            sender_override_log = {
+                "profile_key": sender_profile_key,
+                "new_sender": app_cfg["gmail_sender"],
+                "new_ig": app_cfg.get("instagram_account")
+            }
+
     _log(
         "scrape.request",
         app_key=app_cfg.get("app_key"),
@@ -1024,6 +1221,7 @@ def scrape_endpoint():
         has_sender=bool(app_cfg.get("gmail_sender")),
         has_delegated=bool(app_cfg.get("delegated_user")),
         category=category,
+        sender_profile_override=sender_override_log
     )
     if not url:
         return jsonify({"error": "Missing tiktok_url or url"}), 400
@@ -1051,11 +1249,78 @@ def scrape_endpoint():
     except Exception:
         pass
     
-    # Check if creator already exists across ALL sheets before scraping
+    
+    # RAW LEADS: Use column-based approach (skip scraping, just save URL)
+    if cat_key_normalized == "rawlead":
+        if not spreadsheet_id:
+            return jsonify({"error": "No spreadsheet configured"}), 500
+        
+        # IMPORTANT: Check if creator exists in ANY sheet (Macros, Micros, Ambassadors, Theme Pages, Raw Leads)
+        # If they exist anywhere, reject the raw lead
+        if ig_handle_from_url or tt_handle_from_url:
+            existing_data = _check_creator_exists_across_all_sheets(
+                spreadsheet_id,
+                ig_handle_from_url,
+                tt_handle_from_url,
+                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+            )
+            
+            if existing_data.get("exists", False):
+                _log(
+                    "rawlead.duplicate_rejected_across_sheets",
+                    ig=ig_handle_from_url,
+                    tt=tt_handle_from_url,
+                    found_in_sheet=existing_data.get("sheet_name"),
+                    row_index=existing_data.get("row_index")
+                )
+                return jsonify({
+                    "error": "Creator already exists",
+                    "message": f"This creator already exists in '{existing_data.get('sheet_name')}' sheet",
+                    "ig_handle": ig_handle_from_url,
+                    "tt_handle": tt_handle_from_url,
+                    "sheet_name": existing_data.get("sheet_name"),
+                    "row_index": existing_data.get("row_index"),
+                    "status": existing_data.get("status")
+                }), 409  # 409 Conflict
+        
+        # Get sender name from sender_profile or default to "Unknown"
+        sender_name = sender_profile_key.capitalize() if sender_profile_key else "Unknown"
+        
+        # Append URL to column (handles duplicate URL detection within the column)
+        _log("rawlead.column_append", url=url, sender=sender_name)
+        result = _append_url_to_raw_leads_column(
+            spreadsheet_id,
+            url,
+            sender_name,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None
+        )
+        
+        if not result.get("ok"):
+            # Duplicate URL in same column or error
+            return jsonify({
+                "error": result.get("error", "Failed to add raw lead"),
+                "message": result.get("message", ""),
+                "column_header": result.get("column_header"),
+                "duplicate_row": result.get("duplicate_row")
+            }), 409 if result.get("error") == "Duplicate URL" else 500
+        
+        # Success - return simple response
+        _log("rawlead.success", column=result.get("column_header"), row=result.get("row_added"))
+        return jsonify({
+            "ok": True,
+            "message": "Raw lead added successfully",
+            "column_header": result.get("column_header"),
+            "row_added": result.get("row_added"),
+            "url": url
+        })
+    
+    # OTHER CATEGORIES: Use existing row-based approach with scraping
     is_followup = False
     existing_data = {"exists": False}
     followup_number = 1
+    
     if spreadsheet_id and (ig_handle_from_url or tt_handle_from_url):
+        # Check across all sheets (existing behavior)
         existing_data = _check_creator_exists_across_all_sheets(
             spreadsheet_id,
             ig_handle_from_url,
@@ -1065,8 +1330,10 @@ def scrape_endpoint():
         is_followup = existing_data.get("exists", False)
         if is_followup:
             followup_number = _get_followup_number_from_status(existing_data.get("status"))
+        
         _log(
             "scrape.pre_check",
+            category=cat_key_normalized,
             is_followup=is_followup,
             followup_number=followup_number,
             row_index=existing_data.get("row_index"),
@@ -1074,6 +1341,7 @@ def scrape_endpoint():
             sheet_name=existing_data.get("sheet_name"),
             found_handles_from_url={"ig": ig_handle_from_url, "tt": tt_handle_from_url}
         )
+
     
     # 2) Scrape only if user not found in any sheet
     profile = {}
@@ -1187,8 +1455,14 @@ def scrape_endpoint():
         else:
             status_val = ""
 
-        ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
-        tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
+        if sheet_name == "Raw Leads":
+            # For Raw Leads, use plain text URLs, no HYPERLINK formula
+            ig_link = profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else "")
+            tt_link = profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else "")
+        else:
+            # For other sheets, use HYPERLINK formula with handle text
+            ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
+            tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
         avg_ig_views = int(profile.get("igAvgViews") or 0)
         avg_tt_views = int(profile.get("ttAvgViews") or 0)
         

@@ -11,10 +11,10 @@ from threading import Thread, Lock
 # ----------------------------------------------------------------------------
 # Shared Playwright browser (for faster requests on Cloud Run)
 # ----------------------------------------------------------------------------
-_loop = None  # type: ignore
-_loop_thread = None  # type: ignore
-_playwright = None  # type: ignore
-_browser = None  # type: ignore
+_loop = None  
+_loop_thread = None  
+_playwright = None  
+_browser = None  
 _browser_lock: Lock = Lock()
 
 _LAUNCH_ARGS = [
@@ -69,14 +69,19 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
     await _ensure_browser_async()
     assert _browser is not None
     context = await _browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/121.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1280, "height": 800},
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        viewport={"width": 1920, "height": 1080},
+        locale="en-US",
+        timezone_id="America/Los_Angeles",
+        extra_http_headers={
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        }
     )
     page = await context.new_page()
+    # Evasion: remove navigator.webdriver
+    await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
     # Keep nav/timeouts bounded to avoid Cloud Run request timeouts
     try:
         page.set_default_navigation_timeout(15000)
@@ -94,6 +99,7 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
             data = await scrape_link_aggregator(page, url)
         else:
             data = {"error": "Unsupported URL", "url": url}
+        _log("scrape.persistent.raw_data", data=data)
     finally:
         await context.close()
 
@@ -142,6 +148,7 @@ def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
     return fut.result(timeout=timeout_seconds)
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+(?:\s*\(at\)\s*|@)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.I)
+IGNORE_EMAILS = {"example@example.com", "email@example.com", "your@email.com"}
 
 # Link aggregator domains to detect
 LINK_AGGREGATOR_DOMAINS = [
@@ -162,7 +169,7 @@ LINK_AGGREGATOR_DOMAINS = [
 def _log(event: str, **kwargs) -> None:
     """Simple logging function for debugging"""
     try:
-        print(f"LOG({event}) {kwargs}")
+        print(f"LOG({event}) {kwargs}", flush=True)
     except Exception:
         pass
 
@@ -359,6 +366,7 @@ async def scrape_tiktok(page, url: str) -> dict:
         m = re.search(r"<title>([^<]+)</title>", html)
         if m:
             title = m.group(1)
+            _log("tiktok.html_title", title=title)
             data["name"] = title.split("(")[0].strip()
 
     # Look for an explicit Instagram profile link on TikTok profile (bio/link section)
@@ -517,7 +525,9 @@ async def scrape_tiktok(page, url: str) -> dict:
     # Emails anywhere on page
     email_match = EMAIL_RE.search(html or "")
     if email_match:
-        data["email"] = email_match.group(0).replace("(at)", "@").replace(" ", "")
+        extracted = email_match.group(0).replace("(at)", "@").replace(" ", "")
+        if extracted.lower() not in IGNORE_EMAILS:
+            data["email"] = extracted
 
     # Look for link aggregator URLs in specific sections and general page content
     link_aggregator_urls = []
@@ -626,7 +636,9 @@ async def scrape_instagram(page, url: str) -> dict:
     html = await page.content()
     email_match = EMAIL_RE.search(html or "")
     if email_match:
-        data["email"] = email_match.group(0).replace("(at)", "@").replace(" ", "")
+        extracted = email_match.group(0).replace("(at)", "@").replace(" ", "")
+        if extracted.lower() not in IGNORE_EMAILS:
+            data["email"] = extracted
 
     # Look for link aggregator URLs in specific sections and general page content
     link_aggregator_urls = []
@@ -713,14 +725,19 @@ async def scrape_profile(url: str) -> dict:
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=launch_args)
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/121.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="America/Los_Angeles",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            }
         )
         page = await context.new_page()
+        # Evasion: remove navigator.webdriver
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
         try:
             page.set_default_navigation_timeout(15000)
             page.set_default_timeout(15000)

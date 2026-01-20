@@ -6,13 +6,14 @@ import base64
 import asyncio
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, g
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 # YAML support
 try:
@@ -274,6 +275,48 @@ def _normalize_category(category: str) -> str:
     if c.replace(" ", "") in {"rawlead", "rawleads"} or c.startswith("raw lead"):
         return "rawlead"
     return c
+
+
+def _clean_url(url: str) -> str:
+    """Remove tracking parameters from TikTok/Instagram URLs.
+    
+    Example:
+    https://www.tiktok.com/@user?_r=1&_t=8z... -> https://www.tiktok.com/@user
+    """
+    if not url:
+        return ""
+    
+    try:
+        # Basic cleanup
+        cleaned = url.strip()
+        
+        # Check if it's a known platform
+        lower_url = cleaned.lower()
+        if "tiktok.com" in lower_url or "instagram.com" in lower_url:
+            # Parse URL
+            parsed = urlparse(cleaned)
+            
+            # Reconstruct without query strings for these platforms
+            # Keep scheme, netloc, and path
+            # (TikTok/IG profiles don't typically need query params for the profile itself)
+            # Ensure we don't lose the trailing slash if it was significant, though usually not for profiles
+            path = parsed.path
+            
+            # Handle empty scheme (e.g. starts with www.)
+            scheme = parsed.scheme or "https"
+            netloc = parsed.netloc
+            
+            if not netloc and "tiktok.com" in path:
+                 # Handle case where url is just "tiktok.com/@foo"
+                 # (urlparse might put it in path if no scheme)
+                 pass 
+            
+            new_url = f"{scheme}://{netloc}{path}"
+            return new_url
+            
+        return cleaned
+    except Exception:
+        return url
 
 
 def _get_followup_number_from_status(status: Optional[str]) -> int:
@@ -813,7 +856,9 @@ def _append_url_to_raw_leads_column(spreadsheet_id: str, url: str, sender_name: 
         return {"ok": False, "error": "Sheets client not configured"}
     
     # Generate column header: "Jan 17 (Abhay)"
-    date_str = datetime.now().strftime("%b %d")  # "Jan 17"
+    # Use Pacific Time to ensure rollover happens at midnight PST
+    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+    date_str = now_pst.strftime("%b %d")  # "Jan 17"
     column_header = f"{date_str} ({sender_name})"
     
     try:
@@ -1166,7 +1211,9 @@ def scrape_endpoint():
     payload = request.get_json(silent=True) or {}
     app_key = (payload.get("app") or payload.get("app_name") or app_key_from_query or "").strip()
     app_cfg = _get_app_config(app_key)
-    url = payload.get("tiktok_url") or payload.get("url") or ""
+    url_raw = payload.get("tiktok_url") or payload.get("url") or ""
+    # Clean the URL immediately
+    url = _clean_url(url_raw)
     
     category = payload.get("category") or ""
     # Default to "rawlead" for legacy /add_raw_leads endpoint if category missing

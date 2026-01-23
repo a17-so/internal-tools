@@ -6,97 +6,88 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     # Extract app-specific information from config
     app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://hardmaxx.app")
-    tiktok_account = app_config.get("tiktok_account", "@hardmaxxapp")
-    instagram_account = app_config.get("instagram_account", "@hardmaxxapp")
     
+    # Common sections
+    INTRO = (
+        "paid promo?\n\n"
+        f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
+        "here are some images of the product:\n"
+        "https://drive.google.com/drive/u/0/folders/1JWJ4bfa1a55G6lfp4Trw7WZCXENPo7pu\n\n"
+    )
+
+    DELIVERABLES_BULLETS = (
+        "here is a brief about deliverables + rate:\n"
+        "* $1 CPM ($1 for every 1,000 views)\n"
+        "* $350 Max Payout per video\n"
+        "* 10k Views Minimum to qualify\n"
+        "* Payouts every 1 - 2 weeks\n"
+        "* 4-20 posts per month\n\n"
+    )
+
+    DELIVERABLES_LINK = (
+        "here is a brief about deliverables + rate: "
+        "https://www.notion.so/HARDMAXX-Clipping-Program-2c739b5e840f800e826bc1cc0569aea3\n\n"
+    )
+
+    # Variant specific texts
+    # Keeping original variant text intent but fitting into new flow
+    MACRO_TEXT = "we're inviting a few, bigtime self-improvement creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
+    MICRO_TEXT = "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
+    AMBASSADOR_TEXT = "we're looking for creators with great energy to make brand new tiktok accounts and post 15 videos per week. I think you'd be a great fit for it! would you be interested?\n\n"
+    
+    # For themepages, user requested: "for the themepages there should be no bullets" matches the link
+    THEMEPAGE_TEXT = f"we run {app_name.upper()} and love your theme page. we'd love to get featured posts with you.\n\n"
+
+    def build_body(variant_text, includes_deliverables=False, is_themepage=False):
+        body = f"hey {{name}},\n\n{INTRO}{variant_text}"
+        if includes_deliverables:
+            if is_themepage:
+                body += DELIVERABLES_LINK
+            else:
+                body += DELIVERABLES_BULLETS
+        
+        body += "let me know if you're interested.\n\n"
+        
+        if is_themepage:
+             # Theme pages had a slightly different footer in original, but standardizing to the requested format for now or keeping close to original?
+             # User prompt image signoff: "- Abhay Chebium from the HARDMAXX App (link)"
+             # Original code signoff: "- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
+             pass
+
+        signoff = f"- {app_display_name} from the {app_name.upper()} App"
+        if includes_deliverables: # Only email gets the link in signature? 
+            # Prompt: "The link should only be there in the email script, not in the DM script" (referring to deliverables link AND app link?)
+            # Prompt: "The link should only be there in the email script... Same thing for theme pages... the link should only be there in the email script, not in the DM script."
+            # The prompt says: "app link... on the DM it should have no link of the app."
+            signoff += f" ({app_url})"
+        
+        return body + signoff + "\n"
+
     return {
         "macro": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, bigtime self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-            ),
-            "dm_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, bigtime self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App\n"
-            ),
+            "email_md": build_body(MACRO_TEXT, includes_deliverables=True, is_themepage=False),
+            "dm_md": build_body(MACRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "micro": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-            ),
-            "dm_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App\n"
-            ),
+            "email_md": build_body(MICRO_TEXT, includes_deliverables=True, is_themepage=False),
+            "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "submicro": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-            ),
-            "dm_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App\n"
-            ),
+            "email_md": build_body(MICRO_TEXT, includes_deliverables=True, is_themepage=False), # Submicro uses micro text usually
+            "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "ambassador": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're looking for creators with great energy to make brand new tiktok accounts and post 15 videos per week. I think you'd be a great fit for it! would you be interested?\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-            ),
-            "dm_md": (
-                "hey {name},\n\n"
-                "paid promo?\n\n"
-                f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-                "we're looking for creators with great energy to make brand new tiktok accounts and post 15 videos per week. I think you'd be a great fit for it! would you be interested?\n\n"
-                "let me know if you're interested.\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App\n"
-            ),
+            "email_md": build_body(AMBASSADOR_TEXT, includes_deliverables=False, is_themepage=False), # Ambassadors usually different deal, keeping safe 
+            "dm_md": build_body(AMBASSADOR_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "themepage": {
-            "subject": f"{app_name.upper()} x Theme Page DM",
-            "email_md": (
-                "hey {name},\n\n"
-                f"we run {app_name.upper()} and love your theme page. we'd love to get featured posts with you.\n\n"
-                "what are your rates for posts/stories?\n\n"
-                f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-            ),
-            "dm_md": (
-                f"hey {{name}}, we run {app_name.upper()} and love your theme page. what are your rates for posts/stories? - {app_display_name} from the {app_name.upper()} App"
-            ),
+            "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App", # Subject changed to match others or keep old? Prompt says "base template for hardmaxx outreach scripts", implies for all.
+            "email_md": build_body(THEMEPAGE_TEXT, includes_deliverables=True, is_themepage=True),
+            "dm_md": build_body(THEMEPAGE_TEXT, includes_deliverables=False, is_themepage=True),
         },
     }
 

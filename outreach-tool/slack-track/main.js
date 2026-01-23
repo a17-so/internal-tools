@@ -33,9 +33,32 @@ function dailyOutreachReport() {
     // INCLUDED statuses for followups
     const INCLUDED_STATUSES = new Set(["followup sent"]);
 
-    for (const name of SHEETS) {
-        const sh = ss.getSheetByName(name);
-        if (!sh) continue;
+    const allSheets = ss.getSheets();
+
+    for (const targetName of SHEETS) {
+        // Robust finding
+        let sh = ss.getSheetByName(targetName);
+
+        // Fuzzy fallback if exact match fails
+        if (!sh) {
+            const targetSimple = targetName.toLowerCase().replace(/\s/g, "");
+            for (const s of allSheets) {
+                const sName = s.getName();
+                const sSimple = sName.toLowerCase().replace(/\s/g, "");
+                if (sSimple === targetSimple) {
+                    sh = s;
+                    console.log(`[INFO] Fuzzy matched sheet "${targetName}" to "${sName}"`);
+                    break;
+                }
+            }
+        }
+
+        if (!sh) {
+            console.log(`[WARN] Sheet not found: "${targetName}"`);
+            continue;
+        }
+
+        const name = sh.getName(); // use actual name found
 
         const lastRow = sh.getLastRow();
         const lastCol = sh.getLastColumn();
@@ -49,6 +72,8 @@ function dailyOutreachReport() {
         let idxStatus = header.findIndex(h => STATUS_RE.test(h));
         if (idxStatus < 0) idxStatus = -1; // optional
 
+        console.log(`[DEBUG] Sheet "${name}": InitialCol=${idxInitial}, FUCol=${idxFUDate}, StatusCol=${idxStatus}, NumRows=${data.length}`);
+
         let dms = 0, fus = 0;
 
         for (let r = 0; r < data.length; r++) {
@@ -58,6 +83,11 @@ function dailyOutreachReport() {
             if (idxInitial >= 0) {
                 const d = normalizeDate(row[idxInitial], TIMEZONE);
                 if (d === today) dms++;
+            }
+
+            // Debug first few rows if count is low
+            if (r < 3 && idxInitial >= 0) {
+                // console.log(`[DEBUG] Row ${r} Val="${row[idxInitial]}" -> Norm="${normalizeDate(row[idxInitial], TIMEZONE)}" vs Today="${today}"`);
             }
 
             // Follow-ups: Followup Date == today AND status included

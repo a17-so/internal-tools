@@ -82,6 +82,15 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
     # Evasion: remove navigator.webdriver
     await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     
+    # Block heavy resources
+    async def block_media(route):
+        if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+            await route.abort()
+        else:
+            await route.continue_()
+            
+    await page.route("**/*", block_media)
+    
     # Keep nav/timeouts bounded to avoid Cloud Run request timeouts
     try:
         page.set_default_navigation_timeout(15000)
@@ -317,6 +326,42 @@ def detect_link_aggregator_urls(text: str) -> list:
     
     _log("detect_link_aggregator_urls.result", found_count=len(urls), urls=urls)
     return urls
+
+
+async def scrape_link_aggregators_concurrently(original_page, urls: list) -> list:
+    """Scrape multiple link aggregator URLs concurrently using new pages"""
+    # Limit to first 3 URLs to avoid resource exhaustion
+    urls = urls[:3]
+    if not urls:
+        return []
+
+    async def worker(url):
+        try:
+            new_page = await original_page.context.new_page()
+            # Copy evasion script
+            await new_page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+            # Block heavy resources
+            async def block_media(route):
+                if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+            await new_page.route("**/*", block_media)
+
+            try:
+                # Use a slightly shorter timeout for these secondary checks
+                new_page.set_default_navigation_timeout(10000)
+                new_page.set_default_timeout(10000)
+                return await scrape_link_aggregator(new_page, url)
+            finally:
+                await new_page.close()
+        except Exception as e:
+            _log("link_aggregator_worker.error", url=url, error=str(e))
+            return {}
+
+    tasks = [worker(url) for url in urls]
+    return await asyncio.gather(*tasks)
 
 
 async def scrape_tiktok(page, url: str) -> dict:
@@ -575,12 +620,19 @@ async def scrape_tiktok(page, url: str) -> dict:
     
     _log("tiktok.all_link_aggregator_urls", urls=link_aggregator_urls)
     
-    # Scrape each found link aggregator URL
-    for link_url in link_aggregator_urls:
-        try:
-            _log("tiktok.scraping_link_aggregator", url=link_url)
-            link_data = await scrape_link_aggregator(page, link_url)
-            
+    # If we already have email and IG, skip scraping external links
+    if data["email"] and data.get("ig_handle"):
+        return data
+
+    # Scrape found link aggregator URLs concurrently
+    if link_aggregator_urls:
+        _log("tiktok.scraping_link_aggregators_concurrently", count=len(link_aggregator_urls))
+        results = await scrape_link_aggregators_concurrently(page, link_aggregator_urls)
+        
+        for link_data in results:
+            if not link_data:
+                continue
+                
             # Use email from link aggregator if we don't have one yet
             if not data["email"] and link_data.get("email"):
                 data["email"] = link_data["email"]
@@ -588,10 +640,10 @@ async def scrape_tiktok(page, url: str) -> dict:
             # Use IG handle from link aggregator if we don't have one yet
             if not data.get("ig_handle") and link_data.get("ig_handle"):
                 data["ig_handle"] = link_data["ig_handle"]
-                
-        except Exception as e:
-            _log("tiktok.link_aggregator_error", url=link_url, error=str(e))
-            continue
+            
+            # Stop if we found what we needed
+            if data["email"] and data.get("ig_handle"):
+                break
 
     return data
 
@@ -697,19 +749,27 @@ async def scrape_instagram(page, url: str) -> dict:
     
     _log("instagram.all_link_aggregator_urls", urls=link_aggregator_urls)
     
-    # Scrape each found link aggregator URL
-    for link_url in link_aggregator_urls:
-        try:
-            _log("instagram.scraping_link_aggregator", url=link_url)
-            link_data = await scrape_link_aggregator(page, link_url)
+    # If we already have email, skip scraping external links
+    # For Instagram, we might still want to scrape if we missed something, but usually email is key
+    if data["email"]:
+        return data
+
+    # Scrape found link aggregator URLs concurrently
+    if link_aggregator_urls:
+        _log("instagram.scraping_link_aggregators_concurrently", count=len(link_aggregator_urls))
+        results = await scrape_link_aggregators_concurrently(page, link_aggregator_urls)
+        
+        for link_data in results:
+            if not link_data:
+                continue
             
             # Use email from link aggregator if we don't have one yet
             if not data["email"] and link_data.get("email"):
                 data["email"] = link_data["email"]
                 
-        except Exception as e:
-            _log("instagram.link_aggregator_error", url=link_url, error=str(e))
-            continue
+            # Stop if we found email
+            if data["email"]:
+                break
 
     return data
 
@@ -737,6 +797,14 @@ async def scrape_profile(url: str) -> dict:
         page = await context.new_page()
         # Evasion: remove navigator.webdriver
         await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+        # Block heavy resources
+        async def block_media(route):
+            if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
+                await route.abort()
+            else:
+                await route.continue_()
+        await page.route("**/*", block_media)
 
         try:
             page.set_default_navigation_timeout(15000)

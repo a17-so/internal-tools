@@ -5,7 +5,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     
     # Extract app-specific information from config
     app_display_name = app_config.get("from_name", "Abhay Chebium")
-    app_url = app_config.get("link_url", "https://hardmaxx.app")
+    app_url = app_config.get("link_url", "https://apps.apple.com/us/app/hardmaxx-transform-now/id6756548399")
     
     # Common sections
     INTRO = (
@@ -17,11 +17,11 @@ def get_templates(app_name="HARDMAXX", app_config=None):
 
     DELIVERABLES_BULLETS = (
         "here is a brief about deliverables + rate:\n"
-        "* $1 CPM ($1 for every 1,000 views)\n"
-        "* $350 Max Payout per video\n"
-        "* 10k Views Minimum to qualify\n"
-        "* Payouts every 1 - 2 weeks\n"
-        "* 4-20 posts per month\n\n"
+        "- $1 CPM ($1 for every 1,000 views)\n"
+        "- $350 Max Payout per video\n"
+        "- 10k Views Minimum to qualify\n"
+        "- Payouts every 1 - 2 weeks\n"
+        "- 4-20 posts per month based on your schedule\n\n"
     )
 
     DELIVERABLES_LINK = (
@@ -39,7 +39,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     THEMEPAGE_TEXT = f"we run {app_name.upper()} and love your theme page. we'd love to get featured posts with you.\n\n"
 
     def build_body(variant_text, includes_deliverables=False, is_themepage=False):
-        body = f"hey {{name}},\n\n{INTRO}{variant_text}"
+        body = f"hey {{name}},\n\n{INTRO}{variant_text}".lstrip()
         if includes_deliverables:
             if is_themepage:
                 body += DELIVERABLES_LINK

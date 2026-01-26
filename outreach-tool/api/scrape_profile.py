@@ -3,6 +3,7 @@ import asyncio
 import json
 import re
 import sys
+import time
 from urllib.parse import urlparse, parse_qs, unquote
 
 from playwright.async_api import async_playwright
@@ -146,12 +147,7 @@ async def _scrape_with_persistent_browser(url: str) -> dict:
 
 
 def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
-    """Synchronous wrapper that reuses a persistent Playwright browser.
-
-    - Starts a background event loop on first call
-    - Starts Playwright/Chromium once and reuses the browser across requests
-    - Opens a fresh context/page per request for isolation
-    """
+    """Synchronous wrapper that reuses a persistent Playwright browser."""
     _ensure_loop()
     fut = asyncio.run_coroutine_threadsafe(_scrape_with_persistent_browser(url), _loop)  # type: ignore[arg-type]
     return fut.result(timeout=timeout_seconds)
@@ -366,12 +362,13 @@ async def scrape_link_aggregators_concurrently(original_page, urls: list) -> lis
 
 async def scrape_tiktok(page, url: str) -> dict:
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=5000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=2000)
     except Exception:
         # Proceed with whatever we have; we'll try HTML-based fallbacks
         pass
     # Give TT a moment to inject SIGI_STATE
-    await page.wait_for_timeout(1200)
+    # Reduced from 1200ms -> 200ms as per "fail fast" request
+    await page.wait_for_timeout(200)
 
     data = {
         "platform": "tiktok",
@@ -383,7 +380,8 @@ async def scrape_tiktok(page, url: str) -> dict:
     # 1) Prefer SIGI_STATE JSON
     sigi_text = ""
     try:
-        sigi = await page.locator("script#SIGI_STATE").first.text_content(timeout=1500)
+        # Reduced from 1500ms -> 200ms since if it's there, it's there.
+        sigi = await page.locator("script#SIGI_STATE").first.text_content(timeout=200)
         if sigi:
             j = json.loads(sigi)
             sigi_text = sigi or ""

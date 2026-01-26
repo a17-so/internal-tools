@@ -351,8 +351,8 @@ async def scrape_link_aggregators_concurrently(original_page, urls: list) -> lis
 
             try:
                 # Use a slightly shorter timeout for these secondary checks
-                new_page.set_default_navigation_timeout(10000)
-                new_page.set_default_timeout(10000)
+                new_page.set_default_navigation_timeout(4000)
+                new_page.set_default_timeout(4000)
                 return await scrape_link_aggregator(new_page, url)
             finally:
                 await new_page.close()
@@ -366,12 +366,13 @@ async def scrape_link_aggregators_concurrently(original_page, urls: list) -> lis
 
 async def scrape_tiktok(page, url: str) -> dict:
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=5000)
     except Exception:
         # Proceed with whatever we have; we'll try HTML-based fallbacks
         pass
     # Give TT a moment to inject SIGI_STATE
     await page.wait_for_timeout(1200)
+
     data = {
         "platform": "tiktok",
         "name": "",
@@ -578,38 +579,14 @@ async def scrape_tiktok(page, url: str) -> dict:
     link_aggregator_urls = []
     
     # 1. Look for links in specific TikTok bio/link sections using selectors
-    try:
-        # Common TikTok link selectors - include all link aggregator domains
-        link_selectors = [
-            'a[data-e2e="user-bio-link"]',  # TikTok bio link
-            'a[data-e2e="user-link"]',      # TikTok user link
-            '[data-e2e="user-bio"] a',      # Links in bio text
-            '.bio a',                       # Bio links
-            '.user-bio a',                  # User bio links
-        ]
-        
-        # Add selectors for each link aggregator domain
-        for domain in LINK_AGGREGATOR_DOMAINS:
-            link_selectors.append(f'a[href*="{domain}"]')
-        
-        for selector in link_selectors:
-            try:
-                elements = await page.locator(selector).all()
-                for element in elements:
-                    href = await element.get_attribute('href')
-                    if href:
-                        link_aggregator_urls.append(href)
-                        _log("tiktok.found_link_selector", selector=selector, href=href)
-            except Exception:
-                continue
-    except Exception as e:
-        _log("tiktok.link_selector_error", error=str(e))
+    # 1. Look for links in specific TikTok bio/link sections using selectors
+    # REMOVED: Selector loop was too slow (7s). Relying on HTML regex detection below.
+    # See implementation_plan.md for details.
     
     # 2. Also check SIGI_STATE JSON for links (TikTok specific)
     if sigi_text:
         sigi_urls = detect_link_aggregator_urls(sigi_text)
         link_aggregator_urls.extend(sigi_urls)
-        _log("tiktok.sigi_state_urls", urls=sigi_urls)
     
     # 3. Also check general HTML content with improved detection
     html_urls = detect_link_aggregator_urls(html)
@@ -617,8 +594,6 @@ async def scrape_tiktok(page, url: str) -> dict:
     
     # Remove duplicates
     link_aggregator_urls = list(set(link_aggregator_urls))
-    
-    _log("tiktok.all_link_aggregator_urls", urls=link_aggregator_urls)
     
     # If we already have email and IG, skip scraping external links
     if data["email"] and data.get("ig_handle"):
@@ -650,7 +625,7 @@ async def scrape_tiktok(page, url: str) -> dict:
 
 async def scrape_instagram(page, url: str) -> dict:
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=5000)
     except Exception:
         pass
     await page.wait_for_timeout(800)

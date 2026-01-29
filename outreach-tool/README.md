@@ -31,16 +31,25 @@ python3 -m flask --app index  run --host 0.0.0.0 --port 8000
 
 ### Deployment Command
 
-```
+Deploy to Google Cloud Run with the following command:
 
+```bash
 gcloud run deploy outreach-tool-api \
-  --source /Users/abhay/Desktop/internal-tools/outreach-tool \
+  --source . \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
   --timeout 60 \
   --concurrency 8 \
   --min-instances 1 \
-  --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:1
+  --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:latest
+```
+
+**Production URL**: https://outreach-tool-api-544313478134.us-central1.run.app
+
+**Note**: 
+- The deployment uses the `Dockerfile` in the root directory
+- Environment configuration is loaded from `api/env.yaml`
+- Service account credentials are mounted from Secret Manager (`outreach-service-account`)
 
 ```

@@ -1,0 +1,23 @@
+# Ignore local logs and cache
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+
+# Ignore git files
+.git
+.gitignore
+
+# Ignore local environment files
+.env
+*.env
+
+# Ignore documentation
+README.md
+
+# Ignore scripts directory
+slack-track/
+shortcut/
+
+# Ignore backup files
+*_copy.py

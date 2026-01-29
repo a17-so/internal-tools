@@ -1,3 +1,5 @@
+
+
 def get_templates(app_name="HARDMAXX", app_config=None):
     """Generate templates dynamically based on app configuration."""
     if app_config is None:
@@ -66,7 +68,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     return {
         "macro": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": build_body(MACRO_TEXT, includes_deliverables=True, is_themepage=False),
+            "email_md": build_body(MACRO_TEXT, includes_deliverables=False, is_themepage=False),
             "dm_md": build_body(MACRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "micro": {
@@ -81,8 +83,8 @@ def get_templates(app_name="HARDMAXX", app_config=None):
         },
         "ambassador": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": build_body(AMBASSADOR_TEXT, includes_deliverables=False, is_themepage=False), # Ambassadors usually different deal, keeping safe 
-            "dm_md": build_body(AMBASSADOR_TEXT, includes_deliverables=False, is_themepage=False),
+            "email_md": build_body(MICRO_TEXT, includes_deliverables=True, is_themepage=False),
+            "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "themepage": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App", # Subject changed to match others or keep old? Prompt says "base template for hardmaxx outreach scripts", implies for all.
@@ -156,13 +158,15 @@ def get_followup_templates(app_name="HARDMAXX", app_config=None):
             "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.upper()} App",
             "email_md": (
                 "hey {name},\n\n"
-                f"following up on the {app_name.upper()} ambassador opportunity!\n\n"
-                "still need creators for 15 videos/week at $400. let me know if you're interested!\n\n"
+                f"just checking in on the {app_name.upper()} collaboration!\n\n"
+                "we're still looking to work with niche creators like you. let me know if you're interested!\n\n"
+                f"sharing {app_name.upper()} genuinely helps your audience build better habits.\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
             ),
             "dm_md": (
                 "hey {name},\n\n"
-                f"following up on the ambassador role! $400/week for 15 videos. interested?\n\n"
+                f"following up on {app_name.upper()}! still down to work with you if you're interested.\n\n"
+                "it's the kind of thing your audience expects from you.\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App\n"
             ),
         },
@@ -247,14 +251,14 @@ def get_second_followup_templates(app_name="HARDMAXX", app_config=None):
             "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.upper()} App",
             "email_md": (
                 "hey {name},\n\n"
-                f"hope you're doing well! just wanted to follow up one more time about the {app_name.upper()} ambassador opportunity.\n\n"
-                "still need creators for 15 videos/week at $400. no pressure if you're not interested!\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about the {app_name.upper()} collaboration.\n\n"
+                "we think you'd be perfect for this and would love to work with you. no pressure if you're not interested!\n\n"
                 "let me know either way :)\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
             ),
             "dm_md": (
                 "hey {name},\n\n"
-                f"hope you're doing well! just wanted to follow up one more time about the ambassador role.\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about {app_name.upper()}.\n\n"
                 "no pressure if you're not interested!\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App\n"
             ),
@@ -344,14 +348,14 @@ def get_third_followup_templates(app_name="HARDMAXX", app_config=None):
             "subject": f"Re: Final follow-up - {app_name.upper()} App",
             "email_md": (
                 "hey {name},\n\n"
-                f"this is my final follow-up about the {app_name.upper()} ambassador opportunity.\n\n"
+                f"this is my final follow-up about the {app_name.upper()} collaboration.\n\n"
                 "if you're interested, great! if not, no worries at all - I'll stop reaching out.\n\n"
                 "thanks for your time!\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
             ),
             "dm_md": (
                 "hey {name},\n\n"
-                f"this is my final follow-up about the ambassador role.\n\n"
+                f"this is my final follow-up about {app_name.upper()}.\n\n"
                 "if you're interested, great! if not, no worries - I'll stop reaching out.\n\n"
                 "thanks for your time!\n\n"
                 f"- {app_display_name} from the {app_name.upper()} App\n"

@@ -11,7 +11,6 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     
     # Common sections
     INTRO = (
-        "paid promo?\n\n"
         f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
         "here are some images of the product:\n"
         "https://drive.google.com/drive/u/0/folders/1JWJ4bfa1a55G6lfp4Trw7WZCXENPo7pu\n\n"
@@ -41,7 +40,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     THEMEPAGE_TEXT = f"we run {app_name.upper()} and love your theme page. we'd love to get featured posts with you.\n\n"
 
     def build_body(variant_text, includes_deliverables=False, is_themepage=False):
-        body = f"hey {{name}},\n\n{INTRO}{variant_text}".lstrip()
+        body = f"hey {{name}},\n\npaid promo?\n\n{INTRO}{variant_text}".lstrip()
         if includes_deliverables:
             if is_themepage:
                 body += DELIVERABLES_LINK

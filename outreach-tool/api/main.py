@@ -252,9 +252,117 @@ def _get_app_config(app_key: Optional[str]) -> Dict[str, str]:
          app_key=key,
          final_gmail_sender=merged.get("gmail_sender"),
          final_delegated_user=merged.get("delegated_user"),
-         used_legacy_fallback=not bool(specific_cfg.get("gmail_sender")))
+            used_legacy_fallback=not bool(specific_cfg.get("gmail_sender")))
     
     return merged
+
+
+def _validate_app_config(app_key: str, config: Dict[str, str], strict: bool = False) -> None:
+    """Validate that app config has required fields.
+    
+    Args:
+        app_key: The app identifier
+        config: The app configuration dict
+        strict: If True, raise on missing fields. If False, just log warnings.
+    
+    Raises:
+        ValueError: If strict=True and required fields are missing
+    """
+    required_fields = ["sheets_spreadsheet_id", "gmail_sender", "delegated_user"]
+    missing = [f for f in required_fields if not config.get(f)]
+    
+    if missing:
+        error_msg = (
+            f"App '{app_key}' is missing required config fields: {missing}. "
+            f"Check env.yaml or OUTREACH_APPS_JSON environment variable."
+        )
+        if strict:
+            _log("config.validation_failed", app_key=app_key, missing_fields=missing, strict=True)
+            raise ValueError(error_msg)
+        else:
+            _log("config.validation_warning", app_key=app_key, missing_fields=missing, strict=False)
+    else:
+        _log("config.validated", app_key=app_key, fields=list(config.keys()))
+
+
+def _resolve_sender_profile(app_cfg: Dict[str, Any], sender_profile_key: str, strict: bool = False) -> Dict[str, Any]:
+    """Resolve sender profile with validation.
+    
+    Args:
+        app_cfg: The app configuration dict
+        sender_profile_key: The sender profile identifier to look up
+        strict: If True, raise on profile not found. If False, return original config.
+    
+    Returns:
+        Dict with sender profile overrides applied to app_cfg
+    
+    Raises:
+        ValueError: If strict=True and sender profile not found
+    """
+    if not sender_profile_key:
+        return app_cfg  # No override requested
+    
+    profiles = app_cfg.get("sender_profiles") or {}
+    
+    if not isinstance(profiles, dict):
+        _log("sender_profile.invalid_type", 
+             sender_profile_key=sender_profile_key,
+             profiles_type=type(profiles).__name__)
+        if strict:
+            raise ValueError(f"sender_profiles is not a dict, got {type(profiles).__name__}")
+        return app_cfg
+    
+    # Try exact match
+    matched = profiles.get(sender_profile_key)
+    
+    # Try case-insensitive match
+    if not matched:
+        for k, v in profiles.items():
+            if k.lower() == sender_profile_key.lower():
+                matched = v
+                _log("sender_profile.case_insensitive_match", 
+                     requested=sender_profile_key, 
+                     matched_key=k)
+                break
+    
+    if not matched:
+        available = list(profiles.keys())
+        error_msg = (
+            f"Sender profile '{sender_profile_key}' not found for app '{app_cfg.get('app_key')}'. "
+            f"Available profiles: {available}"
+        )
+        if strict:
+            _log("sender_profile.not_found", 
+                 requested=sender_profile_key,
+                 available=available,
+                 strict=True)
+            raise ValueError(error_msg)
+        else:
+            _log("sender_profile.not_found_warning", 
+                 requested=sender_profile_key,
+                 available=available,
+                 strict=False)
+            return app_cfg
+    
+    # Apply overrides
+    result = {**app_cfg}
+    if matched.get("email"):
+        result["gmail_sender"] = matched["email"]
+        result["delegated_user"] = matched["email"]
+    if matched.get("name"):
+        result["from_name"] = matched["name"]
+    if matched.get("instagram"):
+        result["instagram_account"] = matched["instagram"]
+    if matched.get("tiktok"):
+        result["tiktok_account"] = matched["tiktok"]
+    
+    _log("sender_profile.resolved", 
+         requested=sender_profile_key, 
+         email=result.get("gmail_sender"),
+         instagram=result.get("instagram_account"),
+         tiktok=result.get("tiktok_account"))
+    
+    return result
 
 
 def _normalize_category(category: str) -> str:
@@ -1143,7 +1251,232 @@ def debug_config():
     })
 
 
-@app.before_request
+@app.get("/health")
+def health_check():
+    """Comprehensive health check endpoint."""
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {}
+    }
+    
+    # Check 1: Config loaded
+    try:
+        if not _OUTREACH_APPS:
+            health["checks"]["config"] = {
+                "status": "unhealthy", 
+                "error": "No apps configured",
+                "detail": "OUTREACH_APPS is empty. Check env.yaml or OUTREACH_APPS_JSON environment variable."
+            }
+            health["status"] = "unhealthy"
+        else:
+            health["checks"]["config"] = {
+                "status": "healthy",
+                "apps": list(_OUTREACH_APPS.keys()),
+                "count": len(_OUTREACH_APPS)
+            }
+    except Exception as e:
+        health["checks"]["config"] = {"status": "unhealthy", "error": str(e)}
+        health["status"] = "unhealthy"
+    
+    # Check 2: Sheets API
+    try:
+        client = _sheets_client()
+        if client:
+            health["checks"]["sheets_api"] = {"status": "healthy"}
+        else:
+            health["checks"]["sheets_api"] = {
+                "status": "degraded", 
+                "error": "Client not available",
+                "detail": "Check GOOGLE_SERVICE_ACCOUNT_JSON secret"
+            }
+            if health["status"] == "healthy":
+                health["status"] = "degraded"
+    except Exception as e:
+        health["checks"]["sheets_api"] = {"status": "degraded", "error": str(e)}
+        if health["status"] == "healthy":
+            health["status"] = "degraded"
+    
+    # Check 3: Gmail API
+    try:
+        client_info = _gmail_client()
+        if client_info:
+            health["checks"]["gmail_api"] = {"status": "healthy"}
+        else:
+            health["checks"]["gmail_api"] = {
+                "status": "degraded", 
+                "error": "Client not available",
+                "detail": "Check GOOGLE_SERVICE_ACCOUNT_JSON secret and delegated_user config"
+            }
+            if health["status"] == "healthy":
+                health["status"] = "degraded"
+    except Exception as e:
+        health["checks"]["gmail_api"] = {"status": "degraded", "error": str(e)}
+        if health["status"] == "healthy":
+            health["status"] = "degraded"
+    
+    # Check 4: Scraper available
+    try:
+        if scrape_profile is None:
+            health["checks"]["scraper"] = {
+                "status": "unhealthy",
+                "error": "Scraper not available",
+                "detail": SCRAPER_IMPORT_ERROR or "Unknown import error"
+            }
+            health["status"] = "unhealthy"
+        else:
+            health["checks"]["scraper"] = {
+                "status": "healthy",
+                "has_sync": scrape_profile_sync is not None
+            }
+    except Exception as e:
+        health["checks"]["scraper"] = {"status": "unhealthy", "error": str(e)}
+        health["status"] = "unhealthy"
+    
+    status_code = 200 if health["status"] == "healthy" else (503 if health["status"] == "unhealthy" else 200)
+    return jsonify(health), status_code
+
+
+@app.post("/validate")
+def validate_request():
+    """Validate request payload without executing. Returns config that would be used.
+    
+    This endpoint helps debug configuration issues by showing exactly what config
+    would be used for a given request, including sender profile resolution.
+    
+    Request body:
+        {
+            "app": "hardmaxx",  # Required
+            "sender_profile": "abhay",  # Optional
+            "category": "micro"  # Optional
+        }
+    
+    Response:
+        {
+            "ok": true,
+            "config": {
+                "app_key": "hardmaxx",
+                "gmail_sender": "abhay@a17.so",
+                "delegated_user": "abhay@a17.so",
+                "sheets_spreadsheet_id": "1pJbbD_o_duLKDTj_Nvtn...",
+                "instagram_account": "@abhaychebium",
+                "tiktok_account": "@abhaychebium",
+                "from_name": "Abhay"
+            },
+            "sender_profile": {
+                "requested": "abhay",
+                "resolved": true,
+                "profile": {...}
+            }
+        }
+    """
+    payload = request.get_json(silent=True) or {}
+    app_key = (payload.get("app") or payload.get("app_name") or "").strip()
+    sender_profile_key = (payload.get("sender_profile") or payload.get("sender") or payload.get("profile") or "").strip()
+    category = payload.get("category") or ""
+    
+    result = {
+        "ok": True,
+        "request": {
+            "app": app_key,
+            "sender_profile": sender_profile_key or None,
+            "category": category or None
+        }
+    }
+    
+    # Validate app key
+    if not app_key:
+        return jsonify({
+            "ok": False,
+            "error": "Missing required field: 'app'",
+            "detail": "Provide app name in request body, e.g. {'app': 'hardmaxx'}",
+            "available_apps": list(_OUTREACH_APPS.keys())
+        }), 400
+    
+    # Get app config
+    try:
+        app_cfg = _get_app_config(app_key)
+        
+        if not app_cfg:
+            return jsonify({
+                "ok": False,
+                "error": f"App '{app_key}' not found",
+                "available_apps": list(_OUTREACH_APPS.keys()),
+                "detail": "Check spelling or add app to env.yaml OUTREACH_APPS_JSON"
+            }), 404
+        
+        # Validate app config (non-strict, just warnings)
+        try:
+            _validate_app_config(app_key, app_cfg, strict=False)
+            result["config_validation"] = {"status": "ok"}
+        except ValueError as e:
+            result["config_validation"] = {"status": "warning", "message": str(e)}
+        
+        # Resolve sender profile if provided
+        sender_profile_info = {
+            "requested": sender_profile_key or None,
+            "resolved": False
+        }
+        
+        if sender_profile_key:
+            try:
+                resolved_cfg = _resolve_sender_profile(app_cfg, sender_profile_key, strict=True)
+                app_cfg = resolved_cfg
+                sender_profile_info["resolved"] = True
+                sender_profile_info["profile"] = {
+                    "email": resolved_cfg.get("gmail_sender"),
+                    "name": resolved_cfg.get("from_name"),
+                    "instagram": resolved_cfg.get("instagram_account"),
+                    "tiktok": resolved_cfg.get("tiktok_account")
+                }
+            except ValueError as e:
+                return jsonify({
+                    "ok": False,
+                    "error": str(e),
+                    "sender_profile": sender_profile_key,
+                    "available_profiles": list(app_cfg.get("sender_profiles", {}).keys())
+                }), 404
+        
+        result["sender_profile"] = sender_profile_info
+        
+        # Return sanitized config
+        result["config"] = {
+            "app_key": app_key,
+            "gmail_sender": app_cfg.get("gmail_sender"),
+            "delegated_user": app_cfg.get("delegated_user"),
+            "sheets_spreadsheet_id": (app_cfg.get("sheets_spreadsheet_id", "")[:20] + "..." 
+                                     if app_cfg.get("sheets_spreadsheet_id") else None),
+            "instagram_account": app_cfg.get("instagram_account"),
+            "tiktok_account": app_cfg.get("tiktok_account"),
+            "from_name": app_cfg.get("from_name"),
+            "link_url": app_cfg.get("link_url")
+        }
+        
+        # Validate category if provided
+        if category:
+            normalized_category = _normalize_category(category)
+            sheet_name = CATEGORY_TO_SHEET.get(normalized_category)
+            result["category"] = {
+                "provided": category,
+                "normalized": normalized_category,
+                "sheet_name": sheet_name,
+                "valid": sheet_name is not None
+            }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        _log("validate.error", error=str(e), app_key=app_key)
+        return jsonify({
+            "ok": False,
+            "error": "Internal error during validation",
+            "detail": str(e),
+            "app_key": app_key,
+            "sender_profile": sender_profile_key
+        }), 500
+
+
+
 def _http_request_logger_start():
     try:
         g._req_start_time = time.perf_counter()
@@ -1230,36 +1563,20 @@ def scrape_endpoint():
     # Valid keys: "sender", "sender_profile", "profile"
     sender_profile_key = (payload.get("sender_profile") or payload.get("sender") or payload.get("profile") or "").strip().lower()
     
-    # Override app_cfg with sender profile if found
-    sender_override_log = {}
+    # Resolve sender profile using validated function
+    # Use strict=False for backward compatibility (log warnings but don't fail)
     if sender_profile_key:
-        profiles = app_cfg.get("sender_profiles") or {}
-        # Try exact match or case-insensitive match
-        matched_profile = profiles.get(sender_profile_key)
-        if not matched_profile and isinstance(profiles, dict):
-             for k, v in profiles.items():
-                 if k.lower() == sender_profile_key:
-                     matched_profile = v
-                     break
-        
-        if matched_profile and isinstance(matched_profile, dict):
-            # Apply overrides
-            if matched_profile.get("email"):
-                app_cfg["gmail_sender"] = matched_profile["email"]
-                # Usually delegated user matches the email for these individual profiles
-                app_cfg["delegated_user"] = matched_profile["email"]
-            if matched_profile.get("name"):
-                app_cfg["from_name"] = matched_profile["name"]
-            if matched_profile.get("instagram"):
-                 app_cfg["instagram_account"] = matched_profile["instagram"]
-            if matched_profile.get("tiktok"):
-                 app_cfg["tiktok_account"] = matched_profile["tiktok"]
-            
-            sender_override_log = {
-                "profile_key": sender_profile_key,
-                "new_sender": app_cfg["gmail_sender"],
-                "new_ig": app_cfg.get("instagram_account")
-            }
+        try:
+            app_cfg = _resolve_sender_profile(app_cfg, sender_profile_key, strict=False)
+        except ValueError as e:
+            # This shouldn't happen with strict=False, but handle it anyway
+            _log("scrape.sender_profile_error", error=str(e), sender_profile_key=sender_profile_key)
+            return jsonify({
+                "error": "Invalid sender profile",
+                "detail": str(e),
+                "sender_profile": sender_profile_key,
+                "available_profiles": list(app_cfg.get("sender_profiles", {}).keys())
+            }), 400
 
     _log(
         "scrape.request",
@@ -1268,7 +1585,7 @@ def scrape_endpoint():
         has_sender=bool(app_cfg.get("gmail_sender")),
         has_delegated=bool(app_cfg.get("delegated_user")),
         category=category,
-        sender_profile_override=sender_override_log
+        sender_profile_key=sender_profile_key or None
     )
     if not url:
         return jsonify({"error": "Missing tiktok_url or url"}), 400
@@ -1582,12 +1899,20 @@ def scrape_endpoint():
     include_extras_val = (request.args.get("include_extras") if request else None) or (payload.get("include_extras") if isinstance(payload, dict) else None)
     include_extras = str(include_extras_val).strip().lower() in {"1", "true", "yes", "y"}
 
+    # Always prepare email subject and body, even if no email found
+    # This allows manual email entry in Shortcuts to work correctly
+    if not plain_text:
+        try:
+            plain_text = _markdown_to_text(comms["email_md"]) or ""
+        except Exception:
+            plain_text = comms.get("email_md") or ""
+    
     resp = {
         "ig_handle": ig_handle,
         "dm_text": dm_text,
         "email_to": (recipient_email if (has_valid_recipient and not is_theme_pages) else None),
         "email_subject": comms.get("subject"),
-        "email_body_text": (plain_text or None),
+        "email_body_text": plain_text,  # Always include body text, even if no email found
         "is_followup": is_followup,
         "email_thread_id": email_thread_id,
         "sent_from_email": app_cfg.get("gmail_sender"),

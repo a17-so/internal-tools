@@ -30,16 +30,20 @@ RUN apt-get update && apt-get install -y \
     libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy top-level requirements first (if exists)
+# Copy requirements files
 COPY requirements.txt ./requirements.txt
-
-# Copy api requirements and install Python dependencies
 COPY api/requirements.txt ./api/requirements.txt
+
+# Install Python dependencies (including Playwright)
 RUN pip install --no-cache-dir -r ./api/requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
-RUN playwright install-deps chromium || true
+# Install Playwright browsers AFTER pip install
+# Use PLAYWRIGHT_BROWSERS_PATH to ensure consistent location
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python3 -m playwright install chromium --with-deps
+
+# Verify Playwright installation
+RUN python3 -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"
 
 # Copy the entire application
 COPY . .
@@ -51,7 +55,5 @@ ENV PYTHONPATH=/app:/app/api
 # Expose port
 EXPOSE 8080
 
-# Run the application with gunicorn - use main:app directly since index.py just imports from main
-# Using shell form (not exec form) to ensure $PORT is expanded correctly
+# Run the application with gunicorn
 CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 --chdir /app/api main:app
-

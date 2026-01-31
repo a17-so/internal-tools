@@ -12,8 +12,11 @@ def get_templates(app_name="HARDMAXX", app_config=None):
     # Common sections
     INTRO = (
         f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
+    )
+
+    IMAGE_LINK = (
         "here are some images of the product:\n"
-        "https://drive.google.com/drive/u/0/folders/1JWJ4bfa1a55G6lfp4Trw7WZCXENPo7pu\n\n"
+        "https://drive.google.com/drive/u/0/folders/1JWJ4bfA1a55G6Ifp4Trw7WZCXENPo7pu\n\n"
     )
 
     DELIVERABLES_BULLETS = (

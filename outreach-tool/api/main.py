@@ -25,38 +25,17 @@ for _p in (_LOCAL_DIR, _SCRAPER_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-SCRAPER_IMPORT_ERROR = None
-scrape_profile_sync = None  # type: ignore
-
 try:
-    # Import by module name with sys.path including outreach-tool
-    from scrape_profile import scrape_profile_sync as _scrape_profile_sync  # type: ignore
-    scrape_profile_sync = _scrape_profile_sync
-except Exception as import_err:
-    SCRAPER_IMPORT_ERROR = str(import_err)
-    # Check if we can load it manually as fallback
+    from scrape_profile import scrape_profile_sync
+except ImportError as e:
+    _log("main.import_error", error=str(e), path=sys.path)
+    # Fallback for when running from root vs api dir
     try:
-        import importlib.util
-        candidate_paths = [
-            os.path.join(_LOCAL_DIR, "scrape_profile.py"),
-            os.path.join(_SCRAPER_DIR, "scrape_profile.py"),
-        ]
-        for _scraper_path in candidate_paths:
-            if not os.path.exists(_scraper_path):
-                continue
-            try:
-                spec = importlib.util.spec_from_file_location("scrape_profile", _scraper_path)
-                if spec and spec.loader:
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-                    scrape_profile_sync = getattr(mod, "scrape_profile_sync", None)
-                    if scrape_profile_sync:
-                        SCRAPER_IMPORT_ERROR = None
-                        break
-            except Exception:
-                pass
-    except Exception as e:
-        SCRAPER_IMPORT_ERROR = f"{import_err}; fallback failed: {e}"
+        sys.path.append(os.path.join(os.path.dirname(__file__)))
+        from scrape_profile import scrape_profile_sync
+    except ImportError:
+        _log("main.critical_error", message="Could not import scrape_profile")
+        raise
 
 
 app = Flask(__name__)
@@ -190,21 +169,8 @@ def health_check():
             health["status"] = "degraded"
     
     # Check 4: Scraper available
-    try:
-        if scrape_profile_sync is None:
-            health["checks"]["scraper"] = {
-                "status": "unhealthy",
-                "error": "Scraper not available",
-                "detail": SCRAPER_IMPORT_ERROR or "Unknown import error"
-            }
-            health["status"] = "unhealthy"
-        else:
-            health["checks"]["scraper"] = {
-                "status": "healthy"
-            }
-    except Exception as e:
-        health["checks"]["scraper"] = {"status": "unhealthy", "error": str(e)}
-        health["status"] = "unhealthy"
+    # Since we removed Playwright, this is just a static check now
+    health["checks"]["scraper"] = {"status": "healthy"}
     
     status_code = 200 if health["status"] == "healthy" else (503 if health["status"] == "unhealthy" else 200)
     return jsonify(health), status_code
@@ -385,19 +351,8 @@ def _http_request_logger_end(response):
 
 @app.get("/warmup")
 def warmup():
-    """Ensure the persistent Playwright browser is started to avoid cold-start cost."""
-    try:
-        t0 = time.perf_counter()
-        # Prefer the persistent browser path if available
-        if scrape_profile_sync is not None:
-            scrape_profile_sync("about:blank", timeout_seconds=10.0)
-            _log("warmup.success", persistent=True, duration_ms=int((time.perf_counter()-t0)*1000))
-            return jsonify({"ok": True, "persistent": True})
-        
-        return jsonify({"ok": False, "error": "Scraper not available"}), 503
-    except Exception as e:
-        _log("warmup.error", error=str(e))
-        return jsonify({"ok": False, "error": str(e)}), 500
+    """No-op warmup since Playwright is removed."""
+    return jsonify({"ok": True, "persistent": False})
 
 
 @app.post("/scrape")
@@ -405,12 +360,6 @@ def warmup():
 def scrape_endpoint():
     # Determine which app context to use
     app_key_from_query = (request.args.get("app") or request.args.get("app_name") or "").strip()
-    if scrape_profile_sync is None:
-        return jsonify({
-            "error": "scraper not available",
-            "details": SCRAPER_IMPORT_ERROR or "unknown import error",
-            "fix": "Install Playwright: pip install playwright && python -m playwright install chromium"
-        }), 500
 
     payload = request.get_json(silent=True) or {}
     app_key = (payload.get("app") or payload.get("app_name") or app_key_from_query or "").strip()

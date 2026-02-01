@@ -99,6 +99,22 @@ else
     echo ""
 fi
 
+# Check for env.yaml
+if [ ! -f "api/envs/env.yaml" ]; then
+    echo "Error: api/envs/env.yaml not found!"
+    exit 1
+fi
+
+# Extract SEARCHAPI_KEY from env.yaml
+echo "Extracting SEARCHAPI_KEY..."
+SEARCHAPI_KEY=$(python3 api/scripts/get_searchapi_key.py)
+
+if [ -z "$SEARCHAPI_KEY" ]; then
+    echo "Warning: Should have found SEARCHAPI_KEY in env.yaml but got empty string."
+else
+    echo "Found SEARCHAPI_KEY (starts with ${SEARCHAPI_KEY:0:4}...)"
+fi
+
 # Deploy to Cloud Run
 gcloud run deploy outreach-tool-api \
   --source . \
@@ -109,6 +125,7 @@ gcloud run deploy outreach-tool-api \
   --concurrency 8 \
   --min-instances 1 \
   --clear-base-image \
+  --set-env-vars SEARCHAPI_KEY="$SEARCHAPI_KEY" \
   --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:latest
 
 echo ""

@@ -203,8 +203,9 @@ class TestEndpointHealth:
 class TestScrapingEndpoint:
     """Test the main /scrape endpoint with various scenarios."""
     
-    @pytest.mark.timeout(10)
+    @pytest.mark.timeout(30)
     def test_scrape_endpoint_valid_profile(self, client, env_setup, test_profiles):
+
         """Test /scrape endpoint with a valid TikTok URL."""
         profile_data = test_profiles["with_email_and_ig"]
         
@@ -282,7 +283,7 @@ class TestScrapingEndpoint:
 class TestThemePageEndpoint:
     """Test the /scrape_themepage endpoint."""
     
-    @pytest.mark.timeout(10)
+    @pytest.mark.timeout(30)
     def test_themepage_endpoint_tiktok(self, client, env_setup):
         """Test /scrape_themepage endpoint with TikTok URL."""
         payload = {

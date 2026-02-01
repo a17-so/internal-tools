@@ -2,48 +2,21 @@ FROM python:3.10-slim-bookworm
 
 WORKDIR /app
 
-# Install system dependencies needed for Playwright and Chrome
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libwayland-client0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils \
-    libu2f-udev \
-    libvulkan1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements files
 COPY requirements.txt ./requirements.txt
 
-# Install Python dependencies (including Playwright)
+# Create config config directory and copy env.yaml explicitly
+RUN mkdir -p /app/config
+COPY api/envs/env.yaml /app/config/env.yaml
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r ./requirements.txt
-
-# Install Playwright browsers AFTER pip install
-# Use PLAYWRIGHT_BROWSERS_PATH to ensure consistent location
-# Skip --with-deps to avoid font package conflicts
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN python3 -m playwright install chromium
-
-# Verify Playwright installation
-RUN python3 -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"
 
 # Copy the entire application
 COPY . .

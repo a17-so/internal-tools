@@ -43,11 +43,35 @@ def _load_outreach_apps_config() -> Dict[str, Dict[str, str]]:
     
     # Look for env.yaml in the api directory
     api_dir = os.path.dirname(__file__)
-    env_yaml_path = os.path.join(api_dir, "envs", "env.yaml")
     
-    if not os.path.exists(env_yaml_path):
+    # Candidate paths
+    candidate_paths = [
+        "/app/config/env.yaml",  # Explicit Docker path
+        os.path.join(api_dir, "envs", "env.yaml"),  # Local/default path
+    ]
+    
+    env_yaml_path = None
+    for p in candidate_paths:
+        if os.path.exists(p):
+            env_yaml_path = p
+            break
+    
+    if not env_yaml_path:
+        # Fallback to default for logging
+        env_yaml_path = os.path.join(api_dir, "envs", "env.yaml")
+        import sys
+        print(f"CRITICAL: env.yaml not found. Searched: {candidate_paths}", file=sys.stderr)
+        try:
+            print(f"Contents of {api_dir}: {os.listdir(api_dir)}", file=sys.stderr)
+            envs_dir = os.path.join(api_dir, "envs")
+            if os.path.exists(envs_dir):
+                print(f"Contents of {envs_dir}: {os.listdir(envs_dir)}", file=sys.stderr)
+        except Exception:
+            pass
+            
         _log("config.load.no_env_yaml", path=env_yaml_path)
         return {}
+
     
     try:
         with open(env_yaml_path, "r") as f:
@@ -130,7 +154,7 @@ def _validate_app_config(app_key: str, config: Dict[str, str], strict: bool = Fa
     Raises:
         ValueError: If strict=True and required fields are missing
     """
-    required_fields = ["sheets_spreadsheet_id", "gmail_sender", "delegated_user"]
+    required_fields = ["sheets_spreadsheet_id"]
     missing = [f for f in required_fields if not config.get(f)]
     
     if missing:
@@ -197,6 +221,19 @@ def _resolve_sender_profile(app_cfg: Dict[str, Any], sender_profile_key: str, st
     # Create a new config with overrides applied
     resolved_cfg = dict(app_cfg)
     resolved_cfg.update(profile_overrides)
+    
+    # Map friendly names to config keys
+    if "email" in profile_overrides:
+        resolved_cfg["gmail_sender"] = profile_overrides["email"]
+        # Default delegated_user to email if not explicitly set
+        if "delegated_user" not in profile_overrides:
+            resolved_cfg["delegated_user"] = profile_overrides["email"]
+            
+    if "instagram" in profile_overrides:
+        resolved_cfg["instagram_account"] = profile_overrides["instagram"]
+        
+    if "tiktok" in profile_overrides:
+        resolved_cfg["tiktok_account"] = profile_overrides["tiktok"]
     
     # Ensure from_name matches the profile name if present (mapping 'name' -> 'from_name')
     if "name" in profile_overrides:

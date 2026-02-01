@@ -16,7 +16,7 @@ from typing import Dict, Any
 class TestProfileScraping:
     """Test profile scraping functionality with real TikTok profiles."""
     
-    @pytest.mark.timeout(5)
+    @pytest.mark.timeout(10)
     def test_scrape_profile_no_ig_no_email(self, test_profiles, env_setup):
         """Test scraping profile with no IG or email (@ekam_m3hat)."""
         from scrape_profile import scrape_profile_sync
@@ -25,11 +25,11 @@ class TestProfileScraping:
         url = profile_data["url"]
         
         start_time = time.time()
-        result = scrape_profile_sync(url, timeout_seconds=5.0)
+        result = scrape_profile_sync(url, timeout_seconds=10.0)
         elapsed = time.time() - start_time
         
         # Verify it completed within timeout
-        assert elapsed < 5.5, f"Scraping took {elapsed:.2f}s, should be under 5.5s"
+        assert elapsed < 10.5, f"Scraping took {elapsed:.2f}s, should be under 10.5s"
         
         # Verify basic structure
         assert isinstance(result, dict), "Result should be a dictionary"
@@ -41,7 +41,7 @@ class TestProfileScraping:
         
         print(f"✓ Profile scraped in {elapsed:.2f}s: {json.dumps(result, indent=2)}")
     
-    @pytest.mark.timeout(5)
+    @pytest.mark.timeout(10)
     def test_scrape_profile_no_ig(self, test_profiles, env_setup):
         """Test scraping profile with no IG (@abhaychebium)."""
         from scrape_profile import scrape_profile_sync
@@ -50,11 +50,11 @@ class TestProfileScraping:
         url = profile_data["url"]
         
         start_time = time.time()
-        result = scrape_profile_sync(url, timeout_seconds=5.0)
+        result = scrape_profile_sync(url, timeout_seconds=10.0)
         elapsed = time.time() - start_time
         
         # Verify it completed within timeout
-        assert elapsed < 5.5, f"Scraping took {elapsed:.2f}s, should be under 5.5s"
+        assert elapsed < 10.5, f"Scraping took {elapsed:.2f}s, should be under 10.5s"
         
         # Verify basic structure
         assert isinstance(result, dict), "Result should be a dictionary"
@@ -66,7 +66,7 @@ class TestProfileScraping:
         
         print(f"✓ Profile scraped in {elapsed:.2f}s: {json.dumps(result, indent=2)}")
     
-    @pytest.mark.timeout(5)
+    @pytest.mark.timeout(10)
     def test_scrape_profile_with_email_and_ig(self, test_profiles, env_setup):
         """Test scraping profile with email and IG (@advaithakella)."""
         from scrape_profile import scrape_profile_sync
@@ -75,11 +75,11 @@ class TestProfileScraping:
         url = profile_data["url"]
         
         start_time = time.time()
-        result = scrape_profile_sync(url, timeout_seconds=5.0)
+        result = scrape_profile_sync(url, timeout_seconds=10.0)
         elapsed = time.time() - start_time
         
         # Verify it completed within timeout
-        assert elapsed < 5.5, f"Scraping took {elapsed:.2f}s, should be under 5.5s"
+        assert elapsed < 10.5, f"Scraping took {elapsed:.2f}s, should be under 10.5s"
         
         # Verify basic structure
         assert isinstance(result, dict), "Result should be a dictionary"

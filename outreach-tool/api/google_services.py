@@ -53,7 +53,7 @@ def _load_service_account_credentials(scopes: List[str], delegated_user: Optiona
         else:
             # 3) Fallback to service-account.json in api directory for local dev
             api_dir = os.path.dirname(__file__)
-            default_path = os.path.join(api_dir, "service-account.json")
+            default_path = os.path.join(api_dir, "envs", "service-account.json")
             if os.path.exists(default_path):
                 try:
                     creds = service_account.Credentials.from_service_account_file(default_path, scopes=scopes)

@@ -125,17 +125,17 @@ class TestProfileScraping:
 class TestEndpointHealth:
     """Test health check and monitoring endpoints."""
     
-    def test_healthz_endpoint(self, client, env_setup):
-        """Test /healthz endpoint returns 200 OK."""
-        response = client.get('/healthz')
+    def test_ping_endpoint(self, client, env_setup):
+        """Test /ping endpoint returns 200 OK."""
+        response = client.get('/ping')
         
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         
         data = response.get_json()
         assert data is not None, "Response should be JSON"
-        assert data.get("ok") is True, "Health check should return ok: true"
+        assert data.get("ok") is True, "Ping check should return ok: true"
         
-        print(f"✓ /healthz endpoint: {json.dumps(data)}")
+        print(f"✓ /ping endpoint: {json.dumps(data)}")
     
     def test_health_endpoint(self, client, env_setup):
         """Test /health endpoint returns detailed health status."""

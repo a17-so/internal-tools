@@ -43,7 +43,7 @@ def _load_outreach_apps_config() -> Dict[str, Dict[str, str]]:
     
     # Look for env.yaml in the api directory
     api_dir = os.path.dirname(__file__)
-    env_yaml_path = os.path.join(api_dir, "env.yaml")
+    env_yaml_path = os.path.join(api_dir, "envs", "env.yaml")
     
     if not os.path.exists(env_yaml_path):
         _log("config.load.no_env_yaml", path=env_yaml_path)
@@ -57,12 +57,26 @@ def _load_outreach_apps_config() -> Dict[str, Dict[str, str]]:
             _log("config.load.invalid_yaml_format")
             return {}
         
-        env_vars = data.get("env_variables", {})
-        if not isinstance(env_vars, dict):
-            _log("config.load.no_env_variables")
-            return {}
+        # Support both new (flat) and old (nested in env_variables) formats
+        apps_json_from_file = ""
         
-        apps_json_from_file = env_vars.get("OUTREACH_APPS_JSON", "").strip()
+        # Check new format first
+        if "OUTREACH_APPS_JSON" in data:
+            apps_json_from_file = str(data["OUTREACH_APPS_JSON"]).strip()
+            
+            # Also load SEARCHAPI_KEY to env if present
+            if "SEARCHAPI_KEY" in data:
+                 os.environ["SEARCHAPI_KEY"] = str(data["SEARCHAPI_KEY"])
+        
+        # Fallback to old format
+        elif "env_variables" in data and isinstance(data["env_variables"], dict):
+            env_vars = data["env_variables"]
+            apps_json_from_file = env_vars.get("OUTREACH_APPS_JSON", "").strip()
+            
+            # Also load SEARCHAPI_KEY from env_variables if present
+            if "SEARCHAPI_KEY" in env_vars:
+                os.environ["SEARCHAPI_KEY"] = str(env_vars["SEARCHAPI_KEY"])
+        
         if not apps_json_from_file:
             _log("config.load.no_apps_in_yaml")
             return {}
@@ -183,6 +197,10 @@ def _resolve_sender_profile(app_cfg: Dict[str, Any], sender_profile_key: str, st
     # Create a new config with overrides applied
     resolved_cfg = dict(app_cfg)
     resolved_cfg.update(profile_overrides)
+    
+    # Ensure from_name matches the profile name if present (mapping 'name' -> 'from_name')
+    if "name" in profile_overrides:
+        resolved_cfg["from_name"] = profile_overrides["name"]
     
     _log("config.sender_profile.resolved",
          sender_profile_key=sender_profile_key,

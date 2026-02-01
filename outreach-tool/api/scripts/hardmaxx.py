@@ -102,7 +102,7 @@ def get_followup_templates(app_name="HARDMAXX", app_config=None):
         app_config = {}
     
     # Extract app-specific information from config
-    app_display_name = app_config.get("from_name", "Ad Akella")
+    app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
     return {
@@ -193,7 +193,7 @@ def get_second_followup_templates(app_name="HARDMAXX", app_config=None):
         app_config = {}
     
     # Extract app-specific information from config
-    app_display_name = app_config.get("from_name", "Ad Akella")
+    app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
     return {
@@ -287,7 +287,7 @@ def get_third_followup_templates(app_name="HARDMAXX", app_config=None):
         app_config = {}
     
     # Extract app-specific information from config
-    app_display_name = app_config.get("from_name", "Ad Akella")
+    app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
     return {

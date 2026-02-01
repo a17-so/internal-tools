@@ -30,7 +30,8 @@ def _get_display_name(profile: Dict[str, Any]) -> str:
     return tt or ig or "there"
 
 
-def _get_templates_for_app(app_key: Optional[str], followup: bool = False, followup_number: int = 1) -> Dict[str, Dict[str, str]]:
+
+def _get_templates_for_app(app_key: Optional[str], followup: bool = False, followup_number: int = 1, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, str]]:
     """Dynamically load templates from api/scripts/<app_key>.py using the new dynamic functions.
 
     Falls back to generic templates from api/scripts.py if per-app not found.
@@ -39,11 +40,14 @@ def _get_templates_for_app(app_key: Optional[str], followup: bool = False, follo
         app_key: The app key (e.g., 'lifemaxx', 'pretti')
         followup: Whether to load followup templates
         followup_number: Which followup template to load (1, 2, or 3)
+        app_config: Optional resolved app configuration dict (containing resolved sender profile)
     """
     key = (app_key or "").strip().lower() or "default"
     
     # Get app configuration to pass to template functions
-    app_config = _get_app_config(app_key)
+    # Use passed config if available, otherwise fetch raw config
+    if not app_config:
+        app_config = _get_app_config(app_key)
     
     _log("template.lookup.start", app_key=key, followup=followup, followup_number=followup_number, app_config_keys=list(app_config.keys()))
     
@@ -73,6 +77,7 @@ def _get_templates_for_app(app_key: Optional[str], followup: bool = False, follo
         _log("template.lookup.error.module", app_key=key, error=str(e))
     
     # Try loading from file path to avoid conflicts with scripts.py module
+    # ... (rest of function remains same but needs consistent app_config usage)
     try:
         api_dir = os.path.dirname(__file__)
         candidate = os.path.join(api_dir, "scripts", f"{key}.py")
@@ -117,7 +122,7 @@ def _get_templates_for_app(app_key: Optional[str], followup: bool = False, follo
     return {}
 
 
-def _build_email_and_dm(category: str, profile: Dict[str, Any], link_url: Optional[str] = None, app_key: Optional[str] = None, is_followup: bool = False, followup_number: int = 1) -> Dict[str, Any]:
+def _build_email_and_dm(category: str, profile: Dict[str, Any], link_url: Optional[str] = None, app_key: Optional[str] = None, is_followup: bool = False, followup_number: int = 1, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build email and DM scripts from templates.
     
     Args:
@@ -127,6 +132,7 @@ def _build_email_and_dm(category: str, profile: Dict[str, Any], link_url: Option
         app_key: App key for template lookup
         is_followup: Whether this is a followup message
         followup_number: Which followup (1, 2, or 3)
+        app_config: Optional resolved app configuration dict
         
     Returns:
         {
@@ -141,7 +147,7 @@ def _build_email_and_dm(category: str, profile: Dict[str, Any], link_url: Option
     tt_handle = profile.get("tt") or ""
 
     # Load markdown templates (use followup templates if this is a followup)
-    templates_for_app = _get_templates_for_app(app_key, followup=is_followup, followup_number=followup_number)
+    templates_for_app = _get_templates_for_app(app_key, followup=is_followup, followup_number=followup_number, app_config=app_config)
     key = _normalize_category(category)
     tmpl = templates_for_app.get(key) or {}
     

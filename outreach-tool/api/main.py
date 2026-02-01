@@ -641,6 +641,7 @@ def scrape_endpoint():
         app_key=app_cfg.get("app_key"),
         is_followup=is_followup,
         followup_number=followup_number,
+        app_config=app_cfg,
     )
     _log(
         "scrape.comms_built",

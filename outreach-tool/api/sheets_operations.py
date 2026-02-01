@@ -230,7 +230,10 @@ def _append_url_to_raw_leads_column(spreadsheet_id: str, url: str, sender_name: 
     # Generate column header: "Jan 17 (Abhay)"
     now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
     date_str = now_pst.strftime("%b %d")  # "Jan 17"
-    column_header = f"{date_str} ({sender_name})"
+    
+    # Use only first name as requested
+    first_name = sender_name.split()[0] if sender_name else "Unknown"
+    column_header = f"{date_str} ({first_name})"
     
     try:
         # Step 1: Read the first row (headers) to find or create the column

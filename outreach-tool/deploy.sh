@@ -69,6 +69,35 @@ else
     echo ""
 fi
 
+# Check gcloud authentication
+echo "========================================="
+echo "Checking gcloud authentication..."
+echo "========================================="
+echo ""
+
+if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" &> /dev/null || [ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)')" ]; then
+    echo "⚠ Not authenticated with gcloud"
+    echo "Running: gcloud auth login"
+    echo ""
+    
+    gcloud auth login
+    
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "========================================="
+        echo "✗ Authentication failed! Deployment aborted."
+        echo "========================================="
+        exit 1
+    fi
+    
+    echo ""
+    echo "✓ Authentication successful!"
+    echo ""
+else
+    ACTIVE_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
+    echo "✓ Already authenticated as: $ACTIVE_ACCOUNT"
+    echo ""
+fi
 
 # Deploy to Cloud Run
 gcloud run deploy outreach-tool-api \

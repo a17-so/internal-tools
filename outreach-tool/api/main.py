@@ -710,7 +710,7 @@ def _get_templates_for_app(app_key: Optional[str], followup: bool = False, follo
     return {}
 
 
-def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization: str = "", link_url: Optional[str] = None, app_key: Optional[str] = None, is_followup: bool = False, followup_number: int = 1) -> Dict[str, Any]:
+def _build_email_and_dm(category: str, profile: Dict[str, Any], link_url: Optional[str] = None, app_key: Optional[str] = None, is_followup: bool = False, followup_number: int = 1) -> Dict[str, Any]:
     name = _get_display_name(profile)
     ig_handle = profile.get("ig") or ""
     tt_handle = profile.get("tt") or ""
@@ -730,20 +730,18 @@ def _build_email_and_dm(category: str, profile: Dict[str, Any], personalization:
 
     # Prepare Markdown strings
     email_md = tmpl.get("email_md") or (
-        "Hi {name}\n\n{personalization}\n\nBest,\nAbhay\n\n*abhay@a17.so*"
+        "Hi {name}\n\nBest,\nAbhay\n\n*abhay@a17.so*"
     )
     dm_md = tmpl.get("dm_md") or (
-        "Hey {name}! {personalization}"
+        "Hey {name}!"
     )
 
-    personalization_clean = personalization.strip()
     email_md = email_md.format(
         name=name,
-        personalization=personalization_clean,
         link_url=link_url,
         link_text=link_text,
     )
-    dm_md = dm_md.format(name=name, personalization=personalization_clean)
+    dm_md = dm_md.format(name=name)
 
     subject = tmpl.get("subject") or f"PAID PARTNERSHIP OPPORTUNITY - Pretti App"
 
@@ -764,7 +762,8 @@ def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, 
             "row_index": int or None (1-based row number),
             "email_message_id": str or None (for threading),
             "status": str or None (current status in sheet),
-            "initial_outreach_date": str or None (date of initial outreach)
+            "initial_outreach_date": str or None (date of initial outreach),
+            "sent_from_email": str or None (email of sender who did initial outreach)
         }
     """
     service = _sheets_client(delegated_user=delegated_user)
@@ -809,15 +808,17 @@ def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, 
             if (ig_normalized and existing_ig == ig_normalized) or (tt_normalized and existing_tt == tt_normalized):
                 status = row[6] if len(row) > 6 else ""  # Status is column G (index 6)
                 message_id = ""  # No longer tracking message ID in this simplified structure
+                sent_from_email = row[7] if len(row) > 7 else ""  # Sent from Email is column H (index 7)
                 initial_outreach_date = row[10] if len(row) > 10 else ""  # Initial Outreach Date is column K (index 10)
                 
-                _log("sheets.check_exists.found", row_index=idx, status=status, has_message_id=bool(message_id), initial_outreach_date=initial_outreach_date)
+                _log("sheets.check_exists.found", row_index=idx, status=status, has_message_id=bool(message_id), initial_outreach_date=initial_outreach_date, sent_from_email=sent_from_email)
                 return {
                     "exists": True,
                     "row_index": idx,
                     "email_message_id": message_id or None,
                     "status": status or None,
-                    "initial_outreach_date": initial_outreach_date or None
+                    "initial_outreach_date": initial_outreach_date or None,
+                    "sent_from_email": sent_from_email or None,
                 }
         
         _log("sheets.check_exists.not_found")
@@ -1552,13 +1553,7 @@ def scrape_endpoint():
     # Default to "rawlead" for legacy /add_raw_leads endpoint if category missing
     if not category and request.path.endswith("/add_raw_leads"):
         category = "rawlead"
-    # New single personalization field; keep backward-compat with p1/p2
-    legacy_p1 = payload.get("p1") or payload.get("personalization1") or ""
-    legacy_p2 = payload.get("p2") or payload.get("personalization2") or ""
-    personalization = payload.get("personalization") or "".strip()
-    if not personalization:
-        parts = [p for p in [legacy_p1, legacy_p2] if p]
-        personalization = "\n".join(parts)
+
 
     # Valid keys: "sender", "sender_profile", "profile"
     sender_profile_key = (payload.get("sender_profile") or payload.get("sender") or payload.get("profile") or "").strip().lower()
@@ -1691,7 +1686,28 @@ def scrape_endpoint():
             tt_handle_from_url,
             delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
         )
-        is_followup = existing_data.get("exists", False)
+        
+        # Check if this is a followup by the SAME sender
+        # Only treat as followup if:
+        # 1. Lead exists in sheet, AND
+        # 2. Current sender email matches the stored sender email
+        current_sender_email = app_cfg.get("gmail_sender") or ""
+        existing_sender_email = existing_data.get("sent_from_email") or ""
+        
+        is_followup = (
+            existing_data.get("exists", False) and 
+            current_sender_email and 
+            existing_sender_email and
+            current_sender_email.lower() == existing_sender_email.lower()
+        )
+        
+        # If lead exists but different sender, it's a new outreach for this sender
+        if existing_data.get("exists", False) and not is_followup:
+            _log("scrape.different_sender_detected", 
+                 current_sender=current_sender_email,
+                 existing_sender=existing_sender_email,
+                 treating_as_new_outreach=True)
+        
         if is_followup:
             followup_number = _get_followup_number_from_status(existing_data.get("status"))
         
@@ -1703,6 +1719,9 @@ def scrape_endpoint():
             row_index=existing_data.get("row_index"),
             status=existing_data.get("status"),
             sheet_name=existing_data.get("sheet_name"),
+            current_sender=current_sender_email,
+            existing_sender=existing_sender_email,
+        )
             found_handles_from_url={"ig": ig_handle_from_url, "tt": tt_handle_from_url}
         )
 
@@ -1750,7 +1769,6 @@ def scrape_endpoint():
     comms = _build_email_and_dm(
         category,
         profile,
-        personalization=personalization,
         link_url=app_cfg.get("link_url"),
         app_key=app_cfg.get("app_key"),
         is_followup=is_followup,
@@ -1946,6 +1964,260 @@ def scrape_endpoint():
     except Exception:
         pass
 
+    return jsonify(resp)
+
+
+@app.post("/scrape_themepage")
+def scrape_themepage_endpoint():
+    """
+    Dedicated endpoint for theme page outreach.
+    
+    Theme pages are handled differently:
+    - No scraping (most don't have IG/Email)
+    - Extract handle from URL directly
+    - Generate DM script only
+    - Add to spreadsheet for tracking
+    
+    Request body:
+        {
+            "app": "hardmaxx",
+            "url": "https://tiktok.com/@themepage_handle",
+            "sender_profile": "abhay"
+        }
+    
+    Response:
+        {
+            "ok": true,
+            "ig_handle": "themepage_handle",
+            "dm_text": "personalized DM script...",
+            "ig_app_url": "instagram://user?username=themepage_handle",
+            "added_to_sheet": true
+        }
+    """
+    payload = request.get_json(silent=True) or {}
+    app_key = (payload.get("app") or payload.get("app_name") or "").strip()
+    url_raw = payload.get("url") or payload.get("tiktok_url") or ""
+    url = _clean_url(url_raw)
+    sender_profile_key = (payload.get("sender_profile") or payload.get("sender") or payload.get("profile") or "").strip().lower()
+    
+    # Get app config
+    app_cfg = _get_app_config(app_key)
+    
+    # Resolve sender profile
+    if sender_profile_key:
+        try:
+            app_cfg = _resolve_sender_profile(app_cfg, sender_profile_key, strict=False)
+        except ValueError as e:
+            _log("scrape_themepage.sender_profile_error", error=str(e), sender_profile_key=sender_profile_key)
+            return jsonify({
+                "error": "Invalid sender profile",
+                "detail": str(e),
+                "sender_profile": sender_profile_key,
+                "available_profiles": list(app_cfg.get("sender_profiles", {}).keys())
+            }), 400
+    
+    _log(
+        "scrape_themepage.request",
+        app_key=app_cfg.get("app_key"),
+        has_sheet=bool(app_cfg.get("sheets_spreadsheet_id")),
+        sender_profile_key=sender_profile_key or None
+    )
+    
+    if not url:
+        return jsonify({"error": "Missing url or tiktok_url"}), 400
+    
+    # Extract handle from URL without scraping
+    ig_handle = ""
+    tt_handle = ""
+    platform = ""
+    
+    try:
+        if "tiktok.com" in url.lower():
+            tt_match = re.search(r'tiktok\.com/@([A-Za-z0-9_.]+)', url)
+            if tt_match:
+                tt_handle = tt_match.group(1)
+                platform = "tiktok"
+        elif "instagram.com" in url.lower():
+            ig_match = re.search(r'instagram\.com/([A-Za-z0-9_.]+)', url)
+            if ig_match:
+                ig_handle = ig_match.group(1)
+                platform = "instagram"
+    except Exception as e:
+        _log("scrape_themepage.handle_extraction_error", error=str(e), url=url)
+        return jsonify({"error": f"Failed to extract handle from URL: {e}"}), 400
+    
+    if not ig_handle and not tt_handle:
+        return jsonify({"error": "Could not extract handle from URL. Please provide a valid TikTok or Instagram URL."}), 400
+    
+    # Check if theme page already exists
+    spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
+    is_followup = False
+    existing_data = {"exists": False}
+    followup_number = 1
+    
+    if spreadsheet_id and (ig_handle or tt_handle):
+        existing_data = _check_creator_exists_across_all_sheets(
+            spreadsheet_id,
+            ig_handle,
+            tt_handle,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+        
+        # Check if this is a followup by the SAME sender
+        # Only treat as followup if:
+        # 1. Lead exists in sheet, AND
+        # 2. Current sender email matches the stored sender email
+        current_sender_email = app_cfg.get("gmail_sender") or ""
+        existing_sender_email = existing_data.get("sent_from_email") or ""
+        
+        is_followup = (
+            existing_data.get("exists", False) and 
+            current_sender_email and 
+            existing_sender_email and
+            current_sender_email.lower() == existing_sender_email.lower()
+        )
+        
+        # If lead exists but different sender, it's a new outreach for this sender
+        if existing_data.get("exists", False) and not is_followup:
+            _log("scrape_themepage.different_sender_detected", 
+                 current_sender=current_sender_email,
+                 existing_sender=existing_sender_email,
+                 treating_as_new_outreach=True)
+        
+        if is_followup:
+            followup_number = _get_followup_number_from_status(existing_data.get("status"))
+        
+        _log(
+            "scrape_themepage.duplicate_check",
+            is_followup=is_followup,
+            followup_number=followup_number,
+            row_index=existing_data.get("row_index"),
+            status=existing_data.get("status"),
+            sheet_name=existing_data.get("sheet_name"),
+            current_sender=current_sender_email,
+            existing_sender=existing_sender_email,
+        )
+    
+    # Create minimal profile object (no scraping)
+    profile = {
+        "ig": ig_handle,
+        "tt": tt_handle,
+        "name": ig_handle or tt_handle or "there",
+        "email": "",  # Theme pages don't have emails
+        "igProfileUrl": f"https://www.instagram.com/{ig_handle}" if ig_handle else "",
+        "ttProfileUrl": f"https://www.tiktok.com/@{tt_handle}" if tt_handle else "",
+        "igAvgViews": 0,
+        "ttAvgViews": 0,
+        "platform": platform,
+    }
+    
+    _log("scrape_themepage.profile_created", ig=ig_handle, tt=tt_handle, platform=platform, is_followup=is_followup)
+    
+    # Build DM script using theme page templates
+    comms = _build_email_and_dm(
+        "themepage",
+        profile,
+        link_url=app_cfg.get("link_url"),
+        app_key=app_cfg.get("app_key"),
+        is_followup=is_followup,
+        followup_number=followup_number,
+    )
+    
+    dm_text = comms.get("dm_md") or ""
+    _log("scrape_themepage.dm_generated", dm_len=len(dm_text), is_followup=is_followup)
+    
+    # Add to spreadsheet
+    sheet_status = {"ok": False, "error": "No spreadsheet configured"}
+    sheet_name = "Theme Pages"  # Always use Theme Pages sheet
+    
+    if spreadsheet_id:
+        name = _get_display_name(profile)
+        
+        # Create links
+        ig_link = _hyperlink_formula(profile.get("igProfileUrl") or (f"https://www.instagram.com/{ig_handle}" if ig_handle else ""), f"@{ig_handle}" if ig_handle else "")
+        tt_link = _hyperlink_formula(profile.get("ttProfileUrl") or (f"https://www.tiktok.com/@{tt_handle}" if tt_handle else ""), f"@{tt_handle}" if tt_handle else "")
+        
+        # Get sender information
+        sent_from_email = app_cfg.get("gmail_sender") or ""
+        sent_from_tiktok = app_cfg.get("tiktok_account") or ""
+        sent_from_ig = app_cfg.get("instagram_account") or ""
+        
+        # Handle initial outreach date
+        if is_followup and existing_data.get("initial_outreach_date"):
+            initial_outreach_date = existing_data.get("initial_outreach_date")
+        else:
+            initial_outreach_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Status for theme pages (leave blank initially, or use progressive status for followups)
+        if is_followup:
+            status_val = _get_next_status_from_current(existing_data.get("status"))
+        else:
+            status_val = ""
+        
+        # Column order: Name, Instagram @, TikTok @, Email (blank), Average Views (IG), Average Views (TT), Status, Sent from Email, Sent from IG @, Sent from TT @, Initial Outreach Date
+        row = [
+            name,                    # A: Name
+            ig_link,                 # B: Instagram @
+            tt_link,                 # C: TikTok @
+            "",                      # D: Email (always blank for theme pages)
+            0,                       # E: Average Views (Instagram)
+            0,                       # F: Average Views (TikTok)
+            status_val,              # G: Status
+            sent_from_email,         # H: Sent from Email
+            sent_from_ig,            # I: Sent from IG @
+            sent_from_tiktok,        # J: Sent from TT @
+            initial_outreach_date,   # K: Initial Outreach Date
+        ]
+        
+        if is_followup:
+            # Update existing row
+            actual_sheet_name = existing_data.get("sheet_name") or sheet_name
+            _log("scrape_themepage.update_row", sheet=actual_sheet_name, row_index=existing_data.get("row_index"), status=status_val)
+            sheet_status = _update_sheet_row(
+                spreadsheet_id,
+                actual_sheet_name,
+                existing_data.get("row_index"),
+                row,
+                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+            )
+        else:
+            # Append new row
+            _log("scrape_themepage.append_row", sheet=sheet_name, name=name)
+            sheet_status = _append_to_sheet(
+                spreadsheet_id,
+                sheet_name,
+                row,
+                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+            )
+        
+        _log("scrape_themepage.sheet_result", ok=sheet_status.get("ok"), error=sheet_status.get("error"))
+    
+    # Prepare response
+    handle_for_dm = ig_handle or tt_handle
+    normalized_handle = (handle_for_dm or "").strip().lstrip("@")
+    ig_app_url = None
+    if ig_handle:
+        ig_app_url = f"instagram://user?username={normalized_handle}"
+    
+    resp = {
+        "ok": True,
+        "ig_handle": normalized_handle.lower() if normalized_handle else None,
+        "tt_handle": tt_handle or None,
+        "dm_text": dm_text,
+        "ig_app_url": ig_app_url,
+        "added_to_sheet": sheet_status.get("ok", False),
+        "is_followup": is_followup,
+        "platform": platform,
+    }
+    
+    _log(
+        "scrape_themepage.response",
+        handle=normalized_handle,
+        dm_len=len(dm_text),
+        added_to_sheet=sheet_status.get("ok", False),
+        is_followup=is_followup,
+    )
+    
     return jsonify(resp)
 
 

@@ -37,8 +37,38 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "Starting deployment..."
+echo "Starting deployment...\n"
 echo ""
+
+# Run tests before deployment
+echo "========================================="
+echo "Running Tests Before Deployment"
+echo "========================================="
+echo ""
+
+if [ -f "tests/run_tests.sh" ]; then
+    ./tests/run_tests.sh
+    TEST_EXIT_CODE=$?
+    
+    if [ $TEST_EXIT_CODE -ne 0 ]; then
+        echo ""
+        echo "========================================="
+        echo "✗ Tests failed! Deployment aborted."
+        echo "========================================="
+        echo ""
+        echo "Please fix the failing tests before deploying."
+        exit 1
+    fi
+    
+    echo ""
+    echo "✓ All tests passed! Proceeding with deployment..."
+    echo ""
+else
+    echo "⚠ Warning: Test suite not found at tests/run_tests.sh"
+    echo "Proceeding with deployment anyway..."
+    echo ""
+fi
+
 
 # Deploy to Cloud Run
 gcloud run deploy outreach-tool-api \

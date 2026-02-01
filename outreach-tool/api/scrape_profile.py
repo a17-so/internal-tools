@@ -586,139 +586,6 @@ async def scrape_instagram(page, url: str) -> dict:
     return data
 
 
-async def scrape_profile(url: str) -> dict:
-    parsed = urlparse(url)
-    host = (parsed.netloc or "").lower()
-    
-    # For TikTok, try SearchAPI.io first (no browser needed)
-    if "tiktok.com" in host:
-        path = (parsed.path or "").strip()
-        username_match = re.search(r"/@([A-Za-z0-9_.-]+)", path)
-        if username_match:
-            username = username_match.group(1)
-            _log("scrape.standalone.trying_searchapi", username=username)
-            
-            # Try SearchAPI.io first
-            data = scrape_tiktok_with_searchapi(username)
-            
-            # If SearchAPI.io succeeds, return early without launching browser
-            if "error" not in data:
-                _log("scrape.standalone.searchapi_success", username=username)
-                try:
-                    print(json.dumps({"rawProfileData": data}, ensure_ascii=False))
-                except Exception:
-                    pass
-                
-                # Normalize and return
-                out = {
-                    "platform": data.get("platform"),
-                    "name": data.get("name") or "",
-                    "email": data.get("email") or "",
-                    "ig": data.get("ig_handle") or "",
-                    "tt": data.get("username") or username,
-                    "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle')}" if data.get("ig_handle") else "",
-                    "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username') or username}",
-                }
-                if "ttAvgViews" in data:
-                    out["ttAvgViews"] = data["ttAvgViews"]
-                return out
-            else:
-                _log("scrape.standalone.searchapi_failed_fallback_to_playwright", error=data.get("error"))
-    
-    # Fall back to Playwright for TikTok failures or Instagram
-    launch_args = [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-    ]
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True, args=launch_args)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-            locale="en-US",
-            timezone_id="America/Los_Angeles",
-            extra_http_headers={
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            }
-        )
-        page = await context.new_page()
-        # Evasion: remove navigator.webdriver
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        # Block heavy resources
-        async def block_media(route):
-            if route.request.resource_type in ["image", "media", "font", "stylesheet"]:
-                await route.abort()
-            else:
-                await route.continue_()
-        await page.route("**/*", block_media)
-
-        try:
-            page.set_default_navigation_timeout(15000)
-            page.set_default_timeout(15000)
-        except Exception:
-            pass
-
-        try:
-            if "tiktok.com" in host:
-                data = await scrape_tiktok(page, url)
-            elif "instagram.com" in host:
-                data = await scrape_instagram(page, url)
-            else:
-                data = {"error": "Unsupported URL", "url": url}
-        finally:
-            await context.close()
-            await browser.close()
-
-    try:
-        print(json.dumps({"rawProfileData": data}, ensure_ascii=False))
-    except Exception:
-        pass
-
-    # Normalize and add URLs
-    out = {
-        "platform": data.get("platform"),
-        "name": data.get("name") or "",
-        "email": data.get("email") or "",
-        "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
-        "tt": data.get("username") if data.get("platform") == "tiktok" else "",
-        "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
-        "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
-    }
-    
-    # For link aggregator platforms, add the source URL
-    if data.get("platform") == "link_aggregator":
-        out["linkAggregatorUrl"] = data.get("source_url") or ""
-    # Add average views if present
-    if "ttAvgViews" in data:
-        out["ttAvgViews"] = data["ttAvgViews"]
-    if "igAvgViews" in data:
-        out["igAvgViews"] = data["igAvgViews"]
-
-    # Normalize bad IG handle '@media' → treat as not found
-    try:
-        ig_val = (out.get("ig") or "").strip().lstrip("@")
-        if ig_val.lower() == "media":
-            out["ig"] = ""
-            out["igProfileUrl"] = ""
-    except Exception:
-        pass
-
-    # Fallback: if TikTok username wasn't found, derive from the provided URL
-    try:
-        if out.get("platform") == "tiktok" and not out.get("tt"):
-            path = (urlparse(url).path or "").strip()
-            # Expect formats like /@handle or /@handle/video/...
-            m = re.search(r"/@([A-Za-z0-9_.-]+)", path)
-            if m:
-                handle = m.group(1)
-                out["tt"] = handle
-                out["ttProfileUrl"] = f"https://www.tiktok.com/@{handle}"
-    except Exception:
-        pass
-    return out
 
 
 if __name__ == "__main__":
@@ -726,7 +593,11 @@ if __name__ == "__main__":
         print("Usage: python scrape_profile.py <profile_url>")
         sys.exit(1)
     url = sys.argv[1]
-    result = asyncio.run(scrape_profile(url))
+    # Use the persistent browser approach for CLI usage
+    result = scrape_profile_sync(url)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+
 
 

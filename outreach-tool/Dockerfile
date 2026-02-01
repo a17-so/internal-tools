@@ -49,7 +49,7 @@ RUN python3 -c "from playwright.sync_api import sync_playwright; print('Playwrig
 COPY . .
 
 # Set environment variables
-ENV FLASK_APP=api/index.py
+ENV FLASK_APP=api/main.py
 ENV PYTHONPATH=/app:/app/api
 
 # Expose port

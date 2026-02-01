@@ -108,6 +108,7 @@ gcloud run deploy outreach-tool-api \
   --timeout 60 \
   --concurrency 8 \
   --min-instances 1 \
+  --clear-base-image \
   --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=outreach-service-account:latest
 
 echo ""

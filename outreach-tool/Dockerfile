@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.10-slim-bookworm
 
 WORKDIR /app
 
@@ -32,15 +32,15 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements files
 COPY requirements.txt ./requirements.txt
-COPY api/requirements.txt ./api/requirements.txt
 
 # Install Python dependencies (including Playwright)
-RUN pip install --no-cache-dir -r ./api/requirements.txt
+RUN pip install --no-cache-dir -r ./requirements.txt
 
 # Install Playwright browsers AFTER pip install
 # Use PLAYWRIGHT_BROWSERS_PATH to ensure consistent location
+# Skip --with-deps to avoid font package conflicts
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN python3 -m playwright install chromium --with-deps
+RUN python3 -m playwright install chromium
 
 # Verify Playwright installation
 RUN python3 -c "from playwright.sync_api import sync_playwright; print('Playwright installed successfully')"

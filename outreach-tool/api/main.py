@@ -26,40 +26,35 @@ for _p in (_LOCAL_DIR, _SCRAPER_DIR):
         sys.path.insert(0, _p)
 
 SCRAPER_IMPORT_ERROR = None
-scrape_profile = None  # type: ignore
 scrape_profile_sync = None  # type: ignore
+
 try:
-    # First attempt: import by module name with sys.path including outreach-tool
+    # Import by module name with sys.path including outreach-tool
     from scrape_profile import scrape_profile_sync as _scrape_profile_sync  # type: ignore
     scrape_profile_sync = _scrape_profile_sync
 except Exception as import_err:
-    # Fallback: load directly from file path
+    SCRAPER_IMPORT_ERROR = str(import_err)
+    # Check if we can load it manually as fallback
     try:
         import importlib.util
         candidate_paths = [
             os.path.join(_LOCAL_DIR, "scrape_profile.py"),
             os.path.join(_SCRAPER_DIR, "scrape_profile.py"),
         ]
-        last_err = None
         for _scraper_path in candidate_paths:
+            if not os.path.exists(_scraper_path):
+                continue
             try:
-                if not os.path.exists(_scraper_path):
-                    continue
                 spec = importlib.util.spec_from_file_location("scrape_profile", _scraper_path)
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)  # type: ignore[attr-defined]
                     scrape_profile_sync = getattr(mod, "scrape_profile_sync", None)
-                    if scrape_profile_sync is not None:
-                        last_err = None
+                    if scrape_profile_sync:
+                        SCRAPER_IMPORT_ERROR = None
                         break
-                    last_err = "scrape_profile_sync() not found in module"
-                else:
-                    last_err = f"Could not create spec for {_scraper_path}"
-            except Exception as _e:
-                last_err = str(_e)
-        if scrape_profile_sync is None:
-            SCRAPER_IMPORT_ERROR = f"{import_err}; fallback tried {candidate_paths} → {last_err}"
+            except Exception:
+                pass
     except Exception as e:
         SCRAPER_IMPORT_ERROR = f"{import_err}; fallback failed: {e}"
 
@@ -196,7 +191,7 @@ def health_check():
     
     # Check 4: Scraper available
     try:
-        if scrape_profile is None:
+        if scrape_profile_sync is None:
             health["checks"]["scraper"] = {
                 "status": "unhealthy",
                 "error": "Scraper not available",
@@ -205,8 +200,7 @@ def health_check():
             health["status"] = "unhealthy"
         else:
             health["checks"]["scraper"] = {
-                "status": "healthy",
-                "has_sync": scrape_profile_sync is not None
+                "status": "healthy"
             }
     except Exception as e:
         health["checks"]["scraper"] = {"status": "unhealthy", "error": str(e)}
@@ -399,10 +393,8 @@ def warmup():
             scrape_profile_sync("about:blank", timeout_seconds=10.0)
             _log("warmup.success", persistent=True, duration_ms=int((time.perf_counter()-t0)*1000))
             return jsonify({"ok": True, "persistent": True})
-        # Fallback: touch the async scraper (does not persist browser)
-        _ = asyncio.run(scrape_profile("about:blank"))
-        _log("warmup.success", persistent=False, duration_ms=int((time.perf_counter()-t0)*1000))
-        return jsonify({"ok": True, "persistent": False})
+        
+        return jsonify({"ok": False, "error": "Scraper not available"}), 503
     except Exception as e:
         _log("warmup.error", error=str(e))
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -413,7 +405,7 @@ def warmup():
 def scrape_endpoint():
     # Determine which app context to use
     app_key_from_query = (request.args.get("app") or request.args.get("app_name") or "").strip()
-    if scrape_profile is None:
+    if scrape_profile_sync is None:
         return jsonify({
             "error": "scraper not available",
             "details": SCRAPER_IMPORT_ERROR or "unknown import error",
@@ -611,7 +603,7 @@ def scrape_endpoint():
             if scrape_profile_sync is not None:
                 profile = scrape_profile_sync(url, timeout_seconds=45.0)
             else:
-                profile = asyncio.run(scrape_profile(url))
+                raise Exception("Scraper not available")
             _log("scrape.done", duration_ms=int((time.perf_counter()-t_scrape)*1000))
         except Exception as e:
             _log("scrape.error", error=str(e))

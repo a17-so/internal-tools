@@ -126,8 +126,8 @@ class TestEndpointHealth:
     """Test health check and monitoring endpoints."""
     
     def test_ping_endpoint(self, client, env_setup):
-        """Test /ping endpoint returns 200 OK."""
-        response = client.get('/ping')
+        """Test /healthz endpoint returns 200 OK."""
+        response = client.get('/healthz')
         
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         

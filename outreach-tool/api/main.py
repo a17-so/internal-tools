@@ -513,7 +513,7 @@ def scrape_endpoint():
                 }), 409  # 409 Conflict
         
         # Get sender name from sender_profile or default to "Unknown"
-        sender_name = sender_profile_key.capitalize() if sender_profile_key else "Unknown"
+        sender_name = app_cfg.get("from_name") or (sender_profile_key.capitalize() if sender_profile_key else "Unknown")
         
         # Append URL to column (handles duplicate URL detection within the column)
         _log("rawlead.column_append", url=url, sender=sender_name)

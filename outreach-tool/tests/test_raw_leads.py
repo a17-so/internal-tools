@@ -20,14 +20,14 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
     """
     # Setup Mocks
     mock_get_config.return_value = {
-        "app_key": "hardmaxx",
+        "app_key": "regen",
         "sheets_spreadsheet_id": "test_sheet_id",
         "sender_profiles": {"test_user": {"from_name": "Test User Fullname"}}
     }
     
     # Mock resolved config to include the correct from_name
     mock_resolve.return_value = {
-        "app_key": "hardmaxx",
+        "app_key": "regen",
         "sheets_spreadsheet_id": "test_sheet_id",
         "gmail_sender": "test@example.com", 
         "from_name": "Test User Fullname"  # CRITICAL: This is what we expect to be used
@@ -42,7 +42,7 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
 
     # Request Payload
     payload = {
-        "app": "hardmaxx",
+        "app": "regen",
         "sender_profile": "test_user",  # Helper should convert this -> "Test User Fullname"
         "url": "https://www.instagram.com/p/12345/",
         "category": "rawlead"
@@ -72,7 +72,7 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
 def test_raw_lead_creator_already_exists(mock_get_config, mock_check_exists, mock_append, client):
     """Test that we reject raw leads if the creator exists in any other sheet."""
     mock_get_config.return_value = {
-        "app_key": "hardmaxx",
+        "app_key": "regen",
         "sheets_spreadsheet_id": "test_sheet_id"
     }
     
@@ -84,7 +84,7 @@ def test_raw_lead_creator_already_exists(mock_get_config, mock_check_exists, moc
     }
 
     payload = {
-        "app": "hardmaxx",
+        "app": "regen",
         "url": "https://www.instagram.com/some_creator",
         "category": "rawlead"
     }

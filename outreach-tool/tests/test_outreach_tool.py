@@ -185,7 +185,7 @@ class TestEndpointHealth:
     def test_validate_endpoint(self, client, env_setup):
         """Test /validate endpoint validates request parameters."""
         response = client.post('/validate',
-                              json={"app": "hardmaxx", "sender_profile": "abhay"},
+                              json={"app": "regen", "sender_profile": "abhay"},
                               content_type='application/json')
         
         # Endpoint may not exist (404) or return validation results (200)
@@ -210,7 +210,7 @@ class TestScrapingEndpoint:
         profile_data = test_profiles["with_email_and_ig"]
         
         payload = {
-            "app": "hardmaxx",
+            "app": "regen",
             "url": profile_data["url"],
             "category": "micro",
             "sender_profile": "abhay"
@@ -240,7 +240,7 @@ class TestScrapingEndpoint:
     def test_scrape_endpoint_missing_url(self, client, env_setup):
         """Test /scrape endpoint with missing URL parameter."""
         payload = {
-            "app": "hardmaxx",
+            "app": "regen",
             "category": "micro",
             "sender_profile": "abhay"
         }
@@ -261,7 +261,7 @@ class TestScrapingEndpoint:
     def test_scrape_endpoint_invalid_url(self, client, env_setup):
         """Test /scrape endpoint with invalid URL."""
         payload = {
-            "app": "hardmaxx",
+            "app": "regen",
             "url": "https://invalid-domain-12345.com/@user",
             "category": "micro",
             "sender_profile": "abhay"
@@ -287,7 +287,7 @@ class TestThemePageEndpoint:
     def test_themepage_endpoint_tiktok(self, client, env_setup):
         """Test /scrape_themepage endpoint with TikTok URL."""
         payload = {
-            "app": "hardmaxx",
+            "app": "regen",
             "url": "https://www.tiktok.com/@themepage_test",
             "sender_profile": "abhay"
         }
@@ -311,7 +311,7 @@ class TestThemePageEndpoint:
     def test_themepage_endpoint_missing_url(self, client, env_setup):
         """Test /scrape_themepage endpoint with missing URL."""
         payload = {
-            "app": "hardmaxx",
+            "app": "regen",
             "sender_profile": "abhay"
         }
         

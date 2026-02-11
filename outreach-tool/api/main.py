@@ -185,7 +185,7 @@ def validate_request():
     
     Request body:
         {
-            "app": "hardmaxx",  # Required
+            "app": "regen",  # Required
             "sender_profile": "abhay",  # Optional
             "category": "micro"  # Optional
         }
@@ -194,7 +194,7 @@ def validate_request():
         {
             "ok": true,
             "config": {
-                "app_key": "hardmaxx",
+                "app_key": "regen",
                 "gmail_sender": "abhay@a17.so",
                 "delegated_user": "abhay@a17.so",
                 "sheets_spreadsheet_id": "1pJbbD_o_duLKDTj_Nvtn...",
@@ -228,7 +228,7 @@ def validate_request():
         return jsonify({
             "ok": False,
             "error": "Missing required field: 'app'",
-            "detail": "Provide app name in request body, e.g. {'app': 'hardmaxx'}",
+            "detail": "Provide app name in request body, e.g. {'app': 'regen'}",
             "available_apps": list(_OUTREACH_APPS.keys())
         }), 400
     
@@ -798,7 +798,7 @@ def scrape_themepage_endpoint():
     
     Request body:
         {
-            "app": "hardmaxx",
+            "app": "regen",
             "url": "https://tiktok.com/@themepage_handle",
             "sender_profile": "abhay"
         }

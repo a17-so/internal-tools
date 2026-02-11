@@ -607,8 +607,8 @@ Examples:
     parser.add_argument(
         "--app",
         required=True,
-        choices=["pretti", "lifemaxx", "hardmaxx"],
-        help="App name (pretti, lifemaxx, or hardmaxx)"
+        choices=["pretti", "lifemaxx", "regen"],
+        help="App name (pretti, lifemaxx, or regen)"
     )
     parser.add_argument(
         "--sheet",

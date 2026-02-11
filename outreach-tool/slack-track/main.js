@@ -23,7 +23,7 @@ function dailyOutreachReport() {
 
     let totalDMs = 0;
     let totalFUs = 0;
-    let summary = `<!channel>\n\n🧬 *HARDMAXX App Outreach Summary (${labhayl})*\n\n`;
+    let summary = `<!channel>\n\n🧬 *REGEN App Outreach Summary (${labhayl})*\n\n`;
 
     // headers to detect
     const INITIAL_RE = /^initial\s*date$/i;

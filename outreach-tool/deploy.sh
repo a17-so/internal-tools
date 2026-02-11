@@ -152,7 +152,7 @@ echo "Testing /validate endpoint..."
 echo "---"
 curl -s -X POST $SERVICE_URL/validate \
   -H "Content-Type: application/json" \
-  -d '{"app": "hardmaxx", "sender_profile": "abhay"}' \
+  -d '{"app": "regen", "sender_profile": "abhay"}' \
   | python3 -m json.tool
 echo ""
 echo ""

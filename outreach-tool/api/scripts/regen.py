@@ -1,13 +1,13 @@
 
 
-def get_templates(app_name="HARDMAXX", app_config=None):
+def get_templates(app_name="REGEN", app_config=None):
     """Generate templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
     
     # Extract app-specific information from config
     app_display_name = app_config.get("from_name", "Abhay Chebium")
-    app_url = app_config.get("link_url", "https://apps.apple.com/us/app/hardmaxx-transform-now/id6756548399")
+    app_url = app_config.get("link_url", "https://apps.apple.com/us/app/regen-transform-now/id6756548399")
     
     # Common sections
     INTRO = (
@@ -30,7 +30,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
 
     DELIVERABLES_LINK = (
         "here is a brief about deliverables + rate: "
-        "https://www.notion.so/HARDMAXX-Clipping-Program-2c739b5e840f800e826bc1cc0569aea3\n\n"
+        "https://www.notion.so/REGEN-Clipping-Program-2c739b5e840f800e826bc1cc0569aea3\n\n"
     )
 
     # Variant specific texts
@@ -54,7 +54,7 @@ def get_templates(app_name="HARDMAXX", app_config=None):
         
         if is_themepage:
              # Theme pages had a slightly different footer in original, but standardizing to the requested format for now or keeping close to original?
-             # User prompt image signoff: "- Abhay Chebium from the HARDMAXX App (link)"
+             # User prompt image signoff: "- Abhay Chebium from the REGEN App (link)"
              # Original code signoff: "- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
              pass
 
@@ -89,14 +89,14 @@ def get_templates(app_name="HARDMAXX", app_config=None):
             "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "themepage": {
-            "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App", # Subject changed to match others or keep old? Prompt says "base template for hardmaxx outreach scripts", implies for all.
+            "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App", # Subject changed to match others or keep old? Prompt says "base template for regen outreach scripts", implies for all.
             "email_md": build_body(THEMEPAGE_TEXT, includes_deliverables=True, is_themepage=True),
             "dm_md": build_body(THEMEPAGE_TEXT, includes_deliverables=False, is_themepage=True),
         },
     }
 
 
-def get_followup_templates(app_name="HARDMAXX", app_config=None):
+def get_followup_templates(app_name="REGEN", app_config=None):
     """Generate followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
@@ -187,7 +187,7 @@ def get_followup_templates(app_name="HARDMAXX", app_config=None):
     }
 
 
-def get_second_followup_templates(app_name="HARDMAXX", app_config=None):
+def get_second_followup_templates(app_name="REGEN", app_config=None):
     """Generate second followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
@@ -281,7 +281,7 @@ def get_second_followup_templates(app_name="HARDMAXX", app_config=None):
     }
 
 
-def get_third_followup_templates(app_name="HARDMAXX", app_config=None):
+def get_third_followup_templates(app_name="REGEN", app_config=None):
     """Generate third followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}

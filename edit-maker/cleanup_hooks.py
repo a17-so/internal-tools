@@ -1,55 +1,54 @@
+#!/usr/bin/env python3
+"""
+One-shot utility to clean hook text in hooks.json.
+
+Replaces weak patterns like "X makes you attractive" with the stronger
+"X is what makes you attractive" variant.
+"""
 import json
-from pathlib import Path
+from typing import List
 
-hooks_file = Path("hooks.json")
-with open(hooks_file, "r") as f:
-    data = json.load(f)
+from config import HOOKS_FILE
 
-def clean_hooks(hooks_list):
-    new_list = []
-    # convert to set for easy lookup of existing "is what" versions
+
+def clean_hooks(hooks_list: List[str]) -> List[str]:
+    """Upgrade weak hook phrasing to the stronger 'is what' variant."""
     current_hooks = set(hooks_list)
-    
+    cleaned: List[str] = []
+
     for hook in hooks_list:
-        # Check for the weak pattern "makes you attractive" (without 10x or "is what")
-        if hook.endswith("makes you attractive") and "10x" not in hook and "is what" not in hook:
-            # Construct the strong version
-            # E.g. "a big forehead makes you attractive" -> "a big forehead is what makes you attractive"
-            # Replace " makes you attractive" with " is what makes you attractive"
-            strong_version = hook.replace(" makes you attractive", " is what makes you attractive")
-            
-            # If string replacement worked (it should have)
-            if strong_version != hook:
-                # If the strong version already exists in the list, just drop the weak one
-                if strong_version in current_hooks:
-                    continue
-                else:
-                    # If it doesn't exist, replace the weak one with strong one
-                    new_list.append(strong_version)
-            else:
-                new_list.append(hook)
-        else:
-            new_list.append(hook)
-    return new_list
+        if (
+            hook.endswith("makes you attractive")
+            and "10x" not in hook
+            and "is what" not in hook
+        ):
+            strong = hook.replace(" makes you attractive", " is what makes you attractive")
+            if strong != hook:
+                if strong in current_hooks:
+                    continue  # strong version already exists; drop this one
+                cleaned.append(strong)
+                continue
+        cleaned.append(hook)
 
-def process_features(feature_dict):
-    for key, value in feature_dict.items():
-        if "hooks" in value:
-            value["hooks"] = clean_hooks(value["hooks"])
-        # Handle nested categories if any (hooks.json structure is features -> category -> item)
-        # But here 'value' is the item dict.
-        # Wait, structure is data['features'][category][item]
-        
-# Iterate through categories
-for category in data["features"]:
-    for item_key in data["features"][category]:
-        item = data["features"][category][item_key]
-        if "hooks" in item:
-            item["hooks"] = clean_hooks(item["hooks"])
+    return cleaned
 
-with open(hooks_file, "w") as f:
-    json.dump(data, f, indent=2)
-    # Restore newline at end of file
-    f.write("\n")
 
-print("Hooks cleaned successfully.")
+def main() -> None:
+    """Run the cleanup and write the result back to hooks.json."""
+    with open(HOOKS_FILE, "r") as f:
+        data = json.load(f)
+
+    for category in data.get("features", {}):
+        for item_key, item in data["features"][category].items():
+            if "hooks" in item:
+                item["hooks"] = clean_hooks(item["hooks"])
+
+    with open(HOOKS_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+    print("Hooks cleaned successfully.")
+
+
+if __name__ == "__main__":
+    main()

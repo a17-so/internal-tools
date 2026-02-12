@@ -1,5 +1,7 @@
 __pycache__/
+*.pyc
 output/
 temp/
-*.pyc
+.venv/
+venv/
 .DS_Store

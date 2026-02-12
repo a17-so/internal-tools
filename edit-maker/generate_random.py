@@ -1,65 +1,72 @@
-import json
+#!/usr/bin/env python3
+"""
+Generate videos for a batch of randomly selected features.
+
+Usage:
+    python generate_random.py            # Generate 6 random videos (default)
+    python generate_random.py -n 10      # Generate 10 random videos
+"""
+import argparse
+import logging
 import random
-import subprocess
 import sys
-import os
 
-def generate_random_videos(count=6):
-    # Load hooks.json to get available features
-    try:
-        with open('hooks.json', 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print("Error: hooks.json not found.")
-        return
+from generator import generate_video, load_hooks
 
-    features_list = []
-    for category, features in data.get('features', {}).items():
-        for feature_id in features:
-            features_list.append((category, feature_id))
+logger = logging.getLogger(__name__)
+
+
+def generate_random_videos(count: int = 6) -> None:
+    """Select *count* random features and generate one video each."""
+    hooks_db = load_hooks()
+
+    features_list = [
+        (category, feature_id)
+        for category, features in hooks_db.get("features", {}).items()
+        for feature_id in features
+    ]
 
     if not features_list:
-        print("No features found in hooks.json")
-        return
+        logger.error("No features found in hooks.json")
+        sys.exit(1)
 
-    print(f"Found {len(features_list)} available features.")
+    count = min(count, len(features_list))
+    selected = random.sample(features_list, count)
 
-    # Select random features
-    selected_features = random.sample(features_list, min(count, len(features_list)))
+    logger.info("Found %d features — selected %d for generation.", len(features_list), count)
+    for cat, feat in selected:
+        logger.info("  • %s / %s", cat, feat)
 
-    print(f"\nSelected {len(selected_features)} random features:")
-    for cat, feat in selected_features:
-        print(f" - {cat}: {feat}")
-
-    print("\nStarting generation...")
-    
     successful = 0
-    python_executable = sys.executable 
-    # Use the venv python if available/detected, but we'll assume the script is run with the correct python
-    if os.path.exists(".venv/bin/python"):
-        python_executable = ".venv/bin/python"
-
-    for i, (category, feature) in enumerate(selected_features):
-        print(f"\n[{i+1}/{count}] Generating video for {category} -> {feature}...")
+    for i, (category, feature) in enumerate(selected):
+        print(f"\n[{i + 1}/{count}] Generating video for {category} → {feature}...")
         try:
-            cmd = [python_executable, "main.py", "generate", category, feature]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                print(f"✓ Success: {category}/{feature}")
-                # Extract output path from stdout if possible
-                for line in result.stdout.splitlines():
-                    if "Video saved to:" in line:
-                        print(f"  {line.strip()}")
+            output = generate_video(category=category, feature_id=feature)
+            if output:
+                print(f"✓ Success: {output}")
                 successful += 1
-            else:
-                print(f"✗ Failed: {category}/{feature}")
-                print(f"  Error: {result.stderr.strip()}")
-                
-        except Exception as e:
-            print(f"✗ Error executing command: {e}")
+        except Exception as exc:
+            logger.error("Failed %s/%s: %s", category, feature, exc)
 
     print(f"\nCompleted. {successful}/{count} videos generated successfully.")
 
+
+def main() -> None:
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(description="Generate random feature videos")
+    parser.add_argument("-n", "--count", type=int, default=6, help="Number of videos to generate")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    generate_random_videos(count=args.count)
+
+
 if __name__ == "__main__":
-    generate_random_videos()
+    main()

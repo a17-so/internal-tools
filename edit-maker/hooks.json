@@ -1,0 +1,300 @@
+{
+  "demo_overlay_lines": [
+    "i made this glow up app for all the girlies",
+    "get a custom glow up guide with pretti",
+    "this app will change your glow up forever",
+    "pretti gives you a personalized glow up plan",
+    "i built this just for you girlies",
+    "your glow up starts here with pretti",
+    "this is the glow up app you've been waiting for",
+    "finally an app that gets your beauty goals",
+    "pretti knows exactly what you need bestie",
+    "the ultimate glow up companion app",
+    "i designed this app to help every girl glow up",
+    "unlock your full glow up potential with pretti",
+    "this app literally changed my whole routine",
+    "your personalized beauty guide is here",
+    "every girl deserves a glow up plan like this"
+  ],
+  "features": {
+    "facial_features": {
+      "short_philtrum": {
+        "folder": "facial features/short philtrum",
+        "hooks": [
+          "a short philtrum makes you 10x attractive",
+          "the most feminine feature is a short philtrum",
+          "a short philtrum is what makes you attractive",
+          "a short philtrum makes you ultra feminine"
+        ]
+      },
+      "big_forehead": {
+        "folder": "facial features/big forehead",
+        "hooks": [
+          "a big forehead makes you 10x attractive",
+          "the most feminine feature is a big forehead",
+          "a big forehead is what makes you attractive",
+          "a big forehead makes you ultra feminine"
+        ]
+      },
+      "small_forehead": {
+        "folder": "facial features/small forehead",
+        "hooks": [
+          "a small forehead makes you 10x attractive",
+          "the most feminine feature is a small forehead",
+          "a small forehead is what makes you attractive",
+          "a small forehead makes you ultra feminine"
+        ]
+      },
+      "white_sclera": {
+        "folder": "facial features/white sclera",
+        "hooks": [
+          "white sclera makes you 10x attractive",
+          "the most feminine feature is white sclera",
+          "white sclera is what makes you attractive",
+          "white sclera makes you ultra feminine"
+        ]
+      },
+      "upper_eye_exposure": {
+        "folder": "facial features/upper eye exposure",
+        "hooks": [
+          "upper eye exposure makes you 10x attractive",
+          "the most feminine feature is upper eye exposure",
+          "upper eye exposure is what makes you attractive",
+          "upper eye exposure makes you ultra feminine"
+        ]
+      },
+      "highset_brows": {
+        "folder": "facial features/highset brows",
+        "hooks": [
+          "high set brows make you 10x attractive",
+          "the most feminine feature is high set brows",
+          "high set brows are what is what makes you attractive",
+          "high set brows make you attractive",
+          "high set brows make you ultra feminine"
+        ]
+      },
+      "lowset_brows": {
+        "folder": "facial features/lowset brows",
+        "hooks": [
+          "low set brows make you 10x attractive",
+          "the most feminine feature is low set brows",
+          "low set brows are what is what makes you attractive",
+          "low set brows make you attractive",
+          "low set brows make you ultra feminine"
+        ]
+      },
+      "chubby_cheeks": {
+        "folder": "facial features/chubby cheeks",
+        "hooks": [
+          "chubby cheeks make you 10x attractive",
+          "the most feminine feature is chubby cheeks",
+          "chubby cheeks are what is what makes you attractive",
+          "chubby cheeks make you attractive",
+          "chubby cheeks make you ultra feminine"
+        ]
+      },
+      "dimples": {
+        "folder": "facial features/dimples",
+        "hooks": [
+          "dimples make you 10x attractive",
+          "the most feminine feature is dimples",
+          "dimples are what is what makes you attractive",
+          "dimples make you attractive",
+          "dimples make you ultra feminine"
+        ]
+      },
+      "upturned_lips": {
+        "folder": "facial features/upturned lips",
+        "hooks": [
+          "upturned lips make you 10x attractive",
+          "the most feminine feature is upturned lips",
+          "upturned lips are what is what makes you attractive",
+          "upturned lips make you attractive",
+          "upturned lips make you ultra feminine"
+        ]
+      },
+      "big_nose": {
+        "folder": "facial features/big nose",
+        "hooks": [
+          "a big nose makes you 10x attractive",
+          "the most feminine feature is a big nose",
+          "a big nose is what makes you attractive",
+          "a big nose makes you ultra feminine"
+        ]
+      },
+      "dorsal_hump": {
+        "folder": "facial features/dorsal hump nose",
+        "hooks": [
+          "a dorsal hump makes you 10x attractive",
+          "the most feminine feature is a dorsal hump",
+          "a dorsal hump is what makes you attractive",
+          "a dorsal hump makes you ultra feminine"
+        ]
+      },
+      "diamond_face": {
+        "folder": "facial features/diamond faceshape",
+        "hooks": [
+          "a diamond face makes you 10x attractive",
+          "the most feminine feature is a diamond face",
+          "a diamond face is what makes you attractive",
+          "a diamond face makes you ultra feminine"
+        ]
+      },
+      "oval_face": {
+        "folder": "facial features/oval face",
+        "hooks": [
+          "an oval face makes you 10x attractive",
+          "the most feminine feature is an oval face",
+          "an oval face is what makes you attractive",
+          "an oval face makes you ultra feminine"
+        ]
+      },
+      "square_face": {
+        "folder": "facial features/square face",
+        "hooks": [
+          "a square face makes you 10x attractive",
+          "the most feminine feature is a square face",
+          "a square face is what makes you attractive",
+          "a square face makes you ultra feminine"
+        ]
+      },
+      "teeth": {
+        "folder": "facial features/teeth",
+        "hooks": [
+          "nice teeth make you 10x attractive",
+          "the most feminine feature is nice teeth",
+          "nice teeth are what is what makes you attractive",
+          "nice teeth make you attractive",
+          "nice teeth make you ultra feminine"
+        ]
+      },
+      "eye_inner_corner": {
+        "folder": "facial features/eye inner corner",
+        "hooks": [
+          "inner eye corners make you 10x attractive",
+          "the most feminine feature is inner eye corners",
+          "inner eye corners are what is what makes you attractive",
+          "inner eye corners make you attractive",
+          "inner eye corners make you ultra feminine"
+        ]
+      }
+    },
+    "skin": {
+      "pale_skin": {
+        "folder": "skin/pale skin",
+        "hooks": [
+          "pale skin makes you 10x attractive",
+          "the most feminine feature is pale skin",
+          "pale skin is what makes you attractive",
+          "pale skin makes you ultra feminine"
+        ]
+      },
+      "tan_skin": {
+        "folder": "skin/tan skin",
+        "hooks": [
+          "tan skin makes you 10x attractive",
+          "the most feminine feature is tan skin",
+          "tan skin is what makes you attractive",
+          "tan skin makes you ultra feminine"
+        ]
+      },
+      "dark_skin": {
+        "folder": "skin/dark skin",
+        "hooks": [
+          "dark skin makes you 10x attractive",
+          "the most feminine feature is dark skin",
+          "dark skin is what makes you attractive",
+          "dark skin makes you ultra feminine"
+        ]
+      }
+    },
+    "hair_skin_combo": {
+      "brown_hair_green_eyes": {
+        "folder": "hair + skin combo/brown hair & green eyes",
+        "hooks": [
+          "brown hair\ngreen eyes\ncombo",
+          "the most attractive combo\nbrown hair\ngreen eyes"
+        ]
+      },
+      "black_hair_brown_eyes": {
+        "folder": "hair + skin combo/black hair & brown eyes",
+        "hooks": [
+          "black hair\nbrown eyes\ncombo",
+          "the most attractive combo\nblack hair\nbrown eyes"
+        ]
+      },
+      "black_hair_pale_skin": {
+        "folder": "hair + skin combo/black hair & pale skin",
+        "hooks": [
+          "black hair\npale skin\ncombo",
+          "the most feminine combo\npale skin\ndark hair"
+        ]
+      },
+      "curly_dark_brown": {
+        "folder": "hair + skin combo/dark curly hair & brown skin",
+        "hooks": [
+          "dark curly hair\nbrown skin\ncombo",
+          "curly hair makes you\n10x attractive"
+        ]
+      }
+    },
+    "hair": {
+      "straight_hair": {
+        "folder": "hair/straight hair",
+        "hooks": [
+          "straight hair makes you 10x attractive",
+          "the most feminine feature is straight hair",
+          "straight hair is what makes you attractive",
+          "straight hair makes you ultra feminine"
+        ]
+      }
+    },
+    "styles": {
+      "baddie": {
+        "folder": "styles/baddie",
+        "hooks": [
+          "baddie aesthetic makes you 10x attractive",
+          "the most feminine aesthetic is baddie",
+          "baddie aesthetic is what makes you attractive",
+          "baddie aesthetic makes you ultra feminine"
+        ]
+      },
+      "dark_fem": {
+        "folder": "styles/dark fem",
+        "hooks": [
+          "dark fem aesthetic makes you 10x attractive",
+          "the most feminine aesthetic is dark fem",
+          "dark fem aesthetic is what makes you attractive",
+          "dark fem aesthetic makes you ultra feminine"
+        ]
+      },
+      "latina": {
+        "folder": "styles/latina",
+        "hooks": [
+          "latina aesthetic makes you 10x attractive",
+          "the most feminine aesthetic is latina",
+          "latina aesthetic is what makes you attractive",
+          "latina aesthetic makes you ultra feminine"
+        ]
+      },
+      "toasty": {
+        "folder": "styles/toasty",
+        "hooks": [
+          "toasty aesthetic makes you 10x attractive",
+          "the most feminine aesthetic is toasty",
+          "toasty aesthetic is what makes you attractive",
+          "toasty aesthetic makes you ultra feminine"
+        ]
+      },
+      "2000s_angel": {
+        "folder": "styles/2000s angel",
+        "hooks": [
+          "2000s angel aesthetic makes you 10x attractive",
+          "the most feminine aesthetic is 2000s angel",
+          "2000s angel aesthetic is what makes you attractive",
+          "2000s angel aesthetic makes you ultra feminine"
+        ]
+      }
+    }
+  }
+}

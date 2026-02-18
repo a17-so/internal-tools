@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from urllib.parse import quote
 
 from flask import Flask, request, jsonify, g
+from flask_cors import CORS
 import time
 from datetime import datetime
 
@@ -39,6 +40,7 @@ except ImportError as e:
 
 
 app = Flask(__name__)
+CORS(app)  # Allow cross-origin requests from the web UI
 
 # Load .env if present
 try:

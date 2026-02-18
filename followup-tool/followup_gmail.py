@@ -1298,15 +1298,6 @@ class GmailFollowUp:
             username_hint = email.get("username_hint")
             if username_hint:
                 username = self._sanitize_username(username_hint)
-                if username:
-                    print(f"   📝 Found username from subject/row: {username}")
-                else:
-                    print(f"   ⚠ Username hint found but rejected after sanitization: {username_hint}")
-            else:
-                # Debug: show what we're working with
-                subject = email.get("subject", "")[:50]
-                row_text = email.get("row_text", "")[:100] if email.get("row_text") else ""
-                print(f"   🔍 No username_hint. Subject: {subject}, Row text preview: {row_text}")
             
             # SECOND: Try display name from the email row
             if not username:
@@ -1316,16 +1307,11 @@ class GmailFollowUp:
                     if not username:
                         username = self._extract_username_from_text(display_name)
                         username = self._sanitize_username(username)
-                    if username:
-                        print(f"   📝 Found username from display name: {username}")
-            
             # THIRD: Try detected_name from detect_followup_level (might have old username)
             if not username:
                 username = detected_name
                 if username:
                     username = self._sanitize_username(username)
-                    if username:
-                        print(f"   📝 Found username from thread detection: {username}")
             
             # FOURTH: Try extracting from thread messages (last resort - might have old usernames)
             if not username:
@@ -1437,8 +1423,6 @@ class GmailFollowUp:
                 {"senderEmail": sender_email, "senderName": sender_name},
             )
                 username = self._sanitize_username(username)
-                if username:
-                    print(f"   📝 Found username from thread messages: {username}")
             
             # LAST RESORT: Try extracting from recipient email (but be careful - only if it looks like a real username)
             if not username:
@@ -1454,12 +1438,10 @@ class GmailFollowUp:
                             # Double-check it's not a domain-like pattern after sanitization
                             if username and "." in username and len(username) <= 10:
                                 username = None  # Reject short domain-like patterns
-                            if username:
-                                print(f"   📝 Found username from recipient email: {username}")
             
             if not username:
                 username = "there"
-                print("   ⚠ Could not determine username from thread – defaulting to 'there'")
+                print("   ⚠ Could not determine username – defaulting to 'there'")
             else:
                 print(f"   📝 Using username: {username}")
             
@@ -1987,9 +1969,6 @@ class GmailFollowUp:
                             page_skipped += 1
                             total_processed += 1
                             continue
-                    else:
-                        # Debug: show that we checked but found no labels
-                        print(f"   🏷️  No labels found (checked)")
                     
                     # If we get here, we're actually attempting to process this email
                     total_attempted += 1

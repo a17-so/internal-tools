@@ -81,7 +81,7 @@ def debug_config():
     """Debug endpoint to check configuration loading"""
     # Test specific app configs
     test_results = {}
-    for app_name in ["lifemaxx", "pretti", "rizzard"]:
+    for app_name in _OUTREACH_APPS:
         config = _get_app_config(app_name)
         test_results[app_name] = {
             "gmail_sender": config.get("gmail_sender"),

@@ -8,3 +8,7 @@ api/.env
 __pycache__/
 *.pyc
 
+# Google service account credentials — NEVER commit these
+*service-account*.json
+*service_account*.json
+api/credentials*.json

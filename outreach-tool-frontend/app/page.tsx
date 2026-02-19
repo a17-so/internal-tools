@@ -47,10 +47,10 @@ export default function OutreachPage() {
 
   // Form state
   const [apps, setApps] = useState<string[]>([]);
-  const [app, setApp] = useState("");
+  const [app, setApp] = useState("regen");
   const [category, setCategory] = useState("micro");
   const [url, setUrl] = useState("");
-  const [senderProfile, setSenderProfile] = useState("");
+  const [senderProfile, setSenderProfile] = useState("ethan");
 
   // Submission state
   const [loading, setLoading] = useState(false);
@@ -79,17 +79,22 @@ export default function OutreachPage() {
   // ── Load apps on mount ─────────────────────────────────────────────────
   useEffect(() => {
     if (!authed) return;
-    fetchApps().then((list) => {
-      setApps(list);
-      if (list.length > 0 && !app) setApp(list[0]);
-    });
+    fetchApps()
+      .then((list) => {
+        setApps(list);
+        if (list.length > 0 && !app) setApp(list.includes("regen") ? "regen" : list[0]);
+      })
+      .catch(() => {
+        // Fallback if API is unreachable
+        setApps(["regen", "pretti", "lifemaxx"]);
+      });
   }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!url.trim()) return;
+      if (!url.trim() || !senderProfile.trim()) return;
 
       setLoading(true);
       setError(null);
@@ -244,15 +249,15 @@ export default function OutreachPage() {
               {/* Sender profile */}
               <div className="space-y-2">
                 <label htmlFor="senderProfile" className="text-sm text-zinc-400">
-                  Sender Profile{" "}
-                  <span className="text-zinc-600">(optional)</span>
+                  Sender Profile
                 </label>
                 <Input
                   type="text"
                   id="senderProfile"
                   value={senderProfile}
                   onChange={(e) => setSenderProfile(e.target.value)}
-                  placeholder="e.g. abhay"
+                  placeholder="e.g. ethan"
+                  required
                   className="h-11 bg-zinc-900/60 text-zinc-100 placeholder:text-zinc-500 border-zinc-700/60 rounded-xl"
                 />
               </div>
@@ -277,7 +282,7 @@ export default function OutreachPage() {
               <div className="flex justify-end">
                 <Button
                   type="submit"
-                  disabled={loading || !url.trim()}
+                  disabled={loading || !url.trim() || !senderProfile.trim()}
                   className="bg-white text-black hover:bg-white/90 rounded-full px-6 disabled:opacity-40"
                 >
                   {loading ? (

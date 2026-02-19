@@ -89,7 +89,8 @@ def debug_config():
             "delegated_user": config.get("delegated_user"),
             "link_url": config.get("link_url"),
             "tiktok_account": config.get("tiktok_account"),
-            "instagram_account": config.get("instagram_account")
+            "instagram_account": config.get("instagram_account"),
+            "sender_profiles": list(config.get("sender_profiles", {}).keys())
         }
     
     return jsonify({

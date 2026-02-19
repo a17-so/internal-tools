@@ -85,3 +85,18 @@ export async function submitScrape(
 
     return data;
 }
+
+export async function updateCreatorContact(payload: {
+    app: string;
+    ig_handle?: string;   // scraped ig — for row lookup
+    tt_handle?: string;   // scraped tt — for row lookup
+    new_email?: string;   // override to write to sheet col D
+    new_ig?: string;      // override to write to sheet col B
+}): Promise<{ ok: boolean; updated?: string[]; error?: string }> {
+    const res = await fetch(`${API_BASE}/update_creator_contact`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    return res.json();
+}

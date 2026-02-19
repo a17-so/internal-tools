@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   fetchApps,
   submitScrape,
+  updateCreatorContact,
   type ScrapeResponse,
 } from "@/lib/outreach-api";
 
@@ -367,7 +368,7 @@ export default function OutreachPage() {
         {/* Result */}
         {result && (
           <div className="mt-8">
-            <ResultCard result={result} copyText={copyText} copied={copied} />
+            <ResultCard result={result} copyText={copyText} copied={copied} app={app} />
           </div>
         )}
       </div>
@@ -381,12 +382,15 @@ function ResultCard({
   result,
   copyText,
   copied,
+  app,
 }: {
   result: ScrapeResponse;
   copyText: (text: string, label: string) => void;
   copied: string | null;
+  app: string;
 }) {
   const igHandle = (result as any).ig_handle as string | undefined;
+  const ttHandle = (result as any).tt_handle as string | undefined;
   const dmText = (result as any).dm_text as string | undefined;
   const emailTo = (result as any).email_to as string | undefined;
   const emailSubject = (result as any).email_subject as string | undefined;
@@ -400,6 +404,10 @@ function ResultCard({
   const [manualEmail, setManualEmail] = React.useState(emailTo ?? "");
   const [manualIg, setManualIg] = React.useState(igHandle ?? "");
 
+  // Save-to-sheet state
+  const [saveStatus, setSaveStatus] = React.useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = React.useState<string | null>(null);
+
   const effectiveEmail = manualEmail.trim();
   const effectiveIg = manualIg.trim();
   const igWebUrl = effectiveIg ? `https://instagram.com/${effectiveIg}` : null;
@@ -408,6 +416,34 @@ function ResultCard({
     effectiveEmail && emailSubject && emailBodyText
       ? `mailto:${effectiveEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBodyText)}`
       : null;
+
+  // Only show Save button if the user changed something from the scraped values
+  const emailChanged = effectiveEmail && effectiveEmail !== (emailTo ?? "");
+  const igChanged = effectiveIg && effectiveIg !== (igHandle ?? "");
+  const hasChanges = emailChanged || igChanged;
+
+  async function handleSaveToSheet() {
+    setSaveStatus("saving");
+    setSaveError(null);
+    try {
+      const res = await updateCreatorContact({
+        app,
+        ig_handle: igHandle,
+        tt_handle: ttHandle,
+        new_email: emailChanged ? effectiveEmail : undefined,
+        new_ig: igChanged ? effectiveIg : undefined,
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+      } else {
+        setSaveStatus("error");
+        setSaveError(res.error ?? "Unknown error");
+      }
+    } catch (e: any) {
+      setSaveStatus("error");
+      setSaveError(e.message ?? "Request failed");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -483,6 +519,36 @@ function ResultCard({
                   )}
                 </div>
               </div>
+              {/* Save to Sheet */}
+              {hasChanges && (
+                <div className="flex items-center gap-3 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={saveStatus === "saving"}
+                    onClick={handleSaveToSheet}
+                    className={cn(
+                      "rounded-full text-xs transition-all duration-300",
+                      saveStatus === "saved"
+                        ? "bg-green-600/20 border border-green-500/40 text-green-400 hover:bg-green-600/20"
+                        : saveStatus === "error"
+                          ? "bg-red-600/20 border border-red-500/40 text-red-400 hover:bg-red-600/20"
+                          : "bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:bg-zinc-700"
+                    )}
+                  >
+                    {saveStatus === "saving"
+                      ? "Saving…"
+                      : saveStatus === "saved"
+                        ? "✓ Saved to Sheet"
+                        : saveStatus === "error"
+                          ? "✕ Error saving"
+                          : "Save to Sheet"}
+                  </Button>
+                  {saveStatus === "error" && saveError && (
+                    <span className="text-xs text-red-400">{saveError}</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </StyledCard>

@@ -35,8 +35,10 @@ export interface AppConfig {
 
 export async function fetchApps(): Promise<string[]> {
     const res = await fetch(`${API_BASE}/debug/config`);
-    const data: AppConfig = await res.json();
-    return Object.keys(data);
+    const data = await res.json();
+    // The API wraps configs in an "app_configs" key
+    const configs = data.app_configs || data;
+    return Object.keys(configs);
 }
 
 export async function validateApp(

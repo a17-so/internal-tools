@@ -59,7 +59,11 @@ export async function validateApp(
 export async function submitScrape(
     req: ScrapeRequest
 ): Promise<ScrapeResponse> {
-    const payload = { ...req, include_extras: true };
+    const payload = {
+        ...req,
+        tiktok_url: req.creator_url,
+        include_extras: true
+    };
 
     const endpoint =
         req.category.toLowerCase() === "themepage"

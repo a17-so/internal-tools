@@ -387,8 +387,6 @@ function ResultCard({
   copied: string | null;
 }) {
   const igHandle = (result as any).ig_handle as string | undefined;
-  const igWebUrl = igHandle ? `https://instagram.com/${igHandle}` : null;
-
   const dmText = (result as any).dm_text as string | undefined;
   const emailTo = (result as any).email_to as string | undefined;
   const emailSubject = (result as any).email_subject as string | undefined;
@@ -398,12 +396,18 @@ function ResultCard({
   const sentFromIg = (result as any).sent_from_ig as string | undefined;
   const sentFromTiktok = (result as any).sent_from_tiktok as string | undefined;
 
-  const mailtoUrl =
-    emailTo && emailSubject && emailBodyText
-      ? `mailto:${emailTo}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBodyText)}`
-      : null;
+  // Manual override state — pre-fill with scraped values if found
+  const [manualEmail, setManualEmail] = React.useState(emailTo ?? "");
+  const [manualIg, setManualIg] = React.useState(igHandle ?? "");
 
-  console.log("Email Debug:", { emailTo, emailSubject, emailBodyText, mailtoUrl });
+  const effectiveEmail = manualEmail.trim();
+  const effectiveIg = manualIg.trim();
+  const igWebUrl = effectiveIg ? `https://instagram.com/${effectiveIg}` : null;
+
+  const mailtoUrl =
+    effectiveEmail && emailSubject && emailBodyText
+      ? `mailto:${effectiveEmail}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBodyText)}`
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -418,6 +422,68 @@ function ResultCard({
             <p className="text-sm font-medium text-amber-400">
               ⚠️ Follow-up — this creator was already contacted
             </p>
+          </div>
+        </StyledCard>
+      )}
+
+      {/* Scraped contact info — always show if we have email body or IG */}
+      {(emailBodyText || igHandle !== undefined) && (
+        <StyledCard>
+          <div className="px-6 py-5">
+            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-zinc-400 mb-4">
+              Contact Info
+            </div>
+            <div className="flex flex-col gap-4">
+              {/* Email */}
+              <div>
+                <label className="text-[10px] sm:text-xs text-zinc-500 mb-1 block">
+                  Email{" "}
+                  {emailTo ? (
+                    <span className="text-green-400">✓ found</span>
+                  ) : (
+                    <span className="text-zinc-600">not found — enter manually</span>
+                  )}
+                </label>
+                <input
+                  type="email"
+                  value={manualEmail}
+                  onChange={(e) => setManualEmail(e.target.value)}
+                  placeholder="creator@email.com"
+                  className="w-full rounded-lg bg-zinc-900/60 border border-zinc-700/50 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
+                />
+              </div>
+              {/* Instagram */}
+              <div>
+                <label className="text-[10px] sm:text-xs text-zinc-500 mb-1 block">
+                  Instagram{" "}
+                  {igHandle ? (
+                    <span className="text-green-400">✓ found</span>
+                  ) : (
+                    <span className="text-zinc-600">not found — enter manually</span>
+                  )}
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500 text-sm">@</span>
+                  <input
+                    type="text"
+                    value={manualIg}
+                    onChange={(e) => setManualIg(e.target.value)}
+                    placeholder="handle"
+                    className="flex-1 rounded-lg bg-zinc-900/60 border border-zinc-700/50 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-all"
+                  />
+                  {igWebUrl && (
+                    <a
+                      href={igWebUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-shrink-0 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition duration-300"
+                    >
+                      <IGIcon />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </StyledCard>
       )}
@@ -468,11 +534,6 @@ function ResultCard({
                 active={copied === "email"}
               />
             </div>
-            {emailTo && (
-              <p className="mb-1 text-xs text-zinc-500">
-                To: <span className="text-zinc-300">{emailTo}</span>
-              </p>
-            )}
             {emailSubject && (
               <p className="mb-3 text-xs text-zinc-500">
                 Subject:{" "}
@@ -482,7 +543,7 @@ function ResultCard({
             <pre className="whitespace-pre-wrap rounded-xl bg-zinc-900/60 border border-zinc-700/60 p-4 text-sm leading-relaxed text-zinc-200">
               {emailBodyText}
             </pre>
-            {mailtoUrl && (
+            {mailtoUrl ? (
               <a
                 href={mailtoUrl}
                 className="mt-4 inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition duration-500"
@@ -490,27 +551,11 @@ function ResultCard({
                 <MailIcon />
                 Compose in email client →
               </a>
+            ) : (
+              <p className="mt-4 text-xs text-zinc-600">
+                Enter an email above to enable compose
+              </p>
             )}
-          </div>
-        </StyledCard>
-      )}
-
-      {/* Instagram link */}
-      {igWebUrl && (
-        <StyledCard>
-          <div className="px-6 py-5">
-            <div className="text-[10px] sm:text-xs uppercase tracking-wide text-zinc-400 mb-4">
-              Instagram
-            </div>
-            <a
-              href={igWebUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition duration-500"
-            >
-              <IGIcon />
-              @{igHandle} →
-            </a>
           </div>
         </StyledCard>
       )}

@@ -14,7 +14,7 @@ from datetime import datetime
 from utils import _log, _normalize_category, _clean_url, _get_followup_number_from_status, _get_next_status_from_current, _markdown_to_text
 from config import CATEGORY_TO_SHEET, _load_outreach_apps_config, _get_app_config, _validate_app_config, _resolve_sender_profile
 from google_services import _sheets_client, _gmail_client
-from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_to_sheet
+from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_to_sheet, _update_creator_contact_info
 from email_operations import _send_email
 from template_generation import _get_display_name, _get_templates_for_app, _build_email_and_dm
 
@@ -746,8 +746,12 @@ def scrape_endpoint():
         except Exception:
             plain_text = comms.get("email_md") or ""
     
+    # tt_handle for the frontend (used as lookup key for sheet updates)
+    tt_handle_resp = (profile.get("tt") or "").strip().lstrip("@").lower() or None
+
     resp = {
         "ig_handle": ig_handle,
+        "tt_handle": tt_handle_resp,
         "dm_text": dm_text,
         "email_to": (recipient_email if (has_valid_recipient and not is_theme_pages) else None),
         "email_subject": comms.get("subject"),
@@ -1040,6 +1044,70 @@ def scrape_themepage_endpoint():
     )
     
     return jsonify(resp)
+
+
+@app.patch("/update_creator_contact")
+def update_creator_contact_endpoint():
+    """
+    Update the email and/or IG handle for an existing creator row in Google Sheets.
+
+    This is called when the user manually enters/edits the email or IG in the
+    web tool after scraping returns incomplete data.
+
+    Request body:
+        {
+            "app": "regen",
+            "ig_handle": "scraped_ig_handle",     # used for row lookup
+            "tt_handle": "scraped_tt_handle",     # used for row lookup
+            "new_email": "creator@email.com",     # optional, write to col D
+            "new_ig": "new_ig_handle"             # optional, write to col B
+        }
+
+    Response:
+        { "ok": true, "updated": ["email", "ig"] }
+    """
+    payload = request.get_json(silent=True) or {}
+    app_key = (payload.get("app") or "").strip()
+    ig_handle_lookup = (payload.get("ig_handle") or "").strip().lstrip("@")
+    tt_handle_lookup = (payload.get("tt_handle") or "").strip().lstrip("@")
+    new_email = (payload.get("new_email") or "").strip()
+    new_ig = (payload.get("new_ig") or "").strip().lstrip("@")
+
+    if not app_key:
+        return jsonify({"ok": False, "error": "Missing app"}), 400
+    if not new_email and not new_ig:
+        return jsonify({"ok": False, "error": "Nothing to update"}), 400
+
+    app_cfg = _get_app_config(app_key)
+    spreadsheet_id = app_cfg.get("spreadsheet_id") or app_cfg.get("sheet_id")
+    if not spreadsheet_id:
+        return jsonify({"ok": False, "error": "No spreadsheet configured for this app"}), 400
+
+    delegated_user = app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None
+
+    # Find the existing row in any sheet tab
+    existing = _check_creator_exists_across_all_sheets(
+        spreadsheet_id, ig_handle_lookup, tt_handle_lookup, delegated_user=delegated_user
+    )
+
+    if not existing.get("exists"):
+        _log("update_creator_contact.not_found", ig=ig_handle_lookup, tt=tt_handle_lookup)
+        return jsonify({"ok": False, "error": "Creator not found in sheet"}), 404
+
+    sheet_name = existing["sheet_name"]
+    row_index = existing["row_index"]
+    _log("update_creator_contact.found", sheet=sheet_name, row=row_index)
+
+    result = _update_creator_contact_info(
+        spreadsheet_id,
+        sheet_name,
+        row_index,
+        email=new_email or None,
+        ig_handle=new_ig or None,
+        delegated_user=delegated_user,
+    )
+
+    return jsonify(result)
 
 
 # Entrypoint for local dev: `python api/main.py`

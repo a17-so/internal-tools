@@ -32,3 +32,4 @@ EXPOSE 8080
 CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 60 --chdir /app/api main:app
 # force rebuild Wed Feb 18 16:41:11 PST 2026
 # force rebuild Wed Feb 18 16:54:45 PST 2026
+# rebuild Wed Feb 18 17:10:48 PST 2026

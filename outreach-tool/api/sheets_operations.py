@@ -411,3 +411,58 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
     except Exception as e:
         _log("sheets.append.error", error=str(e))
         return {"ok": False, "error": str(e)}
+
+
+def _update_creator_contact_info(
+    spreadsheet_id: str,
+    sheet_name: str,
+    row_index: int,
+    email: Optional[str] = None,
+    ig_handle: Optional[str] = None,
+    delegated_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update only the email (col D) and/or IG handle (col B) for an existing row.
+
+    This is a targeted update — it only touches the specified cells and leaves
+    all other columns unchanged.
+    """
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("sheets.update_contact.no_client")
+        return {"ok": False, "error": "Sheets client not configured"}
+
+    if not email and not ig_handle:
+        return {"ok": False, "error": "Nothing to update"}
+
+    try:
+        updates_made = []
+
+        if email:
+            _log("sheets.update_contact.email", row=row_index, email=email)
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!D{row_index}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[email]]},
+            ).execute()
+            updates_made.append("email")
+
+        if ig_handle:
+            handle_clean = ig_handle.strip().lstrip("@")
+            ig_url = f"https://www.instagram.com/{handle_clean}"
+            ig_formula = _hyperlink_formula(ig_url, f"@{handle_clean}")
+            _log("sheets.update_contact.ig", row=row_index, ig=handle_clean)
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{sheet_name}!B{row_index}",
+                valueInputOption="USER_ENTERED",
+                body={"values": [[ig_formula]]},
+            ).execute()
+            updates_made.append("ig")
+
+        _log("sheets.update_contact.success", updates=updates_made)
+        return {"ok": True, "updated": updates_made}
+
+    except Exception as e:
+        _log("sheets.update_contact.error", error=str(e))
+        return {"ok": False, "error": str(e)}

@@ -12,6 +12,7 @@ export interface ScrapeRequest {
 }
 
 export interface ScrapeResponse {
+    message?: string;
     dm_message?: string;
     email_subject?: string;
     email_body?: string;
@@ -33,12 +34,12 @@ export interface AppConfig {
 
 /* ─── Endpoints ─── */
 
-export async function fetchApps(): Promise<string[]> {
+export async function fetchApps(): Promise<Record<string, any>> {
     const res = await fetch(`${API_BASE}/debug/config`);
     const data = await res.json();
     // The API wraps configs in an "app_configs" key
     const configs = data.app_configs || data;
-    return Object.keys(configs);
+    return configs;
 }
 
 export async function validateApp(

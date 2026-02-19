@@ -46,7 +46,8 @@ export default function OutreachPage() {
   const [pwError, setPwError] = useState(false);
 
   // Form state
-  const [apps, setApps] = useState<string[]>([]);
+  const [appConfigs, setAppConfigs] = useState<Record<string, any>>({});
+  const apps = Object.keys(appConfigs);
   const [app, setApp] = useState("regen");
   const [category, setCategory] = useState("micro");
   const [url, setUrl] = useState("");
@@ -80,15 +81,32 @@ export default function OutreachPage() {
   useEffect(() => {
     if (!authed) return;
     fetchApps()
-      .then((list) => {
-        setApps(list);
-        if (list.length > 0 && !app) setApp(list.includes("regen") ? "regen" : list[0]);
+      .then((configs) => {
+        setAppConfigs(configs);
+        const keys = Object.keys(configs);
+        if (keys.length > 0) {
+          if (configs['regen']) setApp("regen");
+          else setApp(keys[0]);
+        }
       })
-      .catch(() => {
-        // Fallback if API is unreachable
-        setApps(["regen", "pretti", "lifemaxx"]);
+      .catch((err) => {
+        console.error("Failed to load apps", err);
+        // Fallback or error handling
       });
   }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentAppConfig = appConfigs[app];
+  const senderProfiles = (currentAppConfig?.sender_profiles as string[]) || [];
+
+  // Reset/Default sender profile when app changes
+  useEffect(() => {
+    if (senderProfiles.length > 0) {
+      if (!senderProfiles.includes(senderProfile)) {
+        // Validation: pick first available profile
+        setSenderProfile(senderProfiles[0]);
+      }
+    }
+  }, [app, senderProfiles, senderProfile]);
 
   // ── Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(
@@ -246,20 +264,37 @@ export default function OutreachPage() {
                 </div>
               </div>
 
-              {/* Sender profile */}
+              {/* Sender Profile */}
               <div className="space-y-2">
                 <label htmlFor="senderProfile" className="text-sm text-zinc-400">
                   Sender Profile
                 </label>
-                <Input
-                  type="text"
-                  id="senderProfile"
-                  value={senderProfile}
-                  onChange={(e) => setSenderProfile(e.target.value)}
-                  placeholder="e.g. ethan"
-                  required
-                  className="h-11 bg-zinc-900/60 text-zinc-100 placeholder:text-zinc-500 border-zinc-700/60 rounded-xl"
-                />
+                {senderProfiles.length > 0 ? (
+                  <div className="relative">
+                    <select
+                      id="senderProfile"
+                      value={senderProfile}
+                      onChange={(e) => setSenderProfile(e.target.value)}
+                      className="flex h-11 w-full rounded-xl border border-zinc-700/60 bg-zinc-900/60 px-3 py-1 text-sm text-zinc-100 outline-none transition focus-visible:border-zinc-400 focus-visible:ring-zinc-400/30 focus-visible:ring-[3px]"
+                    >
+                      {senderProfiles.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <Input
+                    type="text"
+                    id="senderProfile"
+                    value={senderProfile}
+                    onChange={(e) => setSenderProfile(e.target.value)}
+                    placeholder="e.g. ethan"
+                    required
+                    className="h-11 bg-zinc-900/60 text-zinc-100 placeholder:text-zinc-500 border-zinc-700/60 rounded-xl"
+                  />
+                )}
               </div>
 
               {/* URL */}
@@ -368,6 +403,8 @@ function ResultCard({
       ? `mailto:${emailTo}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBodyText)}`
       : null;
 
+  console.log("Email Debug:", { emailTo, emailSubject, emailBodyText, mailtoUrl });
+
   return (
     <div className="flex flex-col gap-6">
       <h2 className="text-center text-xl sm:text-2xl text-zinc-100 font-medium">
@@ -401,6 +438,19 @@ function ResultCard({
             <pre className="whitespace-pre-wrap rounded-xl bg-zinc-900/60 border border-zinc-700/60 p-4 text-sm leading-relaxed text-zinc-200">
               {dmText}
             </pre>
+          </div>
+        </StyledCard>
+      )}
+
+      {/* Raw Lead Success Message (No DM/Email) */}
+      {!dmText && !emailBodyText && (result as any).message && (
+        <StyledCard className="border-green-500/30">
+          <div className="px-6 py-5">
+            <h3 className="text-lg font-medium text-green-400 mb-2">Success</h3>
+            <p className="text-zinc-300">{(result as any).message}</p>
+            {(result as any).url && (
+              <p className="text-zinc-500 text-sm mt-2">URL: {(result as any).url}</p>
+            )}
           </div>
         </StyledCard>
       )}

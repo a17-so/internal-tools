@@ -6,6 +6,8 @@ _ALLOWED_SKIP_CODES = {
     "missing_email_fields",
     "missing_ig_handle",
     "missing_tiktok_handle",
+    "ig_dm_unavailable",
+    "tiktok_dm_unavailable",
 }
 
 

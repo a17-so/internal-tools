@@ -44,3 +44,14 @@ def test_status_processed_when_contact_data_missing() -> None:
         )
         == "Processed"
     )
+
+
+def test_status_processed_when_dm_is_unavailable() -> None:
+    assert (
+        final_sheet_status(
+            ChannelResult(status="sent"),
+            ChannelResult(status="skipped", error_code="ig_dm_unavailable"),
+            ChannelResult(status="skipped", error_code="tiktok_dm_unavailable"),
+        )
+        == "Processed"
+    )

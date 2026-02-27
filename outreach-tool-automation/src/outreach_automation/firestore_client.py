@@ -6,6 +6,7 @@ from typing import Any
 
 import firebase_admin  # type: ignore[import-untyped]
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from outreach_automation.models import Account, AccountStatus, JobRecord, Platform
 
@@ -39,7 +40,12 @@ class FirestoreClient:
         )
 
     def was_processed_url(self, lead_url: str) -> bool:
-        query = self._db.collection("jobs").where("lead_url", "==", lead_url).limit(20).stream()
+        query = (
+            self._db.collection("jobs")
+            .where(filter=FieldFilter("lead_url", "==", lead_url))
+            .limit(20)
+            .stream()
+        )
         for doc in query:
             data = doc.to_dict() or {}
             if data.get("status") == "completed" and not bool(data.get("dry_run")):
@@ -79,8 +85,8 @@ class FirestoreClient:
     def next_account(self, platform: Platform) -> Account | None:
         accounts = (
             self._db.collection("accounts")
-            .where("platform", "==", platform.value)
-            .where("status", "==", AccountStatus.ACTIVE.value)
+            .where(filter=FieldFilter("platform", "==", platform.value))
+            .where(filter=FieldFilter("status", "==", AccountStatus.ACTIVE.value))
             .stream()
         )
         candidates = sorted(

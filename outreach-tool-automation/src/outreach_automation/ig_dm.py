@@ -25,6 +25,8 @@ class InstagramDmSender:
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
+            if "no matching selector found" in message:
+                return ChannelResult(status="skipped", error_code="ig_dm_unavailable")
             if "blocked" in message or "rate" in message:
                 return ChannelResult(
                     status="failed",

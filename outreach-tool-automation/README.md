@@ -1,0 +1,100 @@
+# Outreach Tool Automation
+
+Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok outreach.
+
+## v1 Behavior
+
+- Source of truth for category: `creator_tier` column from `Raw Leads`
+- If tier is missing/invalid, fallback defaults to `Submicro` (`DEFAULT_CREATOR_TIER`)
+- Required sheet columns: `creator_url`, `creator_tier`, `status`
+- Sequential execution per lead: Email -> Instagram -> TikTok
+- No automatic retries for IG/TikTok sends
+- Dry-run mode available for full pipeline validation without sending
+
+## Layout
+
+```text
+outreach-tool-automation/
+├── src/outreach_automation/
+│   ├── run_once.py
+│   ├── orchestrator.py
+│   ├── sheets_client.py
+│   ├── scraper_client.py
+│   ├── firestore_client.py
+│   ├── account_router.py
+│   ├── email_sender.py
+│   ├── ig_dm.py
+│   ├── tiktok_dm.py
+│   ├── tier_resolver.py
+│   └── status_mapper.py
+├── tests/
+└── ops/
+```
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Create env file:
+
+```bash
+cp .env.example .env
+```
+
+Authentication options:
+- Service account JSON (set `GOOGLE_SERVICE_ACCOUNT_JSON`)
+- ADC keyless mode (leave `GOOGLE_SERVICE_ACCOUNT_JSON` blank and run `gcloud auth application-default login`)
+- If Raw Leads headers differ, set:
+  - `RAW_LEADS_URL_COLUMN`
+  - `RAW_LEADS_TIER_COLUMN`
+  - `RAW_LEADS_STATUS_COLUMN`
+
+## Run
+
+Dry-run (recommended first):
+
+```bash
+python -m outreach_automation.run_once --dry-run
+```
+
+Single row dry-run:
+
+```bash
+python -m outreach_automation.run_once --dry-run --lead-row-index 2
+```
+
+Live run:
+
+```bash
+python -m outreach_automation.run_once
+```
+
+Seed Firestore accounts:
+
+```bash
+cp ops/accounts.seed.example.json ops/accounts.seed.json
+# edit handles/emails in ops/accounts.seed.json
+python -m outreach_automation.seed_accounts --file ops/accounts.seed.json
+```
+
+Reset daily account counters:
+
+```bash
+python -m outreach_automation.reset_counters
+```
+
+## Quality
+
+```bash
+make check
+make test
+```
+
+## Notes
+
+- This project only modifies files inside `outreach-tool-automation`.
+- Dashboard implementation is intentionally out of scope for v1.

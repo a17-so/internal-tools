@@ -39,14 +39,12 @@ class FirestoreClient:
         )
 
     def was_processed_url(self, lead_url: str) -> bool:
-        query = (
-            self._db.collection("jobs")
-            .where("lead_url", "==", lead_url)
-            .where("status", "==", "completed")
-            .limit(1)
-            .stream()
-        )
-        return any(True for _ in query)
+        query = self._db.collection("jobs").where("lead_url", "==", lead_url).limit(20).stream()
+        for doc in query:
+            data = doc.to_dict() or {}
+            if data.get("status") == "completed" and not bool(data.get("dry_run")):
+                return True
+        return False
 
     def acquire_run_lock(self, holder: str, ttl_seconds: int) -> bool:
         lock_ref = self._db.collection("locks").document("orchestrator")

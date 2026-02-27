@@ -20,6 +20,7 @@ from outreach_automation.tiktok_dm import TiktokDmSender
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run outreach orchestration once")
     parser.add_argument("--dry-run", action="store_true", help="Do not send messages/emails")
+    parser.add_argument("--live", action="store_true", help="Force live mode even if DRY_RUN=true")
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--max-leads", type=int, default=None)
     parser.add_argument("--lead-row-index", type=int, default=None)
@@ -30,7 +31,7 @@ def main() -> int:
     setup_logging(settings.log_level)
 
     effective_batch = args.batch_size or args.max_leads or settings.batch_size
-    dry_run = args.dry_run or settings.dry_run
+    dry_run = False if args.live else args.dry_run or settings.dry_run
 
     sheets_client = SheetsClient(
         service_account_path=settings.google_service_account_json,

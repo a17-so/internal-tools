@@ -1,0 +1,83 @@
+[
+  {
+    "id": "email_1",
+    "platform": "email",
+    "handle": "sender1@a17.so",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 150,
+    "last_reset": null
+  },
+  {
+    "id": "email_2",
+    "platform": "email",
+    "handle": "sender2@a17.so",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 150,
+    "last_reset": null
+  },
+  {
+    "id": "email_3",
+    "platform": "email",
+    "handle": "sender3@a17.so",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 150,
+    "last_reset": null
+  },
+  {
+    "id": "ig_1",
+    "platform": "instagram",
+    "handle": "@ig_sender_1",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 25,
+    "last_reset": null
+  },
+  {
+    "id": "ig_2",
+    "platform": "instagram",
+    "handle": "@ig_sender_2",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 25,
+    "last_reset": null
+  },
+  {
+    "id": "ig_3",
+    "platform": "instagram",
+    "handle": "@ig_sender_3",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 25,
+    "last_reset": null
+  },
+  {
+    "id": "tt_1",
+    "platform": "tiktok",
+    "handle": "@tt_sender_1",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 40,
+    "last_reset": null
+  },
+  {
+    "id": "tt_2",
+    "platform": "tiktok",
+    "handle": "@tt_sender_2",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 40,
+    "last_reset": null
+  },
+  {
+    "id": "tt_3",
+    "platform": "tiktok",
+    "handle": "@tt_sender_3",
+    "status": "active",
+    "daily_sent": 0,
+    "daily_limit": 40,
+    "last_reset": null
+  }
+]

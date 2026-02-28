@@ -18,6 +18,7 @@ class Settings:
     flask_scrape_url: str
     scrape_app: str
     google_service_account_json: str | None
+    google_cloud_quota_project: str | None
     google_sheets_id: str
     firestore_project_id: str
     raw_leads_sheet_name: str
@@ -70,12 +71,19 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         os.getenv("TIKTOK_PROFILE_DIR", os.getenv("TIKTOK_SESSION_DIR", "profiles/tiktok"))
     ).resolve()
 
+    firestore_project_id = _required("FIRESTORE_PROJECT_ID")
+    google_cloud_quota_project = os.getenv("GOOGLE_CLOUD_QUOTA_PROJECT", "").strip() or None
+    if google_cloud_quota_project is None:
+        google_cloud_quota_project = firestore_project_id
+    os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = google_cloud_quota_project
+
     return Settings(
         flask_scrape_url=_required("FLASK_SCRAPE_URL"),
         scrape_app=os.getenv("SCRAPE_APP", "regen").strip() or "regen",
         google_service_account_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or None,
+        google_cloud_quota_project=google_cloud_quota_project,
         google_sheets_id=_required("GOOGLE_SHEETS_ID"),
-        firestore_project_id=_required("FIRESTORE_PROJECT_ID"),
+        firestore_project_id=firestore_project_id,
         raw_leads_sheet_name=os.getenv("RAW_LEADS_SHEET_NAME", "Raw Leads"),
         raw_leads_url_column=os.getenv("RAW_LEADS_URL_COLUMN", "").strip() or None,
         raw_leads_tier_column=os.getenv("RAW_LEADS_TIER_COLUMN", "").strip() or None,

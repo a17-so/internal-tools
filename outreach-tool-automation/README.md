@@ -51,6 +51,7 @@ cp .env.example .env
 Authentication options:
 - Service account JSON (set `GOOGLE_SERVICE_ACCOUNT_JSON`)
 - ADC keyless mode (leave `GOOGLE_SERVICE_ACCOUNT_JSON` blank and run `gcloud auth application-default login`)
+- Quota project for ADC is auto-exported from `GOOGLE_CLOUD_QUOTA_PROJECT` (falls back to `FIRESTORE_PROJECT_ID`)
 - If Raw Leads headers differ, set:
   - `RAW_LEADS_URL_COLUMN`
   - `RAW_LEADS_TIER_COLUMN`

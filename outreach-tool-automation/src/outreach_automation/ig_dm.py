@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from outreach_automation.models import Account, ChannelResult, Platform
-from outreach_automation.selectors import INSTAGRAM_DM_INPUTS, INSTAGRAM_MESSAGE_BUTTONS
+from outreach_automation.selectors import (
+    INSTAGRAM_DM_INPUTS,
+    INSTAGRAM_INBOX_SEARCH_INPUTS,
+    INSTAGRAM_MESSAGE_BUTTONS,
+    INSTAGRAM_THREAD_ROWS,
+)
 from outreach_automation.session_manager import SessionManager
 
 
@@ -58,11 +63,9 @@ class InstagramDmSender:
                 context_kwargs["storage_state"] = str(session_path)
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
-            await page.goto(f"https://www.instagram.com/{ig_handle}", wait_until="domcontentloaded")
-            await page.wait_for_timeout(random.randint(1500, 4000))
-
-            await _click_first(page, INSTAGRAM_MESSAGE_BUTTONS)
-            await page.wait_for_timeout(random.randint(1000, 3000))
+            opened = await _open_thread_via_inbox_search(page, ig_handle)
+            if not opened:
+                await _open_thread_via_profile_message(page, ig_handle)
 
             input_locator = await _find_first(page, INSTAGRAM_DM_INPUTS)
             await input_locator.click()
@@ -86,3 +89,51 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
 async def _click_first(page: Any, selectors: list[str]) -> None:
     loc = await _find_first(page, selectors)
     await loc.click()
+
+
+async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
+    await page.goto("https://www.instagram.com/direct/inbox/", wait_until="domcontentloaded")
+    await page.wait_for_timeout(random.randint(1200, 2500))
+
+    try:
+        search = await _find_first(page, INSTAGRAM_INBOX_SEARCH_INPUTS)
+    except RuntimeError:
+        return False
+
+    await search.click()
+    await search.fill("")
+    await search.type(ig_handle, delay=random.randint(20, 60))
+    await page.wait_for_timeout(random.randint(1200, 2400))
+
+    rows = await _find_all(page, INSTAGRAM_THREAD_ROWS)
+    target = ig_handle.strip().lower().lstrip("@")
+    for row in rows:
+        text = (await row.inner_text()).strip().lower()
+        if not text:
+            continue
+        if target in text:
+            await row.click()
+            await page.wait_for_timeout(random.randint(1000, 2200))
+            return True
+    return False
+
+
+async def _open_thread_via_profile_message(page: Any, ig_handle: str) -> None:
+    await page.goto(f"https://www.instagram.com/{ig_handle}", wait_until="domcontentloaded")
+    await page.wait_for_timeout(random.randint(1500, 4000))
+    await _click_first(page, INSTAGRAM_MESSAGE_BUTTONS)
+    await page.wait_for_timeout(random.randint(1000, 3000))
+
+
+async def _find_all(page: Any, selectors: list[str]) -> list[Any]:
+    out: list[Any] = []
+    for selector in selectors:
+        loc = page.locator(selector)
+        count = await loc.count()
+        if count == 0:
+            continue
+        for idx in range(count):
+            out.append(loc.nth(idx))
+        if out:
+            return out
+    return out

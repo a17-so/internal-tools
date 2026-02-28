@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import random
 import re
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Any
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
-from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_MESSAGE_BUTTONS
+from outreach_automation.selectors import TIKTOK_DM_INPUTS
 from outreach_automation.session_manager import SessionManager
 
 
@@ -57,6 +58,8 @@ class TiktokDmSender:
             message = str(exc).lower()
             if "missing tiktok auth" in message:
                 return ChannelResult(status="failed", error_code="missing_tiktok_auth")
+            if "missing tiktok target thread" in message:
+                return ChannelResult(status="failed", error_code="tiktok_target_thread_not_found")
             if "no matching selector found" in message:
                 return ChannelResult(status="skipped", error_code="tiktok_dm_unavailable")
             if "blocked" in message or "rate" in message:
@@ -103,12 +106,14 @@ class TiktokDmSender:
                 page = await context.new_page()
                 close_context = True
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
-            await page.wait_for_timeout(random.randint(1500, 4000))
+            await _slow_settle(page)
             if await _needs_login(page):
                 raise RuntimeError("missing tiktok auth")
 
-            await _click_first(page, TIKTOK_MESSAGE_BUTTONS)
-            await page.wait_for_timeout(random.randint(1000, 3000))
+            opened_target_thread = await _open_profile_message_thread(page)
+            if not opened_target_thread:
+                raise RuntimeError("missing tiktok target thread")
+            await _slow_settle(page)
 
             message_text = normalize_dm_text(dm_text)
             if not message_text:
@@ -147,6 +152,40 @@ async def _type_multiline_message(page: Any, input_locator: Any, text: str) -> N
             await page.keyboard.down("Shift")
             await page.keyboard.press("Enter")
             await page.keyboard.up("Shift")
+
+
+async def _open_profile_message_thread(page: Any) -> bool:
+    # Prefer the profile CTA link with a user-specific conversation id.
+    link_candidates = page.locator("a[href*='/messages?'][href*='u=']")
+    link_count = await link_candidates.count()
+    for idx in range(link_count):
+        candidate = link_candidates.nth(idx)
+        text = (await candidate.inner_text()).strip().lower()
+        href = (await candidate.get_attribute("href") or "").lower()
+        if text == "message" and "u=" in href:
+            await candidate.click()
+            return True
+
+    # Fallback: click exact-text "Message" control near top profile header.
+    generic_candidates = page.locator("button:has-text('Message'), a:has-text('Message')")
+    generic_count = await generic_candidates.count()
+    for idx in range(generic_count):
+        candidate = generic_candidates.nth(idx)
+        text = (await candidate.inner_text()).strip().lower()
+        if text != "message":
+            continue
+        bbox = await candidate.bounding_box()
+        if bbox is not None and float(bbox.get("y", 9999.0)) > 220.0:
+            continue
+        await candidate.click()
+        return True
+    return False
+
+
+async def _slow_settle(page: Any) -> None:
+    with contextlib.suppress(Exception):
+        await page.wait_for_load_state("networkidle", timeout=12000)
+    await page.wait_for_timeout(random.randint(4500, 8500))
 
 
 async def _needs_login(page: Any) -> bool:

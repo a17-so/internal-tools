@@ -121,7 +121,7 @@ class TiktokDmSender:
 
             input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
             await input_locator.click()
-            await _type_multiline_message(page=page, input_locator=input_locator, text=message_text)
+            await page.keyboard.insert_text(message_text)
             await page.keyboard.press("Enter")
 
             await page.wait_for_timeout(random.randint(2000, 5000))
@@ -141,17 +141,6 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
 async def _click_first(page: Any, selectors: list[str]) -> None:
     loc = await _find_first(page, selectors)
     await loc.click()
-
-
-async def _type_multiline_message(page: Any, input_locator: Any, text: str) -> None:
-    lines = text.split("\n")
-    for idx, line in enumerate(lines):
-        if line:
-            await input_locator.type(line, delay=random.randint(25, 80))
-        if idx < len(lines) - 1:
-            await page.keyboard.down("Shift")
-            await page.keyboard.press("Enter")
-            await page.keyboard.up("Shift")
 
 
 async def _open_profile_message_thread(page: Any) -> bool:

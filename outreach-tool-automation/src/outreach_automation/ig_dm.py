@@ -73,7 +73,7 @@ class InstagramDmSender:
 
             input_locator = await _find_first(page, INSTAGRAM_DM_INPUTS)
             await input_locator.click()
-            await _type_multiline_message(page=page, input_locator=input_locator, text=message_text)
+            await page.keyboard.insert_text(message_text)
             await page.keyboard.press("Enter")
 
             await page.wait_for_timeout(random.randint(2000, 5000))
@@ -128,13 +128,3 @@ async def _find_all(page: Any, selectors: list[str]) -> list[Any]:
             return out
     return out
 
-
-async def _type_multiline_message(page: Any, input_locator: Any, text: str) -> None:
-    lines = text.split("\n")
-    for idx, line in enumerate(lines):
-        if line:
-            await input_locator.type(line, delay=random.randint(25, 80))
-        if idx < len(lines) - 1:
-            await page.keyboard.down("Shift")
-            await page.keyboard.press("Enter")
-            await page.keyboard.up("Shift")

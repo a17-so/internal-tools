@@ -91,18 +91,8 @@ INSTAGRAM_URL_RE = re.compile(
 )
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 _BLOCKED_HANDLES = {"media", "instagram", "com", "www"}
-_LINK_CRAWL_TIMEOUT_SECONDS = 3.0
-_LINK_CRAWL_MAX_BYTES = 200_000
-_LINK_HUB_DOMAINS = {
-    "linktr.ee",
-    "beacons.ai",
-    "beacons.page",
-    "campsite.bio",
-    "lnk.bio",
-    "solo.to",
-    "stan.store",
-    "withkoji.com",
-}
+_LINK_CRAWL_TIMEOUT_SECONDS = 5.0
+_LINK_CRAWL_MAX_BYTES = 350_000
 
 
 def _log(event: str, **kwargs) -> None:
@@ -145,9 +135,6 @@ def _extract_ig_handle_from_link_page(link_url: str) -> str:
         return ""
     parsed = urlparse(raw)
     if parsed.scheme not in {"http", "https"}:
-        return ""
-    host = (parsed.netloc or "").lower().replace("www.", "")
-    if host not in _LINK_HUB_DOMAINS:
         return ""
 
     # Fast path for direct Instagram links.
@@ -242,7 +229,7 @@ def scrape_tiktok_with_searchapi(username: str) -> dict:
             _log("searchapi.no_profile_data", username=clean_username)
             return {"error": "No profile data in API response"}
         
-        link_crawl_enabled = os.environ.get("SCRAPE_IG_BIO_LINK_CRAWL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y"}
+        link_crawl_enabled = os.environ.get("SCRAPE_IG_BIO_LINK_CRAWL_ENABLED", "true").strip().lower() in {"1", "true", "yes", "y"}
         same_username_fallback_enabled = (
             os.environ.get("SCRAPE_IG_SAME_USERNAME_FALLBACK", "false").strip().lower() in {"1", "true", "yes", "y"}
         )

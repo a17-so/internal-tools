@@ -135,6 +135,19 @@ class SheetsClient:
             return
         self._sheet.update_cell(row_index, self._columns.status, status)
 
+    def clear_creator_link(self, lead: LeadRow) -> None:
+        col = self._resolve_lead_url_col(lead)
+        if col is None:
+            return
+        self._sheet.update_cell(lead.row_index, col, "")
+        self._set_cell_background_color(lead.row_index, col, red=1.0, green=1.0, blue=1.0)
+
+    def mark_creator_link_error(self, lead: LeadRow) -> None:
+        col = self._resolve_lead_url_col(lead)
+        if col is None:
+            return
+        self._set_cell_background_color(lead.row_index, col, red=1.0, green=0.8, blue=0.8)
+
     @staticmethod
     def _get_cell(row: list[str], col_index_one_based: int | None) -> str:
         if col_index_one_based is None:
@@ -148,6 +161,48 @@ class SheetsClient:
         _ = (row_index, note)
         # Hook for future expansion if notes/comments column gets added.
         return None
+
+    def _resolve_lead_url_col(self, lead: LeadRow) -> int | None:
+        if lead.col_index is not None:
+            return lead.col_index
+        return self._columns.creator_url
+
+    def _set_cell_background_color(
+        self,
+        row_index: int,
+        col_index: int,
+        *,
+        red: float,
+        green: float,
+        blue: float,
+    ) -> None:
+        self._sheet.spreadsheet.batch_update(
+            {
+                "requests": [
+                    {
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": self._sheet.id,
+                                "startRowIndex": row_index - 1,
+                                "endRowIndex": row_index,
+                                "startColumnIndex": col_index - 1,
+                                "endColumnIndex": col_index,
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": {
+                                        "red": red,
+                                        "green": green,
+                                        "blue": blue,
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat.backgroundColor",
+                        }
+                    }
+                ]
+            }
+        )
 
     def _fetch_matrix_urls(
         self,

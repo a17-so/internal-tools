@@ -24,6 +24,8 @@ _LOG = logging.getLogger(__name__)
 class SheetsClientProto(Protocol):
     def fetch_unprocessed(self, batch_size: int, row_index: int | None = None) -> list[LeadRow]: ...
     def update_status(self, row_index: int, status: str) -> None: ...
+    def clear_creator_link(self, lead: LeadRow) -> None: ...
+    def mark_creator_link_error(self, lead: LeadRow) -> None: ...
 
 
 class ScraperClientProto(Protocol):
@@ -227,6 +229,10 @@ class Orchestrator:
 
             final_status = final_sheet_status(email_result, ig_result, tiktok_result)
             self._sheets.update_status(lead.row_index, final_status)
+            if final_status == "Processed":
+                self._sheets.clear_creator_link(lead)
+            elif final_status.startswith("failed"):
+                self._sheets.mark_creator_link_error(lead)
 
             if final_status == "Processed":
                 return_value = "processed"
@@ -242,6 +248,7 @@ class Orchestrator:
         except Exception as exc:
             final_status = "failed_internal_error"
             self._sheets.update_status(lead.row_index, final_status)
+            self._sheets.mark_creator_link_error(lead)
             job_error = str(exc)
             job_status = "dead"
             self._firestore.mark_dead_job(str(uuid4()), reason=str(exc))

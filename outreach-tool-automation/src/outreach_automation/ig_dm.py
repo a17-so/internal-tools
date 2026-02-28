@@ -10,7 +10,6 @@ from outreach_automation.models import Account, ChannelResult, Platform
 from outreach_automation.selectors import (
     INSTAGRAM_DM_INPUTS,
     INSTAGRAM_INBOX_SEARCH_INPUTS,
-    INSTAGRAM_MESSAGE_BUTTONS,
     INSTAGRAM_THREAD_ROWS,
 )
 from outreach_automation.session_manager import SessionManager
@@ -66,7 +65,7 @@ class InstagramDmSender:
             page = await context.new_page()
             opened = await _open_thread_via_inbox_search(page, ig_handle)
             if not opened:
-                await _open_thread_via_profile_message(page, ig_handle)
+                raise RuntimeError("No matching selector found: instagram thread row")
 
             message_text = normalize_dm_text(dm_text)
             if not message_text:
@@ -89,11 +88,6 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
         if await loc.count() > 0:
             return loc.first
     raise RuntimeError("No matching selector found")
-
-
-async def _click_first(page: Any, selectors: list[str]) -> None:
-    loc = await _find_first(page, selectors)
-    await loc.click()
 
 
 async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
@@ -121,13 +115,6 @@ async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
             await page.wait_for_timeout(random.randint(1000, 2200))
             return True
     return False
-
-
-async def _open_thread_via_profile_message(page: Any, ig_handle: str) -> None:
-    await page.goto(f"https://www.instagram.com/{ig_handle}", wait_until="domcontentloaded")
-    await page.wait_for_timeout(random.randint(1500, 4000))
-    await _click_first(page, INSTAGRAM_MESSAGE_BUTTONS)
-    await page.wait_for_timeout(random.randint(1000, 3000))
 
 
 async def _find_all(page: Any, selectors: list[str]) -> list[Any]:

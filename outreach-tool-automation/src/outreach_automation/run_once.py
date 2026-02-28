@@ -65,7 +65,7 @@ def main() -> int:
         return 2
 
     try:
-        session_manager = SessionManager(settings.ig_session_dir, settings.tiktok_session_dir)
+        session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
         orchestrator = Orchestrator(
             sheets_client=sheets_client,
             scrape_client=ScrapeClient(settings.flask_scrape_url),

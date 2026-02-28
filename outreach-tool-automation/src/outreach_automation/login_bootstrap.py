@@ -30,7 +30,7 @@ def main() -> int:
         service_account_path=settings.google_service_account_json,
         project_id=settings.firestore_project_id,
     )
-    session_manager = SessionManager(settings.ig_session_dir, settings.tiktok_session_dir)
+    session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
 
     platforms: list[Platform]
     if args.platform == "all":
@@ -61,25 +61,22 @@ def _bootstrap_account(platform: Platform, account: Account, session_manager: Se
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("playwright not installed") from exc
 
-    session_path = session_manager.path_for(platform, account.handle)
+    profile_dir = session_manager.profile_dir_for(platform, account.handle)
     start_url = _start_url(platform, account.handle)
     print(f"\n[bootstrap] platform={platform.value} handle={account.handle}")
     print(f"[bootstrap] opening {start_url}")
-    print(f"[bootstrap] session_file={session_path}")
+    print(f"[bootstrap] chrome_profile_dir={profile_dir}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        if session_path.exists():
-            context = browser.new_context(storage_state=str(session_path))
-        else:
-            context = browser.new_context()
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=str(profile_dir),
+            channel="chrome",
+            headless=False,
+        )
         page = context.new_page()
         page.goto(start_url, wait_until="domcontentloaded")
-        input("Complete login + 2FA in the opened browser, then press Enter here to save session: ")
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        context.storage_state(path=str(session_path))
+        input("Complete login + 2FA in the opened Chrome window, then press Enter here to close: ")
         context.close()
-        browser.close()
 
 
 def _start_url(platform: Platform, handle: str) -> str:

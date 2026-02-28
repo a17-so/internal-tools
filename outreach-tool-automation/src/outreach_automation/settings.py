@@ -34,8 +34,8 @@ class Settings:
     gmail_client_id: str | None
     gmail_client_secret: str | None
     gmail_accounts: tuple[GmailAccountConfig, ...]
-    ig_session_dir: Path
-    tiktok_session_dir: Path
+    ig_profile_dir: Path
+    tiktok_profile_dir: Path
 
 
 def _required(name: str) -> str:
@@ -61,8 +61,12 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
     else:
         load_dotenv()
 
-    ig_session_dir = Path(os.getenv("IG_SESSION_DIR", "sessions/instagram")).resolve()
-    tiktok_session_dir = Path(os.getenv("TIKTOK_SESSION_DIR", "sessions/tiktok")).resolve()
+    ig_profile_dir = Path(
+        os.getenv("IG_PROFILE_DIR", os.getenv("IG_SESSION_DIR", "profiles/instagram"))
+    ).resolve()
+    tiktok_profile_dir = Path(
+        os.getenv("TIKTOK_PROFILE_DIR", os.getenv("TIKTOK_SESSION_DIR", "profiles/tiktok"))
+    ).resolve()
 
     return Settings(
         flask_scrape_url=_required("FLASK_SCRAPE_URL"),
@@ -84,6 +88,6 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID"),
         gmail_client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
         gmail_accounts=_gmail_accounts(),
-        ig_session_dir=ig_session_dir,
-        tiktok_session_dir=tiktok_session_dir,
+        ig_profile_dir=ig_profile_dir,
+        tiktok_profile_dir=tiktok_profile_dir,
     )

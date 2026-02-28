@@ -24,11 +24,11 @@ class TiktokDmSender:
             return ChannelResult(status="pending_tomorrow", error_code="no_tiktok_account")
         if dry_run:
             return ChannelResult(status="sent")
-        session_path = self._session_manager.path_for(Platform.TIKTOK, account.handle)
-        if not session_path.exists():
+        profile_dir = self._session_manager.profile_dir_for(Platform.TIKTOK, account.handle)
+        if not profile_dir.exists():
             return ChannelResult(status="failed", error_code="missing_tiktok_session")
         try:
-            asyncio.run(self._send_async(handle=handle, dm_text=dm_text, session_path=session_path))
+            asyncio.run(self._send_async(handle=handle, dm_text=dm_text, profile_dir=profile_dir))
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
@@ -42,18 +42,18 @@ class TiktokDmSender:
                 )
             return ChannelResult(status="failed", error_code="tiktok_send_failed", error_message=str(exc))
 
-    async def _send_async(self, handle: str, dm_text: str, session_path: Path) -> None:
+    async def _send_async(self, handle: str, dm_text: str, profile_dir: Path) -> None:
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright not installed") from exc
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            context_kwargs: dict[str, Any] = {}
-            if session_path.exists():
-                context_kwargs["storage_state"] = str(session_path)
-            context = await browser.new_context(**context_kwargs)
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                channel="chrome",
+                headless=False,
+            )
             page = await context.new_page()
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
             await page.wait_for_timeout(random.randint(1500, 4000))
@@ -70,10 +70,8 @@ class TiktokDmSender:
             await _type_multiline_message(page=page, input_locator=input_locator, text=message_text)
             await page.keyboard.press("Enter")
 
-            await context.storage_state(path=str(session_path))
             await page.wait_for_timeout(random.randint(2000, 5000))
             await context.close()
-            await browser.close()
 
 
 async def _find_first(page: Any, selectors: list[str]) -> Any:

@@ -96,7 +96,7 @@ python -m outreach_automation.login_bootstrap --platform all --account-handle @r
 TikTok attach mode (recommended when login attempts are blocked):
 
 ```bash
-# 1) Start your local Chrome with remote debugging (after quitting existing Chrome)
+# 1) Start a separate Chrome debug profile (keeps your normal Chrome tabs intact)
 ./ops/start_chrome_debug.sh 9222
 
 # 2) Enable attach mode in .env

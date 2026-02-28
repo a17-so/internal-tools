@@ -11,7 +11,6 @@ from outreach_automation.ig_dm import InstagramDmSender
 from outreach_automation.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
 from outreach_automation.logger import setup_logging
 from outreach_automation.orchestrator import Orchestrator
-from outreach_automation.scraper_client import ScrapeClient
 from outreach_automation.session_manager import SessionManager
 from outreach_automation.settings import Settings, load_settings
 from outreach_automation.sheets_client import SheetsClient
@@ -79,6 +78,7 @@ def main() -> int:
                 session_manager,
                 attach_mode=settings.tiktok_attach_mode,
                 cdp_url=settings.tiktok_cdp_url,
+                min_seconds_between_sends=settings.tiktok_min_seconds_between_sends,
             ),
             sender_profile=settings.sender_profile,
             scrape_app=settings.scrape_app,
@@ -102,22 +102,18 @@ def main() -> int:
         firestore_client.release_run_lock(holder=holder)
 
 
-def _build_scrape_client(settings: Settings) -> LocalScrapeClient | ScrapeClient:
-    if settings.scrape_backend == "local":
-        if not settings.searchapi_key:
-            raise ValueError("SCRAPE_BACKEND=local requires SEARCHAPI_KEY")
-        return LocalScrapeClient(
-            LocalScrapeSettings(
-                searchapi_key=settings.searchapi_key,
-                request_timeout_seconds=settings.searchapi_timeout_seconds,
-                same_username_fallback=settings.scrape_same_username_fallback,
-                templates_dir=settings.local_templates_dir,
-                outreach_apps_json=settings.local_outreach_apps_json,
-            )
+def _build_scrape_client(settings: Settings) -> LocalScrapeClient:
+    if not settings.searchapi_key:
+        raise ValueError("Local scrape backend requires SEARCHAPI_KEY")
+    return LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key=settings.searchapi_key,
+            request_timeout_seconds=settings.searchapi_timeout_seconds,
+            same_username_fallback=settings.scrape_same_username_fallback,
+            templates_dir=settings.local_templates_dir,
+            outreach_apps_json=settings.local_outreach_apps_json,
         )
-    if not settings.flask_scrape_url:
-        raise ValueError("SCRAPE_BACKEND=remote requires FLASK_SCRAPE_URL")
-    return ScrapeClient(settings.flask_scrape_url)
+    )
 
 
 def _parse_channels(raw: str) -> set[str]:

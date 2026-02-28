@@ -16,8 +16,6 @@ class GmailAccountConfig:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    scrape_backend: str
-    flask_scrape_url: str | None
     scrape_app: str
     searchapi_key: str | None
     searchapi_timeout_seconds: float
@@ -46,6 +44,7 @@ class Settings:
     tiktok_profile_dir: Path
     tiktok_attach_mode: bool
     tiktok_cdp_url: str | None
+    tiktok_min_seconds_between_sends: int
 
 
 def _required(name: str) -> str:
@@ -118,8 +117,6 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         google_cloud_quota_project = firestore_project_id
     os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = google_cloud_quota_project
 
-    scrape_backend = os.getenv("SCRAPE_BACKEND", "local").strip().lower() or "local"
-    flask_scrape_url = os.getenv("FLASK_SCRAPE_URL", "").strip() or None
     local_env_yaml = _read_local_outreach_env_yaml()
     searchapi_key = os.getenv("SEARCHAPI_KEY", "").strip() or _extract_searchapi_key_from_env_yaml(local_env_yaml)
     local_templates_dir = Path(
@@ -127,8 +124,6 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
     ).resolve()
 
     return Settings(
-        scrape_backend=scrape_backend,
-        flask_scrape_url=flask_scrape_url,
         scrape_app=os.getenv("SCRAPE_APP", "regen").strip() or "regen",
         searchapi_key=searchapi_key,
         searchapi_timeout_seconds=float(os.getenv("SEARCHAPI_TIMEOUT_SECONDS", "10")),
@@ -158,4 +153,5 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         tiktok_profile_dir=tiktok_profile_dir,
         tiktok_attach_mode=os.getenv("TIKTOK_ATTACH_MODE", "false").lower() == "true",
         tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
+        tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "90")),
     )

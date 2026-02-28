@@ -4,8 +4,9 @@ import asyncio
 import contextlib
 import random
 import re
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
@@ -14,16 +15,20 @@ from outreach_automation.session_manager import SessionManager
 
 
 class TiktokDmSender:
+    _last_send_ts_by_account: ClassVar[dict[str, float]] = {}
+
     def __init__(
         self,
         session_manager: SessionManager,
         *,
         attach_mode: bool = False,
         cdp_url: str | None = None,
+        min_seconds_between_sends: int = 90,
     ) -> None:
         self._session_manager = session_manager
         self._attach_mode = attach_mode
         self._cdp_url = cdp_url
+        self._min_seconds_between_sends = max(0, min_seconds_between_sends)
 
     def send(self, creator_url: str, dm_text: str, account: Account | None, *, dry_run: bool) -> ChannelResult:
         handle = _extract_handle(creator_url)
@@ -33,6 +38,7 @@ class TiktokDmSender:
             return ChannelResult(status="pending_tomorrow", error_code="no_tiktok_account")
         if dry_run:
             return ChannelResult(status="sent")
+        self._enforce_send_spacing(account.handle)
 
         profile_dir: Path | None = None
         if self._attach_mode:
@@ -69,6 +75,16 @@ class TiktokDmSender:
                     error_message=str(exc),
                 )
             return ChannelResult(status="failed", error_code="tiktok_send_failed", error_message=str(exc))
+
+    def _enforce_send_spacing(self, account_handle: str) -> None:
+        if self._min_seconds_between_sends <= 0:
+            return
+        now = time.time()
+        last_sent = self._last_send_ts_by_account.get(account_handle, 0.0)
+        remaining = self._min_seconds_between_sends - (now - last_sent)
+        if remaining > 0:
+            time.sleep(remaining)
+        self._last_send_ts_by_account[account_handle] = time.time()
 
     async def _send_async(
         self,
@@ -120,8 +136,10 @@ class TiktokDmSender:
                 raise RuntimeError("Empty DM text after normalization")
 
             input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
+            await page.wait_for_timeout(random.randint(2500, 5000))
             await input_locator.click()
             await page.keyboard.insert_text(message_text)
+            await page.wait_for_timeout(random.randint(1500, 3000))
             await page.keyboard.press("Enter")
 
             await page.wait_for_timeout(random.randint(2000, 5000))

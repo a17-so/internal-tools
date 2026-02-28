@@ -13,9 +13,7 @@ Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok 
 - No automatic retries for IG/TikTok sends
 - Dry-run mode available for full pipeline validation without sending
 - IG/TikTok live send requires pre-bootstrapped Playwright sessions
-- Scrape backend modes:
-  - `local` (default): in-process SearchAPI + local templates (no hosted `/scrape` dependency)
-  - `remote`: call existing Flask `/scrape` endpoint
+- Scraper is local-only: in-process SearchAPI + local templates (no hosted `/scrape` dependency)
 
 ## Layout
 
@@ -25,7 +23,7 @@ outreach-tool-automation/
 │   ├── run_once.py
 │   ├── orchestrator.py
 │   ├── sheets_client.py
-│   ├── scraper_client.py
+│   ├── local_scraper_client.py
 │   ├── firestore_client.py
 │   ├── account_router.py
 │   ├── email_sender.py
@@ -60,11 +58,10 @@ Authentication options:
   - `RAW_LEADS_TIER_COLUMN`
   - `RAW_LEADS_STATUS_COLUMN`
 
-Scrape modes:
-- Local mode (default): set `SEARCHAPI_KEY`; uses `LOCAL_TEMPLATES_DIR` scripts.
-  - If `SEARCHAPI_KEY` / `OUTREACH_APPS_JSON` are not set in `.env`, automation auto-loads from
-    `../outreach-tool/api/envs/env.yaml` (override with `LOCAL_OUTREACH_ENV_YAML`).
-- Remote mode: set `SCRAPE_BACKEND=remote` and `FLASK_SCRAPE_URL`.
+Scrape setup:
+- Set `SEARCHAPI_KEY`; local scraper uses `LOCAL_TEMPLATES_DIR` scripts.
+- If `SEARCHAPI_KEY` / `OUTREACH_APPS_JSON` are not set in `.env`, automation auto-loads from
+  `../outreach-tool/api/envs/env.yaml` (override with `LOCAL_OUTREACH_ENV_YAML`).
 
 ## Run
 
@@ -112,6 +109,7 @@ TikTok attach mode (recommended when login attempts are blocked):
 # 2) Enable attach mode in .env
 # TIKTOK_ATTACH_MODE=true
 # TIKTOK_CDP_URL=http://127.0.0.1:9222
+# TIKTOK_MIN_SECONDS_BETWEEN_SENDS=90
 
 # 3) Run tiktok-only send test
 python -m outreach_automation.run_once --live --channels tiktok --lead-row-index 15 --ignore-dedupe

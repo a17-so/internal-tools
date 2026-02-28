@@ -66,3 +66,14 @@ def test_status_processed_when_email_disabled() -> None:
         )
         == "Processed"
     )
+
+
+def test_status_processed_when_channel_disabled() -> None:
+    assert (
+        final_sheet_status(
+            ChannelResult(status="skipped", error_code="channel_disabled"),
+            ChannelResult(status="sent"),
+            ChannelResult(status="sent"),
+        )
+        == "Processed"
+    )

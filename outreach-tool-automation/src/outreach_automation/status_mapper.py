@@ -3,6 +3,7 @@ from __future__ import annotations
 from outreach_automation.models import ChannelResult
 
 _ALLOWED_SKIP_CODES = {
+    "channel_disabled",
     "email_disabled",
     "missing_email_fields",
     "missing_ig_handle",

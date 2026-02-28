@@ -76,6 +76,15 @@ Live run:
 python -m outreach_automation.run_once --live
 ```
 
+Run selected channels only (useful for testing):
+
+```bash
+python -m outreach_automation.run_once --live --channels instagram
+python -m outreach_automation.run_once --live --channels email,tiktok
+# force rerun same lead URL for testing
+python -m outreach_automation.run_once --live --channels instagram --lead-row-index 15 --ignore-dedupe
+```
+
 Bootstrap IG/TikTok login sessions (one-time 2FA per active account):
 
 ```bash

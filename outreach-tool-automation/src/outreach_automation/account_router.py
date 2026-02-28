@@ -21,9 +21,25 @@ class AccountRouter:
     def __init__(self, firestore_client: FirestoreClientProto) -> None:
         self._firestore = firestore_client
 
+    def route(self, platform: Platform) -> Account | None:
+        return self._firestore.next_account(platform)
+
     def route_all(self) -> RoutedAccounts:
         return RoutedAccounts(
-            email=self._firestore.next_account(Platform.EMAIL),
-            instagram=self._firestore.next_account(Platform.INSTAGRAM),
-            tiktok=self._firestore.next_account(Platform.TIKTOK),
+            email=self.route(Platform.EMAIL),
+            instagram=self.route(Platform.INSTAGRAM),
+            tiktok=self.route(Platform.TIKTOK),
+        )
+
+    def route_selected(
+        self,
+        *,
+        enable_email: bool,
+        enable_instagram: bool,
+        enable_tiktok: bool,
+    ) -> RoutedAccounts:
+        return RoutedAccounts(
+            email=self.route(Platform.EMAIL) if enable_email else None,
+            instagram=self.route(Platform.INSTAGRAM) if enable_instagram else None,
+            tiktok=self.route(Platform.TIKTOK) if enable_tiktok else None,
         )

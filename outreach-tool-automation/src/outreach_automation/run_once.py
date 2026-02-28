@@ -24,6 +24,17 @@ def main() -> int:
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--max-leads", type=int, default=None)
     parser.add_argument("--lead-row-index", type=int, default=None)
+    parser.add_argument(
+        "--channels",
+        type=str,
+        default="email,instagram,tiktok",
+        help="Comma-separated channels to run: email,instagram,tiktok",
+    )
+    parser.add_argument(
+        "--ignore-dedupe",
+        action="store_true",
+        help="Process lead even if URL was already completed before (testing only)",
+    )
     parser.add_argument("--dotenv-path", type=str, default=None)
     args = parser.parse_args()
 
@@ -32,6 +43,7 @@ def main() -> int:
 
     effective_batch = args.batch_size or args.max_leads or settings.batch_size
     dry_run = False if args.live else args.dry_run or settings.dry_run
+    enabled_channels = _parse_channels(args.channels)
 
     sheets_client = SheetsClient(
         service_account_path=settings.google_service_account_json,
@@ -60,23 +72,44 @@ def main() -> int:
             firestore_client=firestore_client,
             account_router=AccountRouter(firestore_client),
             email_sender=EmailSender(settings),
-        ig_sender=InstagramDmSender(session_manager),
-        tiktok_sender=TiktokDmSender(session_manager),
-        sender_profile=settings.sender_profile,
-        scrape_app=settings.scrape_app,
-        default_creator_tier=settings.default_creator_tier,
-    )
+            ig_sender=InstagramDmSender(session_manager),
+            tiktok_sender=TiktokDmSender(session_manager),
+            sender_profile=settings.sender_profile,
+            scrape_app=settings.scrape_app,
+            default_creator_tier=settings.default_creator_tier,
+            enable_email="email" in enabled_channels,
+            enable_instagram="instagram" in enabled_channels,
+            enable_tiktok="tiktok" in enabled_channels,
+            dedupe_enabled=not args.ignore_dedupe,
+        )
         result = orchestrator.run(
             batch_size=effective_batch,
             dry_run=dry_run,
             row_index=args.lead_row_index,
         )
         print(
-            f"processed={result.processed} failed={result.failed} skipped={result.skipped} dry_run={dry_run}"
+            f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
+            f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"
         )
         return 0
     finally:
         firestore_client.release_run_lock(holder=holder)
+
+
+def _parse_channels(raw: str) -> set[str]:
+    aliases = {
+        "email": "email",
+        "mail": "email",
+        "ig": "instagram",
+        "instagram": "instagram",
+        "tt": "tiktok",
+        "tiktok": "tiktok",
+    }
+    requested = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    normalized = {aliases[item] for item in requested if item in aliases}
+    if not normalized:
+        raise ValueError("No valid channels selected. Use email,instagram,tiktok.")
+    return normalized
 
 
 if __name__ == "__main__":

@@ -59,6 +59,15 @@ class FakeFirestore:
 
 class FakeRouter:
     def route_all(self) -> RoutedAccounts:
+        return self.route_selected(enable_email=True, enable_instagram=True, enable_tiktok=True)
+
+    def route_selected(
+        self,
+        *,
+        enable_email: bool,
+        enable_instagram: bool,
+        enable_tiktok: bool,
+    ) -> RoutedAccounts:
         return RoutedAccounts(
             email=Account(
                 id="e1",
@@ -67,7 +76,9 @@ class FakeRouter:
                 status=AccountStatus.ACTIVE,
                 daily_sent=0,
                 daily_limit=100,
-            ),
+            )
+            if enable_email
+            else None,
             instagram=Account(
                 id="i1",
                 platform=Platform.INSTAGRAM,
@@ -75,7 +86,9 @@ class FakeRouter:
                 status=AccountStatus.ACTIVE,
                 daily_sent=0,
                 daily_limit=25,
-            ),
+            )
+            if enable_instagram
+            else None,
             tiktok=Account(
                 id="t1",
                 platform=Platform.TIKTOK,
@@ -83,7 +96,9 @@ class FakeRouter:
                 status=AccountStatus.ACTIVE,
                 daily_sent=0,
                 daily_limit=40,
-            ),
+            )
+            if enable_tiktok
+            else None,
         )
 
 

@@ -39,6 +39,13 @@ class FirestoreClientProto(Protocol):
 
 class AccountRouterProto(Protocol):
     def route_all(self) -> RoutedAccounts: ...
+    def route_selected(
+        self,
+        *,
+        enable_email: bool,
+        enable_instagram: bool,
+        enable_tiktok: bool,
+    ) -> RoutedAccounts: ...
 
 
 class EmailSenderProto(Protocol):
@@ -95,6 +102,10 @@ class Orchestrator:
         sender_profile: str,
         scrape_app: str = "regen",
         default_creator_tier: str = "Submicro",
+        enable_email: bool = True,
+        enable_instagram: bool = True,
+        enable_tiktok: bool = True,
+        dedupe_enabled: bool = True,
     ) -> None:
         self._sheets = sheets_client
         self._scraper = scrape_client
@@ -106,6 +117,10 @@ class Orchestrator:
         self._sender_profile = sender_profile
         self._scrape_app = scrape_app
         self._default_creator_tier = default_creator_tier
+        self._enable_email = enable_email
+        self._enable_instagram = enable_instagram
+        self._enable_tiktok = enable_tiktok
+        self._dedupe_enabled = dedupe_enabled
 
     def run(self, batch_size: int, dry_run: bool, row_index: int | None = None) -> OrchestratorResult:
         leads = self._sheets.fetch_unprocessed(batch_size=batch_size, row_index=row_index)
@@ -126,7 +141,7 @@ class Orchestrator:
         return OrchestratorResult(processed=processed, failed=failed, skipped=skipped)
 
     def _process_lead(self, lead: LeadRow, dry_run: bool) -> str:
-        if self._firestore.was_processed_url(lead.creator_url):
+        if self._dedupe_enabled and self._firestore.was_processed_url(lead.creator_url):
             return "skipped"
 
         now = datetime.now(UTC)
@@ -165,30 +180,45 @@ class Orchestrator:
             email_to = scrape.email_to
             ig_handle = scrape.ig_handle
 
-            routed = self._router.route_all()
+            routed = self._router.route_selected(
+                enable_email=self._enable_email,
+                enable_instagram=self._enable_instagram,
+                enable_tiktok=self._enable_tiktok,
+            )
             sender_email = routed.email.handle if routed.email else None
             sender_ig = routed.instagram.handle if routed.instagram else None
             sender_tiktok = routed.tiktok.handle if routed.tiktok else None
 
-            email_result = self._email_sender.send(
-                to_email=scrape.email_to,
-                subject=scrape.email_subject,
-                body=scrape.email_body_text,
-                account=routed.email,
-                dry_run=dry_run,
-            )
-            ig_result = self._ig_sender.send(
-                ig_handle=scrape.ig_handle,
-                dm_text=scrape.dm_text,
-                account=routed.instagram,
-                dry_run=dry_run,
-            )
-            tiktok_result = self._tiktok_sender.send(
-                creator_url=lead.creator_url,
-                dm_text=scrape.dm_text,
-                account=routed.tiktok,
-                dry_run=dry_run,
-            )
+            if self._enable_email:
+                email_result = self._email_sender.send(
+                    to_email=scrape.email_to,
+                    subject=scrape.email_subject,
+                    body=scrape.email_body_text,
+                    account=routed.email,
+                    dry_run=dry_run,
+                )
+            else:
+                email_result = ChannelResult(status="skipped", error_code="channel_disabled")
+
+            if self._enable_instagram:
+                ig_result = self._ig_sender.send(
+                    ig_handle=scrape.ig_handle,
+                    dm_text=scrape.dm_text,
+                    account=routed.instagram,
+                    dry_run=dry_run,
+                )
+            else:
+                ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
+
+            if self._enable_tiktok:
+                tiktok_result = self._tiktok_sender.send(
+                    creator_url=lead.creator_url,
+                    dm_text=scrape.dm_text,
+                    account=routed.tiktok,
+                    dry_run=dry_run,
+                )
+            else:
+                tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if routed.instagram and ig_result.error_code == "ig_blocked":
                 self._firestore.mark_account_cooling(routed.instagram.id)

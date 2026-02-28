@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,8 +16,14 @@ class GmailAccountConfig:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    flask_scrape_url: str
+    scrape_backend: str
+    flask_scrape_url: str | None
     scrape_app: str
+    searchapi_key: str | None
+    searchapi_timeout_seconds: float
+    scrape_same_username_fallback: bool
+    local_templates_dir: Path
+    local_outreach_apps_json: str | None
     google_service_account_json: str | None
     google_cloud_quota_project: str | None
     google_sheets_id: str
@@ -58,6 +65,40 @@ def _gmail_accounts() -> tuple[GmailAccountConfig, ...]:
     return tuple(accounts)
 
 
+def _read_local_outreach_env_yaml() -> str:
+    candidate = Path(os.getenv("LOCAL_OUTREACH_ENV_YAML", "../outreach-tool/api/envs/env.yaml")).resolve()
+    if not candidate.exists():
+        return ""
+    try:
+        return candidate.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _extract_searchapi_key_from_env_yaml(raw: str) -> str | None:
+    if not raw:
+        return None
+    match = re.search(r'^\s*SEARCHAPI_KEY:\s*"?([^"\n]+)"?\s*$', raw, flags=re.MULTILINE)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    return value or None
+
+
+def _extract_outreach_apps_json_from_env_yaml(raw: str) -> str | None:
+    if not raw:
+        return None
+    match = re.search(r"^\s*OUTREACH_APPS_JSON:\s*>\s*\n((?:[ \t]+.*\n?)*)", raw, flags=re.MULTILINE)
+    if not match:
+        return None
+    block = match.group(1)
+    lines = []
+    for line in block.splitlines():
+        lines.append(line[2:] if line.startswith("  ") else line)
+    content = "\n".join(lines).strip()
+    return content or None
+
+
 def load_settings(*, dotenv_path: str | None = None) -> Settings:
     if dotenv_path:
         load_dotenv(dotenv_path=dotenv_path)
@@ -77,9 +118,24 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         google_cloud_quota_project = firestore_project_id
     os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = google_cloud_quota_project
 
+    scrape_backend = os.getenv("SCRAPE_BACKEND", "local").strip().lower() or "local"
+    flask_scrape_url = os.getenv("FLASK_SCRAPE_URL", "").strip() or None
+    local_env_yaml = _read_local_outreach_env_yaml()
+    searchapi_key = os.getenv("SEARCHAPI_KEY", "").strip() or _extract_searchapi_key_from_env_yaml(local_env_yaml)
+    local_templates_dir = Path(
+        os.getenv("LOCAL_TEMPLATES_DIR", "../outreach-tool/api/scripts")
+    ).resolve()
+
     return Settings(
-        flask_scrape_url=_required("FLASK_SCRAPE_URL"),
+        scrape_backend=scrape_backend,
+        flask_scrape_url=flask_scrape_url,
         scrape_app=os.getenv("SCRAPE_APP", "regen").strip() or "regen",
+        searchapi_key=searchapi_key,
+        searchapi_timeout_seconds=float(os.getenv("SEARCHAPI_TIMEOUT_SECONDS", "10")),
+        scrape_same_username_fallback=os.getenv("SCRAPE_IG_SAME_USERNAME_FALLBACK", "false").lower() == "true",
+        local_templates_dir=local_templates_dir,
+        local_outreach_apps_json=os.getenv("OUTREACH_APPS_JSON", "").strip()
+        or _extract_outreach_apps_json_from_env_yaml(local_env_yaml),
         google_service_account_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip() or None,
         google_cloud_quota_project=google_cloud_quota_project,
         google_sheets_id=_required("GOOGLE_SHEETS_ID"),

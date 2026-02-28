@@ -13,6 +13,9 @@ Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok 
 - No automatic retries for IG/TikTok sends
 - Dry-run mode available for full pipeline validation without sending
 - IG/TikTok live send requires pre-bootstrapped Playwright sessions
+- Scrape backend modes:
+  - `local` (default): in-process SearchAPI + local templates (no hosted `/scrape` dependency)
+  - `remote`: call existing Flask `/scrape` endpoint
 
 ## Layout
 
@@ -56,6 +59,12 @@ Authentication options:
   - `RAW_LEADS_URL_COLUMN`
   - `RAW_LEADS_TIER_COLUMN`
   - `RAW_LEADS_STATUS_COLUMN`
+
+Scrape modes:
+- Local mode (default): set `SEARCHAPI_KEY`; uses `LOCAL_TEMPLATES_DIR` scripts.
+  - If `SEARCHAPI_KEY` / `OUTREACH_APPS_JSON` are not set in `.env`, automation auto-loads from
+    `../outreach-tool/api/envs/env.yaml` (override with `LOCAL_OUTREACH_ENV_YAML`).
+- Remote mode: set `SCRAPE_BACKEND=remote` and `FLASK_SCRAPE_URL`.
 
 ## Run
 

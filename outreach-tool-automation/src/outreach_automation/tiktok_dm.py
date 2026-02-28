@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
 from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_MESSAGE_BUTTONS
 from outreach_automation.session_manager import SessionManager
@@ -60,9 +61,13 @@ class TiktokDmSender:
             await _click_first(page, TIKTOK_MESSAGE_BUTTONS)
             await page.wait_for_timeout(random.randint(1000, 3000))
 
+            message_text = normalize_dm_text(dm_text)
+            if not message_text:
+                raise RuntimeError("Empty DM text after normalization")
+
             input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
             await input_locator.click()
-            await input_locator.type(dm_text, delay=random.randint(25, 80))
+            await input_locator.type(message_text, delay=random.randint(25, 80))
             await page.keyboard.press("Enter")
 
             await context.storage_state(path=str(session_path))

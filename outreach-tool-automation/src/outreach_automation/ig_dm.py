@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
 from outreach_automation.selectors import (
     INSTAGRAM_DM_INPUTS,
@@ -67,9 +68,13 @@ class InstagramDmSender:
             if not opened:
                 await _open_thread_via_profile_message(page, ig_handle)
 
+            message_text = normalize_dm_text(dm_text)
+            if not message_text:
+                raise RuntimeError("Empty DM text after normalization")
+
             input_locator = await _find_first(page, INSTAGRAM_DM_INPUTS)
             await input_locator.click()
-            await input_locator.type(dm_text, delay=random.randint(25, 80))
+            await input_locator.type(message_text, delay=random.randint(25, 80))
             await page.keyboard.press("Enter")
 
             await context.storage_state(path=str(session_path))

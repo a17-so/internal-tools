@@ -153,5 +153,5 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         tiktok_profile_dir=tiktok_profile_dir,
         tiktok_attach_mode=os.getenv("TIKTOK_ATTACH_MODE", "false").lower() == "true",
         tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
-        tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "90")),
+        tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "3")),
     )

@@ -23,7 +23,7 @@ class TiktokDmSender:
         *,
         attach_mode: bool = False,
         cdp_url: str | None = None,
-        min_seconds_between_sends: int = 90,
+        min_seconds_between_sends: int = 3,
     ) -> None:
         self._session_manager = session_manager
         self._attach_mode = attach_mode
@@ -136,10 +136,10 @@ class TiktokDmSender:
                 raise RuntimeError("Empty DM text after normalization")
 
             input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
-            await page.wait_for_timeout(random.randint(2500, 5000))
+            await page.wait_for_timeout(random.randint(1000, 2200))
             await input_locator.click()
             await page.keyboard.insert_text(message_text)
-            await page.wait_for_timeout(random.randint(1500, 3000))
+            await page.wait_for_timeout(random.randint(700, 1600))
             await page.keyboard.press("Enter")
 
             await page.wait_for_timeout(random.randint(2000, 5000))
@@ -191,8 +191,8 @@ async def _open_profile_message_thread(page: Any) -> bool:
 
 async def _slow_settle(page: Any) -> None:
     with contextlib.suppress(Exception):
-        await page.wait_for_load_state("networkidle", timeout=12000)
-    await page.wait_for_timeout(random.randint(4500, 8500))
+        await page.wait_for_load_state("networkidle", timeout=7000)
+    await page.wait_for_timeout(random.randint(1500, 3200))
 
 
 async def _needs_login(page: Any) -> bool:

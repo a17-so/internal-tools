@@ -55,6 +55,8 @@ class TiktokDmSender:
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
+            if "missing tiktok auth" in message:
+                return ChannelResult(status="failed", error_code="missing_tiktok_auth")
             if "no matching selector found" in message:
                 return ChannelResult(status="skipped", error_code="tiktok_dm_unavailable")
             if "blocked" in message or "rate" in message:
@@ -102,6 +104,8 @@ class TiktokDmSender:
                 close_context = True
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
             await page.wait_for_timeout(random.randint(1500, 4000))
+            if await _needs_login(page):
+                raise RuntimeError("missing tiktok auth")
 
             await _click_first(page, TIKTOK_MESSAGE_BUTTONS)
             await page.wait_for_timeout(random.randint(1000, 3000))
@@ -143,6 +147,12 @@ async def _type_multiline_message(page: Any, input_locator: Any, text: str) -> N
             await page.keyboard.down("Shift")
             await page.keyboard.press("Enter")
             await page.keyboard.up("Shift")
+
+
+async def _needs_login(page: Any) -> bool:
+    login_button = page.locator("button:has-text('Log in')")
+    count = int(await login_button.count())
+    return count > 0
 
 
 def _extract_handle(url: str) -> str | None:

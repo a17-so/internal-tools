@@ -36,6 +36,8 @@ class Settings:
     gmail_accounts: tuple[GmailAccountConfig, ...]
     ig_profile_dir: Path
     tiktok_profile_dir: Path
+    tiktok_attach_mode: bool
+    tiktok_cdp_url: str | None
 
 
 def _required(name: str) -> str:
@@ -90,4 +92,6 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         gmail_accounts=_gmail_accounts(),
         ig_profile_dir=ig_profile_dir,
         tiktok_profile_dir=tiktok_profile_dir,
+        tiktok_attach_mode=os.getenv("TIKTOK_ATTACH_MODE", "false").lower() == "true",
+        tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
     )

@@ -93,6 +93,25 @@ python -m outreach_automation.login_bootstrap --platform all
 python -m outreach_automation.login_bootstrap --platform all --account-handle @regenhealth.app --account-handle @regenapp
 ```
 
+TikTok attach mode (recommended when login attempts are blocked):
+
+```bash
+# 1) Start your local Chrome with remote debugging (after quitting existing Chrome)
+./ops/start_chrome_debug.sh 9222
+
+# 2) Enable attach mode in .env
+# TIKTOK_ATTACH_MODE=true
+# TIKTOK_CDP_URL=http://127.0.0.1:9222
+
+# 3) Run tiktok-only send test
+python -m outreach_automation.run_once --live --channels tiktok --lead-row-index 15 --ignore-dedupe
+```
+
+Notes for attach mode:
+- Keep TikTok logged in on that Chrome instance.
+- Do not run multiple outreach processes against the same attached Chrome at once.
+- The automation will open/close only the tab it creates and will not close your attached Chrome browser.
+
 Seed Firestore accounts:
 
 ```bash

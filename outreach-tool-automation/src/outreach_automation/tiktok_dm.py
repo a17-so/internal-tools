@@ -13,8 +13,16 @@ from outreach_automation.session_manager import SessionManager
 
 
 class TiktokDmSender:
-    def __init__(self, session_manager: SessionManager) -> None:
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        *,
+        attach_mode: bool = False,
+        cdp_url: str | None = None,
+    ) -> None:
         self._session_manager = session_manager
+        self._attach_mode = attach_mode
+        self._cdp_url = cdp_url
 
     def send(self, creator_url: str, dm_text: str, account: Account | None, *, dry_run: bool) -> ChannelResult:
         handle = _extract_handle(creator_url)
@@ -24,11 +32,26 @@ class TiktokDmSender:
             return ChannelResult(status="pending_tomorrow", error_code="no_tiktok_account")
         if dry_run:
             return ChannelResult(status="sent")
-        profile_dir = self._session_manager.profile_dir_for(Platform.TIKTOK, account.handle)
-        if not profile_dir.exists():
-            return ChannelResult(status="failed", error_code="missing_tiktok_session")
+
+        profile_dir: Path | None = None
+        if self._attach_mode:
+            if not self._cdp_url:
+                return ChannelResult(status="failed", error_code="missing_tiktok_cdp_url")
+        else:
+            profile_dir = self._session_manager.profile_dir_for(Platform.TIKTOK, account.handle)
+            if not profile_dir.exists():
+                return ChannelResult(status="failed", error_code="missing_tiktok_session")
+
         try:
-            asyncio.run(self._send_async(handle=handle, dm_text=dm_text, profile_dir=profile_dir))
+            asyncio.run(
+                self._send_async(
+                    handle=handle,
+                    dm_text=dm_text,
+                    profile_dir=profile_dir,
+                    attach_mode=self._attach_mode,
+                    cdp_url=self._cdp_url,
+                )
+            )
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
@@ -42,19 +65,41 @@ class TiktokDmSender:
                 )
             return ChannelResult(status="failed", error_code="tiktok_send_failed", error_message=str(exc))
 
-    async def _send_async(self, handle: str, dm_text: str, profile_dir: Path) -> None:
+    async def _send_async(
+        self,
+        handle: str,
+        dm_text: str,
+        profile_dir: Path | None,
+        *,
+        attach_mode: bool,
+        cdp_url: str | None,
+    ) -> None:
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright not installed") from exc
 
         async with async_playwright() as p:
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
-                channel="chrome",
-                headless=False,
-            )
-            page = await context.new_page()
+            if attach_mode:
+                if not cdp_url:
+                    raise RuntimeError("missing tiktok cdp url")
+                browser = await p.chromium.connect_over_cdp(cdp_url)
+                contexts = browser.contexts
+                if not contexts:
+                    raise RuntimeError("No browser contexts found in attached Chrome session")
+                context = contexts[0]
+                page = await context.new_page()
+                close_context = False
+            else:
+                if profile_dir is None:
+                    raise RuntimeError("missing profile dir")
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    channel="chrome",
+                    headless=False,
+                )
+                page = await context.new_page()
+                close_context = True
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
             await page.wait_for_timeout(random.randint(1500, 4000))
 
@@ -71,7 +116,9 @@ class TiktokDmSender:
             await page.keyboard.press("Enter")
 
             await page.wait_for_timeout(random.randint(2000, 5000))
-            await context.close()
+            await page.close()
+            if close_context:
+                await context.close()
 
 
 async def _find_first(page: Any, selectors: list[str]) -> Any:

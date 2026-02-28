@@ -73,7 +73,11 @@ def main() -> int:
             account_router=AccountRouter(firestore_client),
             email_sender=EmailSender(settings),
             ig_sender=InstagramDmSender(session_manager),
-            tiktok_sender=TiktokDmSender(session_manager),
+            tiktok_sender=TiktokDmSender(
+                session_manager,
+                attach_mode=settings.tiktok_attach_mode,
+                cdp_url=settings.tiktok_cdp_url,
+            ),
             sender_profile=settings.sender_profile,
             scrape_app=settings.scrape_app,
             default_creator_tier=settings.default_creator_tier,

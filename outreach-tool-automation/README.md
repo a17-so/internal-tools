@@ -96,6 +96,12 @@ python -m outreach_automation.login_bootstrap --platform all --account-handle @r
 Experimental TikTok Nodriver spike (isolated from main orchestrator):
 
 ```bash
+# nodriver spike currently requires Python 3.11-3.13
+# if your main env is 3.14, create a separate spike venv:
+# python3.13 -m venv .venv-nodriver
+# source .venv-nodriver/bin/activate
+# pip install -e ".[dev]" nodriver
+
 pip install nodriver
 
 # 1) one-time manual login on a persistent profile

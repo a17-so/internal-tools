@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from typing import Any
 
 from outreach_automation.models import Platform
@@ -180,11 +181,21 @@ def _normalize_tiktok_path(handle_or_path: str) -> str:
 
 
 def _import_nodriver() -> Any:
+    if sys.version_info >= (3, 14):
+        raise RuntimeError(
+            "Nodriver spike is currently incompatible with Python 3.14 in this environment. "
+            "Use a Python 3.11-3.13 venv for the spike command."
+        )
     try:
-        import nodriver as uc  # type: ignore[import-not-found]
+        import nodriver as uc  # type: ignore[import-untyped]
+    except SyntaxError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "Nodriver import failed due to package parsing error in this Python runtime. "
+            "Use Python 3.11-3.13 for the spike venv."
+        ) from exc
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(
-            "nodriver is not installed. Install with: pip install nodriver"
+            "Nodriver is unavailable in this environment. Install with: pip install nodriver"
         ) from exc
     return uc
 

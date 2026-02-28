@@ -55,3 +55,14 @@ def test_status_processed_when_dm_is_unavailable() -> None:
         )
         == "Processed"
     )
+
+
+def test_status_processed_when_email_disabled() -> None:
+    assert (
+        final_sheet_status(
+            ChannelResult(status="skipped", error_code="email_disabled"),
+            ChannelResult(status="sent"),
+            ChannelResult(status="sent"),
+        )
+        == "Processed"
+    )

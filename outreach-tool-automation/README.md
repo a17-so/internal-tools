@@ -6,10 +6,13 @@ Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok 
 
 - Source of truth for category: `creator_tier` column from `Raw Leads`
 - If tier is missing/invalid, fallback defaults to `Submicro` (`DEFAULT_CREATOR_TIER`)
-- Required sheet columns: `creator_url`, `creator_tier`, `status`
+- Supports two lead layouts:
+  - Standard columns (`creator_url`, optional `creator_tier`, optional `status`)
+  - Matrix mode (no explicit URL column): auto-selects the first column containing TikTok links and processes down that column
 - Sequential execution per lead: Email -> Instagram -> TikTok
 - No automatic retries for IG/TikTok sends
 - Dry-run mode available for full pipeline validation without sending
+- IG/TikTok live send requires pre-bootstrapped Playwright sessions
 
 ## Layout
 
@@ -70,7 +73,15 @@ python -m outreach_automation.run_once --dry-run --lead-row-index 2
 Live run:
 
 ```bash
-python -m outreach_automation.run_once
+python -m outreach_automation.run_once --live
+```
+
+Bootstrap IG/TikTok login sessions (one-time 2FA per active account):
+
+```bash
+python -m outreach_automation.login_bootstrap --platform all
+# or limit to one active account
+python -m outreach_automation.login_bootstrap --platform all --account-handle @regenhealth.app --account-handle @regenapp
 ```
 
 Seed Firestore accounts:
@@ -98,3 +109,4 @@ make test
 
 - This project only modifies files inside `outreach-tool-automation`.
 - Dashboard implementation is intentionally out of scope for v1.
+- To temporarily stop live email sends, set `EMAIL_SEND_ENABLED=false` in `.env`.

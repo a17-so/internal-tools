@@ -83,14 +83,9 @@ class FirestoreClient:
             lock_ref.delete()
 
     def next_account(self, platform: Platform) -> Account | None:
-        accounts = (
-            self._db.collection("accounts")
-            .where(filter=FieldFilter("platform", "==", platform.value))
-            .where(filter=FieldFilter("status", "==", AccountStatus.ACTIVE.value))
-            .stream()
-        )
         candidates = sorted(
-            (doc for doc in accounts), key=lambda d: (d.to_dict() or {}).get("daily_sent", 0)
+            self._active_account_docs(platform),
+            key=lambda d: (d.to_dict() or {}).get("daily_sent", 0),
         )
 
         for doc in candidates:
@@ -100,6 +95,10 @@ class FirestoreClient:
             if self._try_increment_daily_sent(doc.id, acc.daily_sent):
                 return acc
         return None
+
+    def list_active_accounts(self, platform: Platform) -> list[Account]:
+        docs = self._active_account_docs(platform)
+        return [self._doc_to_account(doc.id, doc.to_dict() or {}) for doc in docs]
 
     def mark_account_cooling(self, account_id: str, cooldown_minutes: int = 60) -> None:
         until = datetime.now(UTC) + timedelta(minutes=cooldown_minutes)
@@ -139,6 +138,14 @@ class FirestoreClient:
             return True
 
         return bool(_incr(tx))
+
+    def _active_account_docs(self, platform: Platform) -> list[Any]:
+        return list(
+            self._db.collection("accounts")
+            .where(filter=FieldFilter("platform", "==", platform.value))
+            .where(filter=FieldFilter("status", "==", AccountStatus.ACTIVE.value))
+            .stream()
+        )
 
     @staticmethod
     def _doc_to_account(doc_id: str, data: dict[str, Any]) -> Account:

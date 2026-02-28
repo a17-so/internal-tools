@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+from pathlib import Path
 from typing import Any
 
 from outreach_automation.models import Account, ChannelResult, Platform
@@ -22,8 +23,11 @@ class TiktokDmSender:
             return ChannelResult(status="pending_tomorrow", error_code="no_tiktok_account")
         if dry_run:
             return ChannelResult(status="sent")
+        session_path = self._session_manager.path_for(Platform.TIKTOK, account.handle)
+        if not session_path.exists():
+            return ChannelResult(status="failed", error_code="missing_tiktok_session")
         try:
-            asyncio.run(self._send_async(handle=handle, dm_text=dm_text, account=account))
+            asyncio.run(self._send_async(handle=handle, dm_text=dm_text, session_path=session_path))
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
@@ -37,13 +41,12 @@ class TiktokDmSender:
                 )
             return ChannelResult(status="failed", error_code="tiktok_send_failed", error_message=str(exc))
 
-    async def _send_async(self, handle: str, dm_text: str, account: Account) -> None:
+    async def _send_async(self, handle: str, dm_text: str, session_path: Path) -> None:
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright not installed") from exc
 
-        session_path = self._session_manager.path_for(Platform.TIKTOK, account.handle)
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=False)
             context_kwargs: dict[str, Any] = {}

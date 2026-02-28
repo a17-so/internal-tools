@@ -156,32 +156,50 @@ class SheetsClient:
         batch_size: int,
         row_index: int | None,
     ) -> list[LeadRow]:
+        target_col = self._find_first_link_column(rows)
+        if target_col is None:
+            return []
+
         out: list[LeadRow] = []
         seen: set[str] = set()
         for r_idx, row in enumerate(rows[1:], start=2):
             if row_index is not None and r_idx != row_index:
                 continue
+            value = self._get_cell(row, target_col).strip()
+            if not value:
+                continue
+            lower = value.lower()
+            if not (lower.startswith("http://") or lower.startswith("https://")):
+                continue
+            if "tiktok.com/" not in lower:
+                continue
+            if value in seen:
+                continue
+            seen.add(value)
+            out.append(
+                LeadRow(
+                    row_index=r_idx,
+                    col_index=target_col,
+                    creator_url=value,
+                    creator_tier="",
+                    status="",
+                )
+            )
+            if len(out) >= batch_size:
+                return out
+        return out
+
+    def _find_first_link_column(self, rows: list[list[str]]) -> int | None:
+        first_col: int | None = None
+        for row in rows[1:]:
             for c_idx, cell in enumerate(row, start=1):
-                value = cell.strip()
+                value = cell.strip().lower()
                 if not value:
                     continue
-                lower = value.lower()
-                if not (lower.startswith("http://") or lower.startswith("https://")):
+                if not (value.startswith("http://") or value.startswith("https://")):
                     continue
-                if "tiktok.com/" not in lower:
+                if "tiktok.com/" not in value:
                     continue
-                if value in seen:
-                    continue
-                seen.add(value)
-                out.append(
-                    LeadRow(
-                        row_index=r_idx,
-                        col_index=c_idx,
-                        creator_url=value,
-                        creator_tier="",
-                        status="",
-                    )
-                )
-                if len(out) >= batch_size:
-                    return out
-        return out
+                if first_col is None or c_idx < first_col:
+                    first_col = c_idx
+        return first_col

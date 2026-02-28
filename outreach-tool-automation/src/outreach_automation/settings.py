@@ -30,6 +30,7 @@ class Settings:
     sender_profile: str
     default_creator_tier: str
     dry_run: bool
+    email_send_enabled: bool
     gmail_client_id: str | None
     gmail_client_secret: str | None
     gmail_accounts: tuple[GmailAccountConfig, ...]
@@ -79,6 +80,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         sender_profile=os.getenv("SENDER_PROFILE", "default"),
         default_creator_tier=os.getenv("DEFAULT_CREATOR_TIER", "Submicro"),
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
+        email_send_enabled=os.getenv("EMAIL_SEND_ENABLED", "true").lower() == "true",
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID"),
         gmail_client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
         gmail_accounts=_gmail_accounts(),

@@ -32,6 +32,8 @@ class EmailSender:
         *,
         dry_run: bool,
     ) -> ChannelResult:
+        if not self._settings.email_send_enabled:
+            return ChannelResult(status="skipped", error_code="email_disabled")
         if not to_email or not subject or not body:
             return ChannelResult(status="skipped", error_code="missing_email_fields")
         if account is None:

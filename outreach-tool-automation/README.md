@@ -93,27 +93,6 @@ python -m outreach_automation.login_bootstrap --platform all
 python -m outreach_automation.login_bootstrap --platform all --account-handle @regenhealth.app --account-handle @regenapp
 ```
 
-Experimental TikTok Nodriver spike (isolated from main orchestrator):
-
-```bash
-# nodriver spike currently requires Python 3.11-3.13
-# if your main env is 3.14, create a separate spike venv:
-# python3.13 -m venv .venv-nodriver
-# source .venv-nodriver/bin/activate
-# pip install -e ".[dev]" nodriver
-
-pip install nodriver
-
-# 1) one-time manual login on a persistent profile
-python -m outreach_automation.tiktok_nodriver_spike bootstrap --account-handle @regen.app
-
-# 2) DM send-only test using that same persistent profile
-python -m outreach_automation.tiktok_nodriver_spike send-test \
-  --account-handle @regen.app \
-  --creator-url https://www.tiktok.com/@barclayahmed \
-  --message "hey - paid promo test from regen"
-```
-
 Seed Firestore accounts:
 
 ```bash
@@ -140,4 +119,3 @@ make test
 - This project only modifies files inside `outreach-tool-automation`.
 - Dashboard implementation is intentionally out of scope for v1.
 - To temporarily stop live email sends, set `EMAIL_SEND_ENABLED=false` in `.env`.
-- Nodriver spike is intentionally isolated and not wired into orchestrator routing yet.

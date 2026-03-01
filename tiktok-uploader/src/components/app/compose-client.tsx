@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { UploadMode, UploadPostType } from '@prisma/client';
 import { DateTime } from 'luxon';
+import Link from 'next/link';
 import { CalendarClock, Captions, ClipboardList, Image as ImageIcon, PlayCircle, Trash2, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,6 +92,20 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     () => tray.reduce((acc, item) => acc + (item.postType === UploadPostType.video ? 1 : item.images?.length || 0), 0),
     [tray]
   );
+
+  if (accounts.length === 0) {
+    return (
+      <section className="panel p-6">
+        <h3 className="text-lg font-semibold">No Connected Accounts</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Connect at least one account before composing posts.
+        </p>
+        <Button asChild className="mt-4 rounded-xl">
+          <Link href="/accounts">Go to Accounts</Link>
+        </Button>
+      </section>
+    );
+  }
 
   const onAccountChange = (nextId: string) => {
     setConnectedAccountId(nextId);

@@ -25,8 +25,8 @@ export default async function QueuePage() {
   return (
     <div className="space-y-4">
       <section className="panel p-5">
-        <h2 className="text-2xl font-semibold text-slate-900">Queue</h2>
-        <p className="text-slate-600">Monitor active batches, pause processing, and drain due jobs safely.</p>
+        <h2 className="text-2xl font-semibold">Queue</h2>
+        <p className="text-muted-foreground">Monitor active batches, pause processing, and drain due jobs safely.</p>
       </section>
       <QueueControls initialControl={{ ...control, updatedAt: control.updatedAt.toISOString() }} />
       <JobsTable mode="queue" initialJobs={jobs as unknown as JobView[]} />

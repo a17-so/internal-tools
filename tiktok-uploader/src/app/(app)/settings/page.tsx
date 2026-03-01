@@ -37,8 +37,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <section className="panel p-5">
-        <h2 className="text-2xl font-semibold text-slate-900">Settings</h2>
-        <p className="text-slate-600">Generate API keys for CLI and automation workflows.</p>
+        <h2 className="text-2xl font-semibold">Settings</h2>
+        <p className="text-muted-foreground">Generate API keys for CLI and automation workflows.</p>
       </section>
 
       <section className="panel max-w-2xl p-5">

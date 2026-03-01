@@ -54,8 +54,8 @@ export default function QueueControls({ initialControl }: { initialControl: Queu
     <div className="panel p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Queue Controls</h3>
-          <p className="text-xs text-slate-500">Dispatch mode: {control.dispatchMode === 'due_only' ? 'Due jobs only' : 'All queued jobs'}</p>
+          <h3 className="text-sm font-semibold">Queue Controls</h3>
+          <p className="text-xs text-muted-foreground">Dispatch mode: {control.dispatchMode === 'due_only' ? 'Due jobs only' : 'All queued jobs'}</p>
         </div>
         <span className={`status-pill ${control.paused ? 'status-failed' : 'status-succeeded'}`}>{control.paused ? 'paused' : 'active'}</span>
       </div>

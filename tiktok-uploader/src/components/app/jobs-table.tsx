@@ -45,11 +45,13 @@ export default function JobsTable({ mode, initialJobs }: { mode: 'queue' | 'hist
   }, [mode]);
 
   useEffect(() => {
+    if (mode !== 'queue') return;
+
     const id = setInterval(() => {
       void refresh(true);
     }, 5000);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [mode, refresh]);
 
   const filteredJobs = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -198,16 +198,15 @@ class Orchestrator:
             sender_ig = routed.instagram.handle if routed.instagram else None
             sender_tiktok = routed.tiktok.handle if routed.tiktok else None
 
-            if self._enable_email:
-                email_result = self._email_sender.send(
-                    to_email=scrape.email_to,
-                    subject=scrape.email_subject,
-                    body=scrape.email_body_text,
-                    account=routed.email,
+            if self._enable_tiktok:
+                tiktok_result = self._tiktok_sender.send(
+                    creator_url=lead.creator_url,
+                    dm_text=scrape.dm_text,
+                    account=routed.tiktok,
                     dry_run=dry_run,
                 )
             else:
-                email_result = ChannelResult(status="skipped", error_code="channel_disabled")
+                tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if self._enable_instagram:
                 ig_result = self._ig_sender.send(
@@ -219,15 +218,16 @@ class Orchestrator:
             else:
                 ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
-            if self._enable_tiktok:
-                tiktok_result = self._tiktok_sender.send(
-                    creator_url=lead.creator_url,
-                    dm_text=scrape.dm_text,
-                    account=routed.tiktok,
+            if self._enable_email:
+                email_result = self._email_sender.send(
+                    to_email=scrape.email_to,
+                    subject=scrape.email_subject,
+                    body=scrape.email_body_text,
+                    account=routed.email,
                     dry_run=dry_run,
                 )
             else:
-                tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
+                email_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if routed.instagram and ig_result.error_code == "ig_blocked":
                 self._firestore.mark_account_cooling(routed.instagram.id)

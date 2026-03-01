@@ -26,6 +26,16 @@ TIKTOK_MESSAGE_BUTTONS = [
 ]
 
 TIKTOK_DM_INPUTS = [
+    "[data-e2e='chat-input'] div[contenteditable='true']",
+    "[data-e2e='message-input-area'] div[contenteditable='true']",
     "div[contenteditable='true'][role='textbox']",
+    "div[contenteditable='true']",
+    "textarea[placeholder*='message' i]",
     "textarea",
+]
+
+TIKTOK_SEND_BUTTONS = [
+    "button[data-e2e='message-send']",
+    "button[aria-label='Send']",
+    "button:has-text('Send')",
 ]

@@ -11,7 +11,7 @@ Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok 
 - Missing/invalid tiers are rejected with deterministic sheet statuses:
   - `failed_missing_tier`
   - `failed_invalid_tier`
-- Sequential execution per lead: Email -> Instagram -> TikTok
+- Sequential execution per lead: TikTok -> Instagram -> Email
 - No automatic retries for IG/TikTok sends
 - Dry-run mode available for full pipeline validation without sending
 - IG/TikTok live send requires pre-bootstrapped Playwright sessions

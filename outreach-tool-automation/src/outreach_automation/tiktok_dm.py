@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
-from outreach_automation.selectors import TIKTOK_DM_INPUTS
+from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_SEND_BUTTONS
 from outreach_automation.session_manager import SessionManager
 
 
@@ -144,10 +144,9 @@ class TiktokDmSender:
 
             input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
             await page.wait_for_timeout(random.randint(1000, 2200))
-            await input_locator.click()
-            await page.keyboard.insert_text(message_text)
-            await page.wait_for_timeout(random.randint(700, 1600))
-            await page.keyboard.press("Enter")
+            await _type_message(page, input_locator, message_text)
+            await page.wait_for_timeout(random.randint(500, 1000))
+            await _send_message(page)
 
             await page.wait_for_timeout(random.randint(2000, 5000))
             await page.close()
@@ -166,6 +165,26 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
 async def _click_first(page: Any, selectors: list[str]) -> None:
     loc = await _find_first(page, selectors)
     await loc.click()
+
+
+async def _type_message(page: Any, input_locator: Any, text: str) -> None:
+    await input_locator.click()
+    with contextlib.suppress(Exception):
+        await input_locator.fill("")
+    with contextlib.suppress(Exception):
+        await input_locator.type(text, delay=random.randint(6, 16))
+        return
+    await page.keyboard.insert_text(text)
+
+
+async def _send_message(page: Any) -> None:
+    for selector in TIKTOK_SEND_BUTTONS:
+        button = page.locator(selector)
+        if await button.count() > 0:
+            with contextlib.suppress(Exception):
+                await button.first.click()
+                return
+    await page.keyboard.press("Enter")
 
 
 async def _open_profile_message_thread(page: Any) -> bool:

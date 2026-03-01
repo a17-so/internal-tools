@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
-type Account = {
+export type ComposeAccount = {
   id: string;
   provider: string;
   displayName: string | null;
@@ -34,7 +34,7 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
-export default function ComposeClient({ accounts }: { accounts: Account[] }) {
+export default function ComposeClient({ accounts }: { accounts: ComposeAccount[] }) {
   const [connectedAccountId, setConnectedAccountId] = useState(accounts[0]?.id || '');
   const [mode, setMode] = useState<UploadMode>(UploadMode.draft);
   const [postType, setPostType] = useState<UploadPostType>(UploadPostType.video);

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-type Job = {
+export type JobView = {
   id: string;
   status: string;
   postType: string;
@@ -18,24 +18,25 @@ type Job = {
   createdAt: string;
 };
 
-export default function JobsTable({ mode }: { mode: 'queue' | 'history' }) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function JobsTable({ mode, initialJobs }: { mode: 'queue' | 'history'; initialJobs: JobView[] }) {
+  const [jobs, setJobs] = useState<JobView[]>(initialJobs);
+  const [loading, setLoading] = useState(false);
 
-  const refresh = async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const status = mode === 'queue' ? 'queued,running,failed' : 'succeeded,failed,canceled';
     const res = await fetch(`/api/uploads/jobs?status=${status}`);
     const data = await res.json();
     setJobs(data.jobs || []);
     setLoading(false);
-  };
+  }, [mode]);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 5000);
+    const id = setInterval(() => {
+      void refresh(true);
+    }, 5000);
     return () => clearInterval(id);
-  }, [mode]);
+  }, [refresh]);
 
   const retry = async (id: string) => {
     const res = await fetch(`/api/uploads/jobs/${id}/retry`, { method: 'POST' });
@@ -45,7 +46,7 @@ export default function JobsTable({ mode }: { mode: 'queue' | 'history' }) {
       return;
     }
     toast.success('Job retried');
-    refresh();
+    void refresh();
   };
 
   const cancel = async (id: string) => {
@@ -56,7 +57,7 @@ export default function JobsTable({ mode }: { mode: 'queue' | 'history' }) {
       return;
     }
     toast.success('Job canceled');
-    refresh();
+    void refresh();
   };
 
   if (loading) return <p className="text-slate-500">Loading jobs...</p>;

@@ -1,96 +1,36 @@
-'use client';
+import { getOptionalAuth } from '@/lib/auth';
+import { db } from '@/lib/db';
+import AccountsClient from '@/components/app/accounts-client';
+import type { AccountView } from '@/components/app/accounts-client';
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
+export default async function AccountsPage() {
+  const user = await getOptionalAuth();
+  if (!user) return null;
 
-type Account = {
-  id: string;
-  provider: string;
-  username: string | null;
-  displayName: string | null;
-  externalAccountId: string;
-  tokenExpiresAt: string | null;
-  capabilities: Array<{
-    supportsDraftVideo: boolean;
-    supportsDirectVideo: boolean;
-    supportsPhotoSlideshow: boolean;
-  }>;
-};
+  const accounts = await db.connectedAccount.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      capabilities: {
+        orderBy: { fetchedAt: 'desc' },
+        take: 1,
+      },
+    },
+  });
 
-export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialAccounts: AccountView[] = accounts.map((account) => ({
+    id: account.id,
+    provider: account.provider,
+    username: account.username,
+    displayName: account.displayName,
+    externalAccountId: account.externalAccountId,
+    tokenExpiresAt: account.tokenExpiresAt ? account.tokenExpiresAt.toISOString() : null,
+    capabilities: account.capabilities.map((cap) => ({
+      supportsDraftVideo: cap.supportsDraftVideo,
+      supportsDirectVideo: cap.supportsDirectVideo,
+      supportsPhotoSlideshow: cap.supportsPhotoSlideshow,
+    })),
+  }));
 
-  const refresh = async () => {
-    setLoading(true);
-    const res = await fetch('/api/accounts');
-    const data = await res.json();
-    setAccounts(data.accounts || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  const hasAccounts = useMemo(() => accounts.length > 0, [accounts]);
-
-  const removeAccount = async (id: string) => {
-    const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      toast.error('Failed to remove account');
-      return;
-    }
-    toast.success('Account removed');
-    refresh();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Accounts</h2>
-          <p className="text-slate-600">Connect and manage TikTok accounts.</p>
-        </div>
-        <Button asChild>
-          <Link href="/api/auth/tiktok">Connect TikTok</Link>
-        </Button>
-      </div>
-
-      {loading ? <p className="text-slate-500">Loading...</p> : null}
-
-      {!loading && !hasAccounts ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-          No connected accounts yet.
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {accounts.map((account) => {
-          const cap = account.capabilities[0];
-          return (
-            <div key={account.id} className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-slate-500">{account.provider}</p>
-                  <h3 className="text-lg font-semibold text-slate-900">{account.displayName || account.username || account.externalAccountId}</h3>
-                  <p className="text-sm text-slate-600">{account.username ? `@${account.username}` : account.externalAccountId}</p>
-                </div>
-                <Button variant="outline" onClick={() => removeAccount(account.id)}>Remove</Button>
-              </div>
-              {cap ? (
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className="rounded bg-slate-100 px-2 py-1">Draft video: {cap.supportsDraftVideo ? 'Yes' : 'No'}</span>
-                  <span className="rounded bg-slate-100 px-2 py-1">Direct video: {cap.supportsDirectVideo ? 'Yes' : 'No'}</span>
-                  <span className="rounded bg-slate-100 px-2 py-1">Slideshow: {cap.supportsPhotoSlideshow ? 'Yes' : 'No'}</span>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <AccountsClient initialAccounts={initialAccounts} />;
 }

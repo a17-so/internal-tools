@@ -30,7 +30,7 @@ async function recalcBatch(batchId: string) {
     canceledJobs: jobs.filter((j) => j.status === UploadStatus.canceled).length,
   };
 
-  let status = UploadStatus.queued;
+  let status: UploadStatus = UploadStatus.queued;
   if (summary.runningJobs > 0) {
     status = UploadStatus.running;
   } else if (summary.failedJobs > 0 && summary.queuedJobs === 0) {

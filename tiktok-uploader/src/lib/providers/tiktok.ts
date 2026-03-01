@@ -108,6 +108,7 @@ async function initializeVideoUpload(accessToken: string, mode: UploadMode, titl
 }
 
 async function uploadBinaryToUrl(uploadUrl: string, payload: Buffer, mimeType: string) {
+  const body = new Uint8Array(payload);
   const response = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
@@ -115,7 +116,7 @@ async function uploadBinaryToUrl(uploadUrl: string, payload: Buffer, mimeType: s
       'Content-Type': mimeType,
       'Content-Length': payload.length.toString(),
     },
-    body: payload,
+    body,
   });
 
   if (!response.ok) {
@@ -222,7 +223,7 @@ export const tiktokProvider: SocialProvider = {
       supportsPhotoSlideshow: scopes.includes('video.upload') || scopes.includes('photo.upload') || scopes.length === 0,
       captionLimit: 2200,
       hashtagLimit: 30,
-+      raw: { scopes },
+      raw: { scopes },
     };
 
     return capabilities;

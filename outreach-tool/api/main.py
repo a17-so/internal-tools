@@ -445,7 +445,7 @@ def scrape_endpoint():
         if not creator_tier:
             return jsonify({
                 "error": "Missing or invalid creator_tier",
-                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, or Ambassador",
+                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, Ambassador, or Themepage",
             }), 400
         
         # IMPORTANT: Check if creator exists in ANY sheet (Macros, Micros, Ambassadors, Theme Pages, Raw Leads)
@@ -1127,4 +1127,3 @@ def update_creator_contact_endpoint():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
-

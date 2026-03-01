@@ -59,6 +59,8 @@ def _normalize_creator_tier(tier: str) -> str:
         return "Submicro"
     if tier_lower in {"ambassador", "ambassadors"}:
         return "Ambassador"
+    if tier_lower in {"themepage", "theme page", "theme-page", "themepages", "theme pages"}:
+        return "Themepage"
     return ""
 
 

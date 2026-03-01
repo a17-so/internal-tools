@@ -139,6 +139,8 @@ model UploadJob {
   idempotencyKey     String
   providerPostId     String?
   errorMessage       String?
+  scheduledAt        DateTime?
+  nextAttemptAt      DateTime?
   startedAt          DateTime?
   completedAt        DateTime?
   maxRetries         Int            @default(3)
@@ -151,10 +153,12 @@ model UploadJob {
   connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
   assets           UploadAsset[]
   attempts         UploadAttempt[]
+  notifications    UploadNotification[]
 
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([status, nextAttemptAt, scheduledAt, createdAt])
   @@index([connectedAccountId, status])
 }
 
@@ -186,6 +190,21 @@ model UploadAttempt {
   uploadJob UploadJob @relation(fields: [uploadJobId], references: [id], onDelete: Cascade)
 
   @@index([uploadJobId, attemptNo])
+}
+
+model UploadNotification {
+  id          String   @id @default(cuid())
+  uploadJobId String
+  type        String
+  target      String
+  status      String
+  message     String?
+  payloadJson String?
+  createdAt   DateTime @default(now())
+
+  uploadJob UploadJob @relation(fields: [uploadJobId], references: [id], onDelete: Cascade)
+
+  @@index([uploadJobId, createdAt])
 }
 
 model ProviderCapabilityCache {

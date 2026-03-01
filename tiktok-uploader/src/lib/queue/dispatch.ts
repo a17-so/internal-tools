@@ -1,15 +1,11 @@
-import { UploadStatus } from '@prisma/client';
+import { Provider, UploadStatus } from '@prisma/client';
 import { db } from '@/lib/db';
+import { notifyJobFailed } from '@/lib/notifications';
 import { getProvider } from '@/lib/providers';
+import { getRetryDelayMs, getRetryPolicy } from '@/lib/queue/retry-policy';
 
 const GLOBAL_CONCURRENCY = Number(process.env.QUEUE_GLOBAL_CONCURRENCY || 5);
 const ACCOUNT_CONCURRENCY = Number(process.env.QUEUE_ACCOUNT_CONCURRENCY || 2);
-
-function jitteredBackoffMs(attemptNo: number): number {
-  const base = 1000 * Math.pow(2, Math.max(0, attemptNo - 1));
-  const jitter = Math.floor(Math.random() * 500);
-  return Math.min(30000, base + jitter);
-}
 
 function nowMinus(ms: number) {
   return new Date(Date.now() - ms);
@@ -85,10 +81,14 @@ async function processJob(jobId: string) {
         completedAt: new Date(),
         providerPostId: result.externalPostId || null,
         errorMessage: null,
+        nextAttemptAt: null,
       },
     });
   } catch (error) {
     const normalized = provider.normalizeError(error);
+    const retryPolicy = getRetryPolicy(job.provider);
+    const maxRetries = job.maxRetries || retryPolicy.maxRetries;
+    const shouldRetry = normalized.retryable && job.attemptCount < maxRetries;
 
     await db.uploadAttempt.create({
       data: {
@@ -101,19 +101,30 @@ async function processJob(jobId: string) {
       },
     });
 
-    const shouldRetry = normalized.retryable && job.attemptCount < job.maxRetries;
-
-    await db.uploadJob.update({
-      where: { id: job.id },
-      data: {
-        status: shouldRetry ? UploadStatus.queued : UploadStatus.failed,
-        errorMessage: normalized.message,
-        startedAt: shouldRetry ? null : job.startedAt,
-      },
-    });
-
     if (shouldRetry) {
-      await new Promise((resolve) => setTimeout(resolve, jitteredBackoffMs(job.attemptCount)));
+      const delayMs = getRetryDelayMs(job.provider, job.attemptCount);
+      await db.uploadJob.update({
+        where: { id: job.id },
+        data: {
+          status: UploadStatus.queued,
+          errorMessage: normalized.message,
+          startedAt: null,
+          maxRetries,
+          nextAttemptAt: new Date(Date.now() + delayMs),
+        },
+      });
+    } else {
+      await db.uploadJob.update({
+        where: { id: job.id },
+        data: {
+          status: UploadStatus.failed,
+          errorMessage: normalized.message,
+          completedAt: new Date(),
+          nextAttemptAt: null,
+          maxRetries,
+        },
+      });
+      await notifyJobFailed(job, normalized.message);
     }
   } finally {
     if (job.batchId) {
@@ -123,12 +134,28 @@ async function processJob(jobId: string) {
 }
 
 async function claimNextJobs(limit: number) {
+  const now = new Date();
+
   const queuedJobs = await db.uploadJob.findMany({
     where: {
       status: UploadStatus.queued,
       OR: [
         { startedAt: null },
-        { startedAt: { lt: nowMinus(1000 * 10) } },
+        { startedAt: { lt: nowMinus(1000 * 60 * 5) } },
+      ],
+      AND: [
+        {
+          OR: [
+            { nextAttemptAt: null },
+            { nextAttemptAt: { lte: now } },
+          ],
+        },
+        {
+          OR: [
+            { scheduledAt: null },
+            { scheduledAt: { lte: now } },
+          ],
+        },
       ],
     },
     orderBy: { createdAt: 'asc' },
@@ -139,18 +166,23 @@ async function claimNextJobs(limit: number) {
       attemptCount: true,
       maxRetries: true,
       batchId: true,
+      provider: true,
     },
   });
 
   const claimed: { id: string; connectedAccountId: string; batchId: string | null }[] = [];
 
   for (const job of queuedJobs) {
-    if (job.attemptCount >= job.maxRetries) {
+    const policy = getRetryPolicy(job.provider as Provider);
+    const maxRetries = job.maxRetries || policy.maxRetries;
+
+    if (job.attemptCount >= maxRetries) {
       await db.uploadJob.update({
         where: { id: job.id },
         data: {
           status: UploadStatus.failed,
           errorMessage: 'Retry limit reached',
+          maxRetries,
         },
       });
       if (job.batchId) {
@@ -168,6 +200,7 @@ async function claimNextJobs(limit: number) {
         status: UploadStatus.running,
         startedAt: new Date(),
         attemptCount: { increment: 1 },
+        maxRetries,
       },
     });
 

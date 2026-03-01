@@ -44,6 +44,8 @@ export async function createJob(input: QueueCreateJobInput) {
       caption: input.caption,
       status: UploadStatus.queued,
       idempotencyKey: input.idempotencyKey,
+      scheduledAt: input.scheduledAt || null,
+      nextAttemptAt: input.scheduledAt || new Date(),
       assets: {
         create: input.assets.map((asset) => ({
           type: asset.type === 'video' ? UploadAssetType.video : UploadAssetType.image,
@@ -71,6 +73,7 @@ export async function buildJobInputFromFiles(input: {
   videoPath?: string;
   imagePaths?: string[];
   clientRef?: string;
+  scheduledAt?: Date | null;
 }) {
   const provider = input.provider ?? Provider.tiktok;
 
@@ -144,6 +147,7 @@ export async function buildJobInputFromFiles(input: {
     postType: input.postType,
     caption: input.caption,
     idempotencyKey,
+    scheduledAt: input.scheduledAt || null,
     assets: assets.map((asset) => ({
       type: asset.type,
       filePath: asset.filePath,

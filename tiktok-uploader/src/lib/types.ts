@@ -17,6 +17,7 @@ export type QueueCreateJobInput = {
   postType: UploadPostType;
   caption: string;
   idempotencyKey: string;
+  scheduledAt?: Date | null;
   assets: QueueCreateAssetInput[];
 };
 

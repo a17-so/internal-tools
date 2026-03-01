@@ -35,7 +35,7 @@ def clean_hooks(hooks_list: List[str]) -> List[str]:
 
 def main() -> None:
     """Run the cleanup and write the result back to hooks.json."""
-    with open(HOOKS_FILE, "r") as f:
+    with open(HOOKS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     for category in data.get("features", {}):
@@ -43,7 +43,7 @@ def main() -> None:
             if "hooks" in item:
                 item["hooks"] = clean_hooks(item["hooks"])
 
-    with open(HOOKS_FILE, "w") as f:
+    with open(HOOKS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
 

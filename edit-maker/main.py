@@ -12,7 +12,12 @@ import argparse
 import logging
 import sys
 
-from generator import generate_video, get_feature_info, list_all_features
+from generator import (
+    audit_feature_assets,
+    generate_video,
+    get_feature_info,
+    list_all_features,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +61,9 @@ def cmd_generate(args: argparse.Namespace) -> None:
 def cmd_batch(args: argparse.Namespace) -> None:
     """Generate multiple videos for a feature."""
     count = args.count
+    if count <= 0:
+        logger.error("Count must be a positive integer.")
+        sys.exit(1)
 
     # Pre-validate the feature before starting the batch
     info = get_feature_info(args.category, args.feature)
@@ -87,6 +95,27 @@ def cmd_batch(args: argparse.Namespace) -> None:
         print(f"\n✓ Generated {len(outputs)} videos:")
         for o in outputs:
             print(f"  - {o}")
+
+def cmd_audit(_args: argparse.Namespace) -> None:
+    """Run a consistency audit across hooks and assets."""
+    errors, warnings = audit_feature_assets()
+
+    print("\n=== Asset Audit ===")
+    print(f"Errors: {len(errors)}")
+    print(f"Warnings: {len(warnings)}")
+
+    if errors:
+        print("\nErrors:")
+        for item in errors:
+            print(f"  - {item}")
+
+    if warnings:
+        print("\nWarnings:")
+        for item in warnings:
+            print(f"  - {item}")
+
+    if errors:
+        sys.exit(1)
 
 
 def main() -> None:
@@ -120,6 +149,10 @@ def main() -> None:
     batch_parser.add_argument("-n", "--count", type=int, default=2, help="Number of videos")
     batch_parser.add_argument("--dry-run", action="store_true", help="Test without rendering")
     batch_parser.set_defaults(func=cmd_batch)
+
+    # audit
+    audit_parser = subparsers.add_parser("audit", help="Audit hooks/assets integrity")
+    audit_parser.set_defaults(func=cmd_audit)
 
     args = parser.parse_args()
 

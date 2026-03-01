@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 def generate_random_videos(count: int = 6) -> None:
     """Select *count* random features and generate one video each."""
+    if count <= 0:
+        logger.error("Count must be a positive integer.")
+        sys.exit(1)
+
     hooks_db = load_hooks()
 
     features_list = [

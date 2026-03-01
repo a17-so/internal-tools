@@ -8,7 +8,15 @@ Automated short-form video generator for the Pretti app. Creates TikTok-style sl
 cd edit-maker
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+```
+
+If the repo path changes and `pip` in `.venv` breaks, recreate the venv:
+```bash
+rm -rf .venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 ## Usage
@@ -42,6 +50,12 @@ python generate_random.py        # 6 videos (default)
 python generate_random.py -n 10  # 10 videos
 ```
 
+### Audit hooks and assets
+
+```bash
+python main.py audit
+```
+
 ### Enable verbose logging
 
 ```bash
@@ -71,3 +85,4 @@ edit-maker/
 1. Create an image folder under `assets/images/<category>/<feature name>/`
 2. Add an entry in `hooks.json` under `features.<category>.<feature_id>` with `folder` and `hooks` keys
 3. Run `python main.py generate <category> <feature_id> --dry-run` to verify paths
+4. Run `python main.py audit` to verify asset integrity before production generation

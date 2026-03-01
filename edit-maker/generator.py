@@ -8,9 +8,8 @@ import json
 import logging
 import random
 import textwrap
-from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from moviepy import (
@@ -41,6 +40,7 @@ from config import (
     MIN_IMAGES,
     MUSIC_START_TIME,
     OUTPUT_DIR,
+    TEMP_DIR,
     STROKE_COLOR,
     STROKE_WIDTH,
     VIDEO_HEIGHT,
@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 def load_hooks() -> dict:
     """Load the hooks database from disk."""
-    with open(HOOKS_FILE, "r") as f:
+    with open(HOOKS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -81,6 +81,53 @@ def list_all_features() -> List[Tuple[str, str, str]]:
         for feature_id, info in features.items():
             result.append((category, feature_id, info.get("hooks", [""])[0]))
     return result
+
+
+def audit_feature_assets() -> Tuple[List[str], List[str]]:
+    """Return ``(errors, warnings)`` for hooks/image asset integrity."""
+    hooks_db = load_hooks()
+    errors: List[str] = []
+    warnings: List[str] = []
+    valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
+
+    for category, features in hooks_db.get("features", {}).items():
+        for feature_id, info in features.items():
+            folder = info.get("folder")
+            hooks = info.get("hooks")
+            label = f"{category}/{feature_id}"
+
+            if not folder:
+                errors.append(f"{label}: missing folder")
+                continue
+
+            folder_path = IMAGES_DIR / folder
+            if not folder_path.exists():
+                errors.append(f"{label}: missing folder path ({folder_path})")
+            else:
+                images = [
+                    p for p in folder_path.iterdir()
+                    if p.is_file() and p.suffix.lower() in valid_exts
+                ]
+                if not images:
+                    errors.append(f"{label}: no images in folder")
+                else:
+                    suspicious = {".jpg", ".jpeg", ".png", ".webp", "\\.jpg", "\\.png"}
+                    suspicious_names = [p.name for p in images if p.name.strip().lower() in suspicious]
+                    if suspicious_names:
+                        warnings.append(f"{label}: suspicious image names {suspicious_names}")
+
+            if not isinstance(hooks, list) or not hooks:
+                errors.append(f"{label}: missing hooks array")
+
+    for path, kind in (
+        (DEFAULT_MUSIC, "music"),
+        (DEFAULT_DEMO, "demo video"),
+        (DEFAULT_UI_IMAGE, "ui image"),
+    ):
+        if not path.exists():
+            errors.append(f"Missing default {kind}: {path}")
+
+    return errors, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -242,17 +289,20 @@ def create_text_overlay(text: str, video_size: Tuple[int, int]) -> ImageClip:
     """
     padded_text = text + "\n "  # prevents stroke clipping at bottom
 
-    txt_clip = TextClip(
+    text_kwargs = dict(
         text=padded_text,
         font_size=FONT_SIZE,
         color=FONT_COLOR,
         stroke_color=STROKE_COLOR,
         stroke_width=STROKE_WIDTH,
-        font=FONT_PATH,
         text_align="center",
         size=(video_size[0] - 300, None),
         method="caption",
     )
+    if FONT_PATH:
+        text_kwargs["font"] = FONT_PATH
+
+    txt_clip = TextClip(**text_kwargs)
 
     try:
         img_array = txt_clip.get_frame(0)
@@ -279,7 +329,10 @@ def _render_overlay_text(
     Returns ``(rgb_clip, mask_clip)``.
     """
     try:
-        pil_font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+        if FONT_PATH:
+            pil_font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
+        else:
+            pil_font = ImageFont.load_default()
     except Exception:
         pil_font = ImageFont.load_default()
 
@@ -468,7 +521,12 @@ def generate_video(
         raise ValueError(f"No hooks defined for: {category}/{feature_id}")
 
     # Select hook
-    if hook_index is not None and 0 <= hook_index < len(hooks):
+    if hook_index is not None:
+        if not 0 <= hook_index < len(hooks):
+            raise ValueError(
+                f"Hook index out of range for {category}/{feature_id}: "
+                f"{hook_index} (valid: 0..{len(hooks) - 1})"
+            )
         hook_text = hooks[hook_index]
     else:
         hook_text = random.choice(hooks)
@@ -545,16 +603,11 @@ def generate_video(
 
         # Output path
         if output_name is None:
-            existing = list(OUTPUT_DIR.glob(f"{feature_id}_*.mp4"))
-            next_num = len(existing) + 1
-            output_name = f"{feature_id}_{next_num:03d}.mp4"
+            output_name = _next_output_name(feature_id)
 
         output_path = OUTPUT_DIR / output_name
 
         logger.info("Rendering to: %s", output_path)
-
-        temp_dir = Path("temp")
-        temp_dir.mkdir(exist_ok=True)
 
         final.write_videofile(
             str(output_path),
@@ -563,7 +616,7 @@ def generate_video(
             audio_codec="aac",
             threads=4,
             preset="medium",
-            temp_audiofile=str(temp_dir / f"temp-audio-{output_name}.m4a"),
+            temp_audiofile=str(TEMP_DIR / f"temp-audio-{output_name}.m4a"),
             remove_temp=True,
         )
 
@@ -596,9 +649,30 @@ def _print_dry_run(
     print(f"Image folder: {image_folder}")
     print(f"Folder exists: {image_folder.exists()}")
     if image_folder.exists():
-        images = list(image_folder.glob("*.jpg")) + list(image_folder.glob("*.png"))
+        images = [
+            p for p in image_folder.iterdir()
+            if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+        ]
         print(f"Images available: {len(images)}")
     print(f"Music: {DEFAULT_MUSIC}")
     print(f"Music exists: {DEFAULT_MUSIC.exists()}")
     print(f"Demo: {DEFAULT_DEMO}")
     print(f"Demo exists: {DEFAULT_DEMO.exists()}")
+
+
+def _next_output_name(feature_id: str) -> str:
+    """Return the next free ``<feature>_NNN.mp4`` name in ``OUTPUT_DIR``."""
+    existing_nums = set()
+    prefix = f"{feature_id}_"
+    for p in OUTPUT_DIR.glob(f"{feature_id}_*.mp4"):
+        stem = p.stem
+        if not stem.startswith(prefix):
+            continue
+        suffix = stem[len(prefix):]
+        if suffix.isdigit():
+            existing_nums.add(int(suffix))
+
+    next_num = 1
+    while next_num in existing_nums:
+        next_num += 1
+    return f"{feature_id}_{next_num:03d}.mp4"

@@ -1,6 +1,7 @@
 """
 Configuration for the Pretti Edit Maker tool.
 """
+import os
 from pathlib import Path
 
 __all__ = [
@@ -11,13 +12,14 @@ __all__ = [
     "MIN_IMAGES", "MAX_IMAGES", "IMAGE_DURATION", "DEMO_DURATION",
     "FADE_DURATION", "MUSIC_START_TIME",
     "FONT_PATH", "FONT_SIZE", "FONT_COLOR", "STROKE_COLOR", "STROKE_WIDTH",
-    "TEXT_POSITION", "CROP_VARIATION",
+    "TEXT_POSITION", "CROP_VARIATION", "TEMP_DIR",
 ]
 
 # Base paths
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 OUTPUT_DIR = BASE_DIR / "output"
+TEMP_DIR = BASE_DIR / "temp"
 
 # Asset paths
 IMAGES_DIR = ASSETS_DIR / "images"
@@ -43,8 +45,17 @@ DEMO_DURATION = 3.0    # seconds for floating UI at end
 FADE_DURATION = 0.1    # transition fade
 MUSIC_START_TIME = 36.0  # seconds into the track to start
 
-# Font settings (macOS system font — update path for other platforms)
-FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
+# Font settings
+_font_candidates = [
+    os.getenv("EDIT_MAKER_FONT"),
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/SFNS.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
+FONT_PATH = next((p for p in _font_candidates if p and Path(p).exists()), None)
 FONT_SIZE = 48
 FONT_COLOR = "white"
 STROKE_COLOR = "black"
@@ -56,3 +67,4 @@ CROP_VARIATION = 0.15  # 15% variation in crop position
 
 # Ensure output directory exists
 OUTPUT_DIR.mkdir(exist_ok=True)
+TEMP_DIR.mkdir(exist_ok=True)

@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  tiktok
+  instagram
+  youtube
+  facebook
+}
+
+enum UploadStatus {
+  queued
+  running
+  succeeded
+  failed
+  canceled
+}
+
+enum UploadMode {
+  draft
+  direct
+}
+
+enum UploadPostType {
+  video
+  slideshow
+}
+
+enum UploadAssetType {
+  video
+  image
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  passwordHash      String
+  name              String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  apiKeys           ApiKey[]
+  connectedAccounts ConnectedAccount[]
+  uploadBatches     UploadBatch[]
+  uploadJobs        UploadJob[]
+  defaultAccountId  String?
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastUsedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  keyPrefix  String
+  keyHash    String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ConnectedAccount {
+  id                    String                    @id @default(cuid())
+  userId                String
+  provider              Provider
+  externalAccountId     String
+  username              String?
+  displayName           String?
+  avatarUrl             String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  refreshExpiresAt      DateTime?
+  metadataJson          String?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  uploadJobs            UploadJob[]
+  capabilities          ProviderCapabilityCache[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalAccountId])
+  @@index([userId, provider])
+}
+
+model UploadBatch {
+  id            String       @id @default(cuid())
+  userId        String
+  name          String?
+  status        UploadStatus @default(queued)
+  totalJobs     Int          @default(0)
+  queuedJobs    Int          @default(0)
+  runningJobs   Int          @default(0)
+  succeededJobs Int          @default(0)
+  failedJobs    Int          @default(0)
+  canceledJobs  Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs UploadJob[]
+
+  @@index([userId, createdAt])
+}
+
+model UploadJob {
+  id                 String         @id @default(cuid())
+  userId             String
+  batchId            String?
+  connectedAccountId String
+  provider           Provider
+  mode               UploadMode
+  postType           UploadPostType
+  caption            String
+  status             UploadStatus   @default(queued)
+  idempotencyKey     String
+  providerPostId     String?
+  errorMessage       String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  maxRetries         Int            @default(3)
+  attemptCount       Int            @default(0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch            UploadBatch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+  assets           UploadAsset[]
+  attempts         UploadAttempt[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([connectedAccountId, status])
+}
+
+model UploadAsset {
+  id          String          @id @default(cuid())
+  uploadJobId String
+  type        UploadAssetType
+  filePath    String
+  mimeType    String?
+  sizeBytes   Int
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+
+  uploadJob UploadJob @relation(fields: [uploadJobId], references: [id], onDelete: Cascade)
+
+  @@index([uploadJobId, sortOrder])
+}
+
+model UploadAttempt {
+  id           String   @id @default(cuid())
+  uploadJobId  String
+  attemptNo    Int
+  httpStatus   Int?
+  providerCode String?
+  message      String?
+  payloadJson  String?
+  createdAt    DateTime @default(now())
+
+  uploadJob UploadJob @relation(fields: [uploadJobId], references: [id], onDelete: Cascade)
+
+  @@index([uploadJobId, attemptNo])
+}
+
+model ProviderCapabilityCache {
+  id                     String   @id @default(cuid())
+  connectedAccountId     String
+  supportsDraftVideo     Boolean  @default(true)
+  supportsDirectVideo    Boolean  @default(false)
+  supportsPhotoSlideshow Boolean  @default(false)
+  captionLimit           Int      @default(2200)
+  hashtagLimit           Int      @default(30)
+  rawJson                String?
+  fetchedAt              DateTime @default(now())
+
+  connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+
+  @@index([connectedAccountId, fetchedAt])
+}

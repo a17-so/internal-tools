@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import socket
+import subprocess
+import time
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlparse
 
 from outreach_automation.account_router import AccountRouter
@@ -153,7 +156,10 @@ def _run_startup_preflight(
         )
     if "tiktok" in enabled_channels:
         if settings.tiktok_attach_mode:
-            _ensure_tiktok_attach_available(settings.tiktok_cdp_url)
+            _ensure_tiktok_attach_available(
+                cdp_url=settings.tiktok_cdp_url,
+                auto_start=settings.tiktok_attach_auto_start,
+            )
         else:
             _ensure_account_sessions_exist(
                 accounts=firestore_client.list_active_accounts(Platform.TIKTOK),
@@ -200,7 +206,7 @@ def _parse_channels(raw: str) -> set[str]:
     return normalized
 
 
-def _ensure_tiktok_attach_available(cdp_url: str | None) -> None:
+def _ensure_tiktok_attach_available(*, cdp_url: str | None, auto_start: bool) -> None:
     if not cdp_url:
         raise ValueError("TIKTOK_ATTACH_MODE=true requires TIKTOK_CDP_URL.")
     parsed = urlparse(cdp_url)
@@ -208,14 +214,42 @@ def _ensure_tiktok_attach_available(cdp_url: str | None) -> None:
     port = parsed.port
     if not host or not port:
         raise ValueError(f"Invalid TIKTOK_CDP_URL: {cdp_url}")
+    if _is_cdp_reachable(host, port):
+        return
+
+    if auto_start:
+        _start_chrome_debug(port=port)
+        for _ in range(10):
+            if _is_cdp_reachable(host, port):
+                return
+            time.sleep(1)
+
+    raise ValueError(
+        f"TikTok attach mode is enabled but Chrome debugger is unreachable at {cdp_url}. "
+        "If auto-start is disabled, enable TIKTOK_ATTACH_AUTO_START=true or run "
+        f"./ops/start_chrome_debug.sh {port}."
+    )
+
+
+def _is_cdp_reachable(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, port), timeout=2):
-            return
-    except OSError as exc:
-        raise ValueError(
-            f"TikTok attach mode is enabled but Chrome debugger is unreachable at {cdp_url}. "
-            "Start debug Chrome first with ./ops/start_chrome_debug.sh 9222."
-        ) from exc
+            return True
+    except OSError:
+        return False
+
+
+def _start_chrome_debug(*, port: int) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    script = project_root / "ops" / "start_chrome_debug.sh"
+    if not script.exists():
+        return
+    subprocess.run(
+        [str(script), str(port)],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 if __name__ == "__main__":

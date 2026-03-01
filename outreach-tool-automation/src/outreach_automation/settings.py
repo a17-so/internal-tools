@@ -41,6 +41,7 @@ class Settings:
     ig_profile_dir: Path
     tiktok_profile_dir: Path
     tiktok_attach_mode: bool
+    tiktok_attach_auto_start: bool
     tiktok_cdp_url: str | None
     tiktok_min_seconds_between_sends: int
 
@@ -113,6 +114,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         ig_profile_dir=ig_profile_dir,
         tiktok_profile_dir=tiktok_profile_dir,
         tiktok_attach_mode=os.getenv("TIKTOK_ATTACH_MODE", "false").lower() == "true",
+        tiktok_attach_auto_start=os.getenv("TIKTOK_ATTACH_AUTO_START", "true").lower() == "true",
         tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
         tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "3")),
     )

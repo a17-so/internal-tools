@@ -115,19 +115,19 @@ python -m outreach_automation.login_bootstrap --platform all --account-handle @r
 TikTok attach mode (recommended when login attempts are blocked):
 
 ```bash
-# 1) Start a separate Chrome debug profile (keeps your normal Chrome tabs intact)
-./ops/start_chrome_debug.sh 9222
-
-# 2) Enable attach mode in .env
+# 1) Enable attach mode in .env
 # TIKTOK_ATTACH_MODE=true
+# TIKTOK_ATTACH_AUTO_START=true
 # TIKTOK_CDP_URL=http://127.0.0.1:9222
 # TIKTOK_MIN_SECONDS_BETWEEN_SENDS=90
 
-# 3) Run tiktok-only send test
+# 2) Run tiktok-only send test
 python -m outreach_automation.run_once --live --channels tiktok --lead-row-index 15 --ignore-dedupe
 ```
 
 Notes for attach mode:
+- With `TIKTOK_ATTACH_AUTO_START=true`, `run_once` auto-launches debug Chrome if CDP is down.
+- Manual fallback (optional): `./ops/start_chrome_debug.sh 9222`
 - Keep TikTok logged in on that Chrome instance.
 - Do not run multiple outreach processes against the same attached Chrome at once.
 - The automation will open/close only the tab it creates and will not close your attached Chrome browser.

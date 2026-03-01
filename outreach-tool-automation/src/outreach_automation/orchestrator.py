@@ -231,7 +231,11 @@ class Orchestrator:
             self._sheets.update_status(lead.row_index, final_status)
             if final_status == "Processed":
                 self._sheets.clear_creator_link(lead)
-            elif final_status.startswith("failed"):
+            elif final_status.startswith("failed") and not _any_channel_sent(
+                email_result,
+                ig_result,
+                tiktok_result,
+            ):
                 self._sheets.mark_creator_link_error(lead)
 
             if final_status == "Processed":
@@ -248,7 +252,8 @@ class Orchestrator:
         except Exception as exc:
             final_status = "failed_internal_error"
             self._sheets.update_status(lead.row_index, final_status)
-            self._sheets.mark_creator_link_error(lead)
+            if not _any_channel_sent(email_result, ig_result, tiktok_result):
+                self._sheets.mark_creator_link_error(lead)
             job_error = str(exc)
             job_status = "dead"
             self._firestore.mark_dead_job(str(uuid4()), reason=str(exc))
@@ -293,3 +298,7 @@ class Orchestrator:
             status="dead",
         )
         self._firestore.write_job(str(uuid4()), record)
+
+
+def _any_channel_sent(*results: ChannelResult) -> bool:
+    return any(result.status == "sent" for result in results)

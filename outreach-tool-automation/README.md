@@ -60,8 +60,8 @@ Authentication options:
 
 Scrape setup:
 - Set `SEARCHAPI_KEY`; local scraper uses `LOCAL_TEMPLATES_DIR` scripts.
-- If `SEARCHAPI_KEY` / `OUTREACH_APPS_JSON` are not set in `.env`, automation auto-loads from
-  `../outreach-tool/api/envs/env.yaml` (override with `LOCAL_OUTREACH_ENV_YAML`).
+- Optional: set `OUTREACH_APPS_JSON` for sender-profile template overrides.
+- Startup preflight validates required template files and local session directories for active sender accounts.
 
 ## Run
 

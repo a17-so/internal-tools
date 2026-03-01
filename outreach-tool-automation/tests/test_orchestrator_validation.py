@@ -163,6 +163,33 @@ class FailingIgSender:
         return ChannelResult(status="failed", error_code="ig_send_failed")
 
 
+class FailingEmailSender:
+    def send(
+        self,
+        to_email: str | None,
+        subject: str | None,
+        body: str | None,
+        account: Any,
+        *,
+        dry_run: bool,
+    ) -> ChannelResult:
+        _ = (to_email, subject, body, account, dry_run)
+        return ChannelResult(status="failed", error_code="email_send_failed")
+
+
+class FailingTiktokSender:
+    def send(
+        self,
+        creator_url: str,
+        dm_text: str,
+        account: Any,
+        *,
+        dry_run: bool,
+    ) -> ChannelResult:
+        _ = (creator_url, dm_text, account, dry_run)
+        return ChannelResult(status="failed", error_code="tiktok_send_failed")
+
+
 def test_missing_tier_defaults_to_submicro_and_processes() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()
@@ -190,7 +217,7 @@ def test_missing_tier_defaults_to_submicro_and_processes() -> None:
     assert len(firestore.jobs) == 1
 
 
-def test_failed_send_marks_link_error() -> None:
+def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()
     scraper = FakeScraper()
@@ -211,5 +238,30 @@ def test_failed_send_marks_link_error() -> None:
     result = orchestrator.run(batch_size=1, dry_run=False)
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_ig_send_failed"
+    assert sheets.error_rows == []
+    assert sheets.cleared_rows == []
+
+
+def test_full_failure_marks_link_error() -> None:
+    sheets = FakeSheets()
+    firestore = FakeFirestore()
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FailingEmailSender(),
+        ig_sender=FailingIgSender(),
+        tiktok_sender=FailingTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+        default_creator_tier="Submicro",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.failed == 1
+    assert sheets._statuses[2].startswith("failed_")
     assert sheets.error_rows == [2]
     assert sheets.cleared_rows == []

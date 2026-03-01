@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from outreach_automation.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
 from outreach_automation.models import ScrapePayload
 
@@ -117,3 +119,50 @@ def test_local_scraper_same_username_fallback(tmp_path: Path, monkeypatch: Any) 
         )
     )
     assert result.ig_handle == "sameuser"
+
+
+def test_local_scraper_retries_transient_searchapi_error(tmp_path: Path, monkeypatch: Any) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    _make_template_script(scripts_dir / "regen.py")
+
+    calls = {"count": 0}
+
+    def fake_get(*args: Any, **kwargs: Any) -> _FakeResponse:
+        _ = (args, kwargs)
+        calls["count"] += 1
+        if calls["count"] < 2:
+            raise requests.Timeout("temporary timeout")
+        return _FakeResponse(
+            {
+                "profile": {
+                    "username": "retryuser",
+                    "name": "Retry User",
+                    "bio": "ig: @retryuser",
+                    "bio_link": "",
+                }
+            }
+        )
+
+    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.local_scraper_client.time.sleep", lambda _: None)
+
+    client = LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key="dummy",
+            request_timeout_seconds=10,
+            same_username_fallback=False,
+            templates_dir=scripts_dir,
+            outreach_apps_json=None,
+        )
+    )
+    result = client.scrape(
+        ScrapePayload(
+            app="regen",
+            creator_url="https://www.tiktok.com/@retryuser",
+            category="Submicro",
+            sender_profile="ethan",
+        )
+    )
+    assert calls["count"] == 2
+    assert result.ig_handle == "retryuser"

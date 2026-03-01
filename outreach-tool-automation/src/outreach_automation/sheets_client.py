@@ -117,6 +117,8 @@ class SheetsClient:
                 continue
 
             creator_url = self._get_cell(row, self._columns.creator_url)
+            if not creator_url.strip():
+                continue
             creator_tier = self._get_cell(row, self._columns.creator_tier)
             out.append(
                 LeadRow(

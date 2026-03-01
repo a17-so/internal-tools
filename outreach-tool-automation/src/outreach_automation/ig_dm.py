@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import random
 from pathlib import Path
 from typing import Any
@@ -91,11 +92,17 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
 async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
     await page.goto("https://www.instagram.com/direct/inbox/", wait_until="domcontentloaded")
     await page.wait_for_timeout(random.randint(1200, 2500))
+    await _dismiss_instagram_popups(page)
 
     try:
         search = await _find_first(page, INSTAGRAM_INBOX_SEARCH_INPUTS)
     except RuntimeError:
-        return False
+        await _dismiss_instagram_popups(page)
+        search = None
+        with contextlib.suppress(RuntimeError):
+            search = await _find_first(page, INSTAGRAM_INBOX_SEARCH_INPUTS)
+        if search is None:
+            return False
 
     await search.click()
     await search.fill("")
@@ -128,3 +135,16 @@ async def _find_all(page: Any, selectors: list[str]) -> list[Any]:
             return out
     return out
 
+
+async def _dismiss_instagram_popups(page: Any) -> None:
+    # Common modal that blocks inbox interactions: "Turn on Notifications".
+    candidates = [
+        page.get_by_role("button", name="Not Now"),
+        page.locator("button:has-text('Not Now')"),
+        page.get_by_role("button", name="Not now"),
+    ]
+    for locator in candidates:
+        with contextlib.suppress(Exception):
+            if await locator.count() > 0:
+                await locator.first.click()
+                await page.wait_for_timeout(random.randint(300, 900))

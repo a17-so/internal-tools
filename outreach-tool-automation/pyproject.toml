@@ -45,6 +45,7 @@ target-version = ["py311"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
+extend-exclude = ["src/outreach_automation/templates"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF"]
@@ -58,6 +59,7 @@ python_version = "3.11"
 strict = true
 warn_unused_configs = true
 mypy_path = "src"
+exclude = "src/outreach_automation/templates/.*"
 
 [tool.pytest.ini_options]
 minversion = "8.0"

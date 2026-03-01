@@ -10,6 +10,7 @@ from outreach_automation.firestore_client import FirestoreClient
 from outreach_automation.ig_dm import InstagramDmSender
 from outreach_automation.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
 from outreach_automation.logger import setup_logging
+from outreach_automation.models import Account, Platform
 from outreach_automation.orchestrator import Orchestrator
 from outreach_automation.session_manager import SessionManager
 from outreach_automation.settings import Settings, load_settings
@@ -56,6 +57,12 @@ def main() -> int:
     firestore_client = FirestoreClient(
         service_account_path=settings.google_service_account_json,
         project_id=settings.firestore_project_id,
+    )
+    _run_startup_preflight(
+        settings=settings,
+        firestore_client=firestore_client,
+        enabled_channels=enabled_channels,
+        dry_run=dry_run,
     )
 
     holder = f"{socket.gethostname()}:{datetime.now(UTC).isoformat()}"
@@ -114,6 +121,64 @@ def _build_scrape_client(settings: Settings) -> LocalScrapeClient:
             outreach_apps_json=settings.local_outreach_apps_json,
         )
     )
+
+
+def _run_startup_preflight(
+    *,
+    settings: Settings,
+    firestore_client: FirestoreClient,
+    enabled_channels: set[str],
+    dry_run: bool,
+) -> None:
+    if not settings.local_templates_dir.exists():
+        raise ValueError(f"LOCAL_TEMPLATES_DIR does not exist: {settings.local_templates_dir}")
+    app_template = settings.local_templates_dir / f"{settings.scrape_app.lower()}.py"
+    if not app_template.exists():
+        raise ValueError(
+            f"Missing app template file: {app_template}. "
+            f"Ensure SCRAPE_APP matches a template in LOCAL_TEMPLATES_DIR."
+        )
+    if not settings.searchapi_key:
+        raise ValueError("Missing SEARCHAPI_KEY for local scrape backend.")
+
+    if dry_run:
+        return
+
+    session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
+    if "instagram" in enabled_channels:
+        _ensure_account_sessions_exist(
+            accounts=firestore_client.list_active_accounts(Platform.INSTAGRAM),
+            platform=Platform.INSTAGRAM,
+            session_manager=session_manager,
+        )
+    if "tiktok" in enabled_channels and not settings.tiktok_attach_mode:
+        _ensure_account_sessions_exist(
+            accounts=firestore_client.list_active_accounts(Platform.TIKTOK),
+            platform=Platform.TIKTOK,
+            session_manager=session_manager,
+        )
+
+
+def _ensure_account_sessions_exist(
+    *,
+    accounts: list[Account],
+    platform: Platform,
+    session_manager: SessionManager,
+) -> None:
+    missing: list[str] = []
+    for account in accounts:
+        handle = account.handle
+        if not handle:
+            continue
+        profile_dir = session_manager.profile_dir_for(platform, handle)
+        if not profile_dir.exists():
+            missing.append(handle)
+    if missing:
+        joined = ", ".join(sorted(missing))
+        raise ValueError(
+            f"Missing {platform.value} sessions for active accounts: {joined}. "
+            "Run login bootstrap before live sends."
+        )
 
 
 def _parse_channels(raw: str) -> set[str]:

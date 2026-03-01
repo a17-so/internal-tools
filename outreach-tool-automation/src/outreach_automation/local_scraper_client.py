@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import random
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,21 +69,33 @@ class LocalScrapeClient:
         )
 
     def _fetch_tiktok_profile(self, *, username: str) -> dict[str, Any]:
-        response = requests.get(
-            _SEARCHAPI_URL,
-            params={
-                "engine": "tiktok_profile",
-                "username": username,
-                "api_key": self._settings.searchapi_key,
-            },
-            timeout=self._settings.request_timeout_seconds,
-        )
-        response.raise_for_status()
-        result = response.json()
-        profile = result.get("profile")
-        if not isinstance(profile, dict):
-            raise RuntimeError(f"SearchAPI returned no profile for @{username}")
-        return profile
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(
+                    _SEARCHAPI_URL,
+                    params={
+                        "engine": "tiktok_profile",
+                        "username": username,
+                        "api_key": self._settings.searchapi_key,
+                    },
+                    timeout=self._settings.request_timeout_seconds,
+                )
+                response.raise_for_status()
+                result = response.json()
+                profile = result.get("profile")
+                if not isinstance(profile, dict):
+                    raise RuntimeError(f"SearchAPI returned no profile for @{username}")
+                return profile
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= 3 or not _is_retryable_searchapi_error(exc):
+                    raise
+                # Jittered backoff: ~0.4-0.8s then ~0.8-1.6s
+                time.sleep(random.uniform(0.4, 0.8) * (2 ** (attempt - 1)))
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("SearchAPI fetch failed without exception")
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +112,17 @@ def _extract_tiktok_username(url: str) -> str | None:
         return None
     handle = match.group(1).strip().lstrip("@")
     return handle or None
+
+
+def _is_retryable_searchapi_error(exc: Exception) -> bool:
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        status = exc.response.status_code if exc.response is not None else None
+        if status is None:
+            return True
+        return status == 429 or status >= 500
+    return False
 
 
 def _extract_email(text: str) -> str:

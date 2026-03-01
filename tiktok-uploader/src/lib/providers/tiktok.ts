@@ -81,6 +81,68 @@ async function exchangeCodeForToken(input: { code: string; codeVerifier?: string
   return data;
 }
 
+async function refreshAccessToken(refreshToken: string) {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY;
+  const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
+  if (!clientKey || !clientSecret) {
+    throw new Error('TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET are required');
+  }
+
+  const response = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_key: clientKey,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || data?.error || !data?.access_token) {
+    throw new Error(data?.error_description || data?.error || 'Failed to refresh TikTok access token');
+  }
+
+  return data as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    refresh_expires_in?: number;
+  };
+}
+
+async function getValidAccessToken(account: ConnectedAccount) {
+  const tokenExpiredSoon = account.tokenExpiresAt !== null && account.tokenExpiresAt.getTime() <= Date.now() + 1000 * 60 * 2;
+  if (!tokenExpiredSoon) {
+    return decrypt(account.accessTokenEncrypted);
+  }
+
+  if (!account.refreshTokenEncrypted) {
+    throw new Error('TikTok token expired and no refresh token is available. Reconnect account.');
+  }
+
+  if (account.refreshExpiresAt && account.refreshExpiresAt.getTime() <= Date.now()) {
+    throw new Error('TikTok refresh token expired. Reconnect account.');
+  }
+
+  const refreshToken = decrypt(account.refreshTokenEncrypted);
+  const refreshed = await refreshAccessToken(refreshToken);
+  await db.connectedAccount.update({
+    where: { id: account.id },
+    data: {
+      accessTokenEncrypted: encrypt(refreshed.access_token),
+      refreshTokenEncrypted: refreshed.refresh_token ? encrypt(refreshed.refresh_token) : account.refreshTokenEncrypted,
+      tokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
+      refreshExpiresAt: refreshed.refresh_expires_in ? new Date(Date.now() + refreshed.refresh_expires_in * 1000) : account.refreshExpiresAt,
+    },
+  });
+
+  return refreshed.access_token;
+}
+
 async function initializeVideoUpload(accessToken: string, mode: UploadMode, title: string, videoSize: number) {
   const endpoint = mode === UploadMode.draft
     ? 'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/'
@@ -306,7 +368,7 @@ export const tiktokProvider: SocialProvider = {
   },
 
   async upload(job: UploadJob, account: ConnectedAccount, assets: UploadAsset[]): Promise<ProviderUploadResult> {
-    const accessToken = decrypt(account.accessTokenEncrypted);
+    const accessToken = await getValidAccessToken(account);
 
     if (job.postType === UploadPostType.video) {
       const videoAsset = assets.find((asset) => asset.type === 'video');

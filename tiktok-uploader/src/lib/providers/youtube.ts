@@ -30,6 +30,86 @@ async function fetchMyChannel(accessToken: string) {
   };
 }
 
+async function exchangeCodeForToken(code: string, redirectUri?: string) {
+  const clientId = process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  const callback = redirectUri || `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/youtube/callback`;
+
+  if (!clientId || !clientSecret) {
+    throw new Error('YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are required');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: callback,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error_description || data?.error || 'Failed to exchange YouTube OAuth code');
+  }
+
+  return data as { access_token: string; refresh_token?: string; expires_in?: number };
+}
+
+async function refreshAccessToken(refreshToken: string) {
+  const clientId = process.env.YOUTUBE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET are required');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error_description || data?.error || 'Failed to refresh YouTube access token');
+  }
+
+  return data as { access_token: string; expires_in?: number };
+}
+
+async function getValidAccessToken(account: ConnectedAccount) {
+  const needsRefresh =
+    account.tokenExpiresAt !== null &&
+    account.tokenExpiresAt.getTime() <= Date.now() + 1000 * 60 * 2;
+
+  if (!needsRefresh) {
+    return decrypt(account.accessTokenEncrypted);
+  }
+
+  if (!account.refreshTokenEncrypted) {
+    throw new Error('YouTube token expired and no refresh token is available. Reconnect account.');
+  }
+
+  const refreshed = await refreshAccessToken(decrypt(account.refreshTokenEncrypted));
+  await db.connectedAccount.update({
+    where: { id: account.id },
+    data: {
+      accessTokenEncrypted: encrypt(refreshed.access_token),
+      tokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
+    },
+  });
+
+  return refreshed.access_token;
+}
+
 async function initResumableUpload(accessToken: string, title: string, description: string) {
   const response = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
     method: 'POST',
@@ -88,11 +168,22 @@ export const youtubeProvider: SocialProvider = {
   provider: Provider.youtube,
 
   async connectAccount(input) {
-    if (!input.accessToken) {
-      throw new Error('YouTube connect requires accessToken');
+    let accessToken = input.accessToken || '';
+    let refreshToken: string | undefined;
+    let tokenExpiresAt: Date | null = null;
+
+    if (input.code) {
+      const token = await exchangeCodeForToken(input.code, input.redirectUri);
+      accessToken = token.access_token;
+      refreshToken = token.refresh_token;
+      tokenExpiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null;
     }
 
-    const me = await fetchMyChannel(input.accessToken);
+    if (!accessToken) {
+      throw new Error('YouTube connect requires OAuth code or accessToken');
+    }
+
+    const me = await fetchMyChannel(accessToken);
 
     const account = await db.connectedAccount.upsert({
       where: {
@@ -106,7 +197,9 @@ export const youtubeProvider: SocialProvider = {
         username: me.customUrl || null,
         displayName: input.displayName || me.title || null,
         avatarUrl: me.thumbnails?.default?.url || null,
-        accessTokenEncrypted: encrypt(input.accessToken),
+        accessTokenEncrypted: encrypt(accessToken),
+        refreshTokenEncrypted: refreshToken ? encrypt(refreshToken) : undefined,
+        tokenExpiresAt,
         metadataJson: JSON.stringify({
           ...input.metadata,
           channel_id: me.channelId,
@@ -120,7 +213,9 @@ export const youtubeProvider: SocialProvider = {
         username: me.customUrl || null,
         displayName: input.displayName || me.title || null,
         avatarUrl: me.thumbnails?.default?.url || null,
-        accessTokenEncrypted: encrypt(input.accessToken),
+        accessTokenEncrypted: encrypt(accessToken),
+        refreshTokenEncrypted: refreshToken ? encrypt(refreshToken) : null,
+        tokenExpiresAt,
         metadataJson: JSON.stringify({
           ...input.metadata,
           channel_id: me.channelId,
@@ -157,7 +252,7 @@ export const youtubeProvider: SocialProvider = {
       throw new Error('Video asset missing for YouTube upload');
     }
 
-    const accessToken = decrypt(account.accessTokenEncrypted);
+    const accessToken = await getValidAccessToken(account);
     const fileBytes = await fs.readFile(videoAsset.filePath);
 
     const uploadUrl = await initResumableUpload(accessToken, job.caption || 'Short', job.caption || '');

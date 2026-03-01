@@ -7,9 +7,11 @@ from typing import List, Optional, Tuple, Any
 try:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
+    import google.auth
 except Exception:
     service_account = None
     build = None
+    google = None
 
 from utils import _log
 
@@ -80,14 +82,25 @@ def _load_service_account_credentials(scopes: List[str], delegated_user: Optiona
 
 
 def _load_default_credentials(scopes: List[str]):
-    """Deprecated: ADC disabled. Always return None."""
-    return None
+    """Load Application Default Credentials."""
+    if google is None:
+        _log("google.credentials.adc.no_library")
+        return None
+    try:
+        creds, _ = google.auth.default(scopes=scopes)
+        _log("google.credentials.from_adc")
+        return creds
+    except Exception as e:
+        _log("google.credentials.adc_error", error=str(e))
+        return None
 
 
 def _sheets_client(delegated_user: Optional[str] = None):
     """Get Google Sheets API client."""
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = _load_service_account_credentials(scopes, delegated_user=delegated_user)
+    if creds is None:
+        creds = _load_default_credentials(scopes)
     if creds is None:
         _log("sheets.client.no_credentials")
         return None
@@ -110,6 +123,10 @@ def _gmail_client(delegated_user_override: Optional[str] = None) -> Optional[Tup
     delegated_user = delegated_user_override or os.environ.get("GOOGLE_DELEGATED_USER", "").strip()
     
     creds = _load_service_account_credentials(scopes, delegated_user=delegated_user)
+    if creds is None:
+        creds = _load_default_credentials(scopes)
+        if creds is not None and delegated_user:
+            _log("gmail.client.delegation_skipped_for_adc", user=delegated_user)
     if creds is None:
         _log("gmail.client.no_credentials")
         return None

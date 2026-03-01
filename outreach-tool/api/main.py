@@ -505,6 +505,8 @@ def scrape_endpoint():
             "message": "Raw lead added successfully",
             "row_added": result.get("row_added"),
             "creator_tier": result.get("stored_tier"),
+            "column_header": result.get("column_header"),
+            "tier_column_header": result.get("tier_column_header"),
             "url": url
         })
     

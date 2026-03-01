@@ -48,6 +48,20 @@ def _normalize_category(category: str) -> str:
     return cat_lower
 
 
+def _normalize_creator_tier(tier: str) -> str:
+    """Normalize creator tier values to canonical sheet values."""
+    tier_lower = (tier or "").strip().lower()
+    if tier_lower in {"macro", "macros"}:
+        return "Macro"
+    if tier_lower in {"micro", "micros"}:
+        return "Micro"
+    if tier_lower in {"submicro", "submicros", "sub-micro", "sub-micros"}:
+        return "Submicro"
+    if tier_lower in {"ambassador", "ambassadors"}:
+        return "Ambassador"
+    return ""
+
+
 def _clean_url(url: str) -> str:
     """Remove tracking parameters from TikTok/Instagram URLs.
     

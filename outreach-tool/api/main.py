@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Import from new modules
-from utils import _log, _normalize_category, _clean_url, _get_followup_number_from_status, _get_next_status_from_current, _markdown_to_text
+from utils import _log, _normalize_category, _normalize_creator_tier, _clean_url, _get_followup_number_from_status, _get_next_status_from_current, _markdown_to_text
 from config import CATEGORY_TO_SHEET, _load_outreach_apps_config, _get_app_config, _validate_app_config, _resolve_sender_profile
 from google_services import _sheets_client, _gmail_client
 from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_to_sheet, _update_creator_contact_info
@@ -435,6 +435,18 @@ def scrape_endpoint():
     if cat_key_normalized == "rawlead":
         if not spreadsheet_id:
             return jsonify({"error": "No spreadsheet configured"}), 500
+
+        raw_creator_tier = (
+            payload.get("creator_tier")
+            or payload.get("tier")
+            or ""
+        )
+        creator_tier = _normalize_creator_tier(str(raw_creator_tier))
+        if not creator_tier:
+            return jsonify({
+                "error": "Missing or invalid creator_tier",
+                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, or Ambassador",
+            }), 400
         
         # IMPORTANT: Check if creator exists in ANY sheet (Macros, Micros, Ambassadors, Theme Pages, Raw Leads)
         # If they exist anywhere, reject the raw lead
@@ -467,12 +479,13 @@ def scrape_endpoint():
         # Get sender name from sender_profile or default to "Unknown"
         sender_name = app_cfg.get("from_name") or (sender_profile_key.capitalize() if sender_profile_key else "Unknown")
         
-        # Append URL to column (handles duplicate URL detection within the column)
-        _log("rawlead.column_append", url=url, sender=sender_name)
+        # Append row-based raw lead record
+        _log("rawlead.row_append", url=url, sender=sender_name, creator_tier=creator_tier)
         result = _append_url_to_raw_leads_column(
             spreadsheet_id,
             url,
             sender_name,
+            creator_tier,
             delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None
         )
         
@@ -490,8 +503,8 @@ def scrape_endpoint():
         return jsonify({
             "ok": True,
             "message": "Raw lead added successfully",
-            "column_header": result.get("column_header"),
             "row_added": result.get("row_added"),
+            "creator_tier": result.get("stored_tier"),
             "url": url
         })
     
@@ -1114,5 +1127,4 @@ def update_creator_contact_endpoint():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
     app.run(host="0.0.0.0", port=port)
-
 

@@ -31,6 +31,44 @@ def col_num_to_letter(n: int) -> str:
     return result
 
 
+def _ensure_raw_leads_row_schema(service: Any, spreadsheet_id: str) -> Dict[str, int]:
+    """Ensure Raw Leads contains row-based schema headers and return column indices (0-based)."""
+    required_headers = ["creator_url", "creator_tier", "status", "added_by", "added_at"]
+    result = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range="Raw Leads!1:1"
+    ).execute()
+    headers = result.get("values", [[]])[0] if result.get("values") else []
+    normalized = [str(h).strip().lower() for h in headers]
+
+    col_map: Dict[str, int] = {}
+    pending_writes: List[Dict[str, Any]] = []
+    next_col_index = len(headers)
+
+    for header in required_headers:
+        if header in normalized:
+            col_map[header] = normalized.index(header)
+            continue
+        col_map[header] = next_col_index
+        col_letter = col_num_to_letter(next_col_index)
+        pending_writes.append({
+            "range": f"Raw Leads!{col_letter}1",
+            "values": [[header]],
+        })
+        next_col_index += 1
+
+    if pending_writes:
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                "valueInputOption": "USER_ENTERED",
+                "data": pending_writes,
+            },
+        ).execute()
+
+    return col_map
+
+
 def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
     """Check if a creator already exists in the spreadsheet by IG or TT handle.
     
@@ -207,112 +245,88 @@ def _update_sheet_row(spreadsheet_id: str, sheet_name: str, row_index: int, row_
         return {"ok": False, "error": str(e)}
 
 
-def _append_url_to_raw_leads_column(spreadsheet_id: str, url: str, sender_name: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
-    """Append URL to a column in Raw Leads sheet with header format 'Jan 17 (Abhay)'.
-    
-    Creates a new column if one doesn't exist for today + sender.
-    Checks for duplicates within the column.
-    
-    Args:
-        spreadsheet_id: Google Sheets spreadsheet ID
-        url: The URL to append
-        sender_name: Name of the sender (e.g., "Abhay", "Ethan")
-        delegated_user: Optional delegated user for service account
-        
-    Returns:
-        {"ok": bool, "column_header": str, "row_added": int, "error": str}
-    """
+def _append_url_to_raw_leads_column(
+    spreadsheet_id: str,
+    url: str,
+    sender_name: str,
+    creator_tier: str,
+    delegated_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Append a raw lead row with explicit creator_url + creator_tier schema."""
     service = _sheets_client(delegated_user=delegated_user)
     if not service:
-        _log("rawleads.column.no_client")
+        _log("rawleads.row.no_client")
         return {"ok": False, "error": "Sheets client not configured"}
-    
-    # Generate column header: "Jan 17 (Abhay)"
-    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
-    date_str = now_pst.strftime("%b %d")  # "Jan 17"
-    
-    # Use only first name as requested
-    first_name = sender_name.split()[0] if sender_name else "Unknown"
-    column_header = f"{date_str} ({first_name})"
-    
+
     try:
-        # Step 1: Read the first row (headers) to find or create the column
-        _log("rawleads.column.read_headers", spreadsheet_id=spreadsheet_id, header=column_header)
+        col_map = _ensure_raw_leads_row_schema(service, spreadsheet_id)
+        url_col_index = col_map["creator_url"]
+        tier_col_index = col_map["creator_tier"]
+        status_col_index = col_map["status"]
+        added_by_col_index = col_map["added_by"]
+        added_at_col_index = col_map["added_at"]
+
+        url_col_letter = col_num_to_letter(url_col_index)
         result = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
-            range="Raw Leads!1:1"
+            range=f"Raw Leads!{url_col_letter}2:{url_col_letter}"
         ).execute()
-        
-        headers = result.get("values", [[]])[0] if result.get("values") else []
-        
-        # Find column index (0-based)
-        column_index = None
-        for idx, header in enumerate(headers):
-            if header == column_header:
-                column_index = idx
-                break
-        
-        # If column doesn't exist, create it
-        if column_index is None:
-            column_index = len(headers)  # Add to the end
-            _log("rawleads.column.create_new", column_index=column_index, header=column_header)
-            
-            col_letter = col_num_to_letter(column_index)
-            
-            # Write header
-            service.spreadsheets().values().update(
-                spreadsheetId=spreadsheet_id,
-                range=f"Raw Leads!{col_letter}1",
-                valueInputOption="USER_ENTERED",
-                body={"values": [[column_header]]}
-            ).execute()
-            _log("rawleads.column.header_created", column=col_letter, header=column_header)
-        else:
-            _log("rawleads.column.found_existing", column_index=column_index, header=column_header)
-        
-        # Step 2: Read all values in this column to check for duplicates and find next empty row
-        col_letter = col_num_to_letter(column_index)
-        result = service.spreadsheets().values().get(
-            spreadsheetId=spreadsheet_id,
-            range=f"Raw Leads!{col_letter}:{col_letter}"
-        ).execute()
-        
-        column_values = result.get("values", [])
-        
-        # Check for duplicates (skip header row)
-        for idx, row in enumerate(column_values[1:], start=2):
-            if row and len(row) > 0 and row[0] == url:
-                _log("rawleads.column.duplicate_found", url=url, row=idx)
+
+        url_rows = result.get("values", [])
+        next_row = len(url_rows) + 2
+        for idx, row in enumerate(url_rows, start=2):
+            cell_value = row[0].strip() if row and row[0] else ""
+            if cell_value == url:
+                _log("rawleads.row.duplicate_found", url=url, row=idx)
                 return {
                     "ok": False,
                     "error": "Duplicate URL",
-                    "message": f"URL already exists in column '{column_header}' at row {idx}",
-                    "column_header": column_header,
+                    "message": f"URL already exists in Raw Leads at row {idx}",
                     "duplicate_row": idx
                 }
-        
-        # Find next empty row
-        next_row = len(column_values) + 1
-        
-        # Step 3: Append URL to the column
-        _log("rawleads.column.append_url", column=col_letter, row=next_row, url=url)
-        service.spreadsheets().values().update(
+
+            if not cell_value:
+                next_row = idx
+                break
+
+        now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+        timestamp = now_pst.strftime("%Y-%m-%d %H:%M:%S %Z")
+        writes = [
+            {
+                "range": f"Raw Leads!{col_num_to_letter(url_col_index)}{next_row}",
+                "values": [[url]],
+            },
+            {
+                "range": f"Raw Leads!{col_num_to_letter(tier_col_index)}{next_row}",
+                "values": [[creator_tier]],
+            },
+            {
+                "range": f"Raw Leads!{col_num_to_letter(status_col_index)}{next_row}",
+                "values": [[""]],
+            },
+            {
+                "range": f"Raw Leads!{col_num_to_letter(added_by_col_index)}{next_row}",
+                "values": [[sender_name or "Unknown"]],
+            },
+            {
+                "range": f"Raw Leads!{col_num_to_letter(added_at_col_index)}{next_row}",
+                "values": [[timestamp]],
+            },
+        ]
+        service.spreadsheets().values().batchUpdate(
             spreadsheetId=spreadsheet_id,
-            range=f"Raw Leads!{col_letter}{next_row}",
-            valueInputOption="USER_ENTERED",
-            body={"values": [[url]]}
+            body={"valueInputOption": "USER_ENTERED", "data": writes},
         ).execute()
-        
-        _log("rawleads.column.success", column_header=column_header, row=next_row)
+
+        _log("rawleads.row.success", row=next_row, tier=creator_tier, sender=sender_name)
         return {
             "ok": True,
-            "column_header": column_header,
             "row_added": next_row,
-            "column_letter": col_letter
+            "stored_tier": creator_tier,
+            "stored_sender": sender_name or "Unknown",
         }
-        
     except Exception as e:
-        _log("rawleads.column.error", error=str(e))
+        _log("rawleads.row.error", error=str(e))
         return {"ok": False, "error": str(e)}
 
 

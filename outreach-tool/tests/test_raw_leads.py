@@ -35,8 +35,7 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
     
     mock_check_exists.return_value = {"exists": False}
     mock_append.return_value = {
-        "ok": True, 
-        "column_header": "Jan 01 (Test User Fullname)", 
+        "ok": True,
         "row_added": 5
     }
 
@@ -45,7 +44,8 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
         "app": "regen",
         "sender_profile": "test_user",  # Helper should convert this -> "Test User Fullname"
         "url": "https://www.instagram.com/p/12345/",
-        "category": "rawlead"
+        "category": "rawlead",
+        "creator_tier": "micro",
     }
 
     # Execute Request
@@ -65,6 +65,8 @@ def test_raw_lead_uses_correct_sender_name(mock_resolve, mock_get_config, mock_c
     assert args[1] == "https://www.instagram.com/p/12345"
     # Arg 2: sender_name - THIS IS THE FIX VERIFICATION
     assert args[2] == "Test User Fullname"
+    # Arg 3: creator_tier canonical value for storage
+    assert args[3] == "Micro"
 
 @patch('api.main._append_url_to_raw_leads_column')
 @patch('api.main._check_creator_exists_across_all_sheets')
@@ -86,7 +88,8 @@ def test_raw_lead_creator_already_exists(mock_get_config, mock_check_exists, moc
     payload = {
         "app": "regen",
         "url": "https://www.instagram.com/some_creator",
-        "category": "rawlead"
+        "category": "rawlead",
+        "creator_tier": "macro",
     }
 
     response = client.post('/add_raw_leads', json=payload)
@@ -98,4 +101,28 @@ def test_raw_lead_creator_already_exists(mock_get_config, mock_check_exists, moc
     assert data["sheet_name"] == "Macros"
     
     # Should NOT have tried to append
+    mock_append.assert_not_called()
+
+
+@patch('api.main._append_url_to_raw_leads_column')
+@patch('api.main._check_creator_exists_across_all_sheets')
+@patch('api.main._get_app_config')
+def test_raw_lead_requires_creator_tier(mock_get_config, mock_check_exists, mock_append, client):
+    """Raw leads must include creator_tier and reject missing tier."""
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id"
+    }
+    mock_check_exists.return_value = {"exists": False}
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.instagram.com/some_creator",
+        "category": "rawlead",
+    }
+
+    response = client.post('/add_raw_leads', json=payload)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert "creator_tier" in data["error"]
     mock_append.assert_not_called()

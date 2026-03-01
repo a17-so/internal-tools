@@ -289,18 +289,21 @@ def _load_templates(
 
 
 def _resolve_app_config(*, outreach_apps_json: str | None, app_key: str, sender_profile: str) -> dict[str, str]:
+    defaults: dict[str, str] = {
+        "from_name": _default_from_name(sender_profile),
+    }
     if not outreach_apps_json:
-        return {}
+        return defaults
     try:
         parsed = json.loads(outreach_apps_json)
     except json.JSONDecodeError:
-        return {}
+        return defaults
     if not isinstance(parsed, dict):
-        return {}
+        return defaults
 
     app_cfg_raw = parsed.get(app_key)
     if not isinstance(app_cfg_raw, dict):
-        return {}
+        return defaults
 
     app_cfg = dict(app_cfg_raw)
     sender_profiles = app_cfg_raw.get("sender_profiles")
@@ -308,7 +311,22 @@ def _resolve_app_config(*, outreach_apps_json: str | None, app_key: str, sender_
         profile_overrides = sender_profiles.get(sender_profile)
         if isinstance(profile_overrides, dict):
             app_cfg.update(profile_overrides)
-    return {k: str(v) for k, v in app_cfg.items() if isinstance(v, (str, int, float, bool))}
+    resolved = {k: str(v) for k, v in app_cfg.items() if isinstance(v, (str, int, float, bool))}
+    resolved.setdefault("from_name", defaults["from_name"])
+    return resolved
+
+
+def _default_from_name(sender_profile: str) -> str:
+    normalized = sender_profile.strip().lower()
+    if normalized == "ethan":
+        return "Ethan"
+    if normalized == "abhay":
+        return "Abhay Chebium"
+    if normalized == "advaith":
+        return "Advaith"
+    if not normalized:
+        return "Team"
+    return normalized.replace("_", " ").replace("-", " ").title()
 
 
 def _render_comms(*, templates: dict[str, dict[str, str]], category: str, creator_name: str) -> _RenderedComms:

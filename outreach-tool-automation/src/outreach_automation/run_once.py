@@ -43,6 +43,11 @@ def main() -> int:
         action="store_true",
         help="Process lead even if URL was already completed before (testing only)",
     )
+    parser.add_argument(
+        "--verbose-summary",
+        action="store_true",
+        help="Print per-lead channel outcomes after run",
+    )
     parser.add_argument("--dotenv-path", type=str, default=None)
     args = parser.parse_args()
 
@@ -128,6 +133,15 @@ def main() -> int:
             print("failed_tiktok_links:")
             for url in result.failed_tiktok_links:
                 print(f"- {url}")
+        if args.verbose_summary and result.lead_summaries:
+            print("lead_summaries:")
+            for item in result.lead_summaries:
+                print(
+                    f"- row={item.row_index} url={item.url} final={item.final_status} "
+                    f"email={item.email_status}:{item.email_error or 'none'} "
+                    f"ig={item.ig_status}:{item.ig_error or 'none'} "
+                    f"tiktok={item.tiktok_status}:{item.tiktok_error or 'none'}"
+                )
         return 0
     finally:
         firestore_client.release_run_lock(holder=holder)

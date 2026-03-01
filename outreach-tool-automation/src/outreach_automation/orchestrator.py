@@ -91,6 +91,20 @@ class OrchestratorResult:
     failed: int
     skipped: int
     failed_tiktok_links: list[str]
+    lead_summaries: list[LeadRunSummary]
+
+
+@dataclass(slots=True)
+class LeadRunSummary:
+    row_index: int
+    url: str
+    final_status: str
+    email_status: str
+    email_error: str | None
+    ig_status: str
+    ig_error: str | None
+    tiktok_status: str
+    tiktok_error: str | None
 
 
 class Orchestrator:
@@ -131,9 +145,10 @@ class Orchestrator:
         failed = 0
         skipped = 0
         failed_tiktok_links: list[str] = []
+        lead_summaries: list[LeadRunSummary] = []
 
         for lead in leads:
-            result, failed_tiktok_link = self._process_lead(lead=lead, dry_run=dry_run)
+            result, failed_tiktok_link, summary = self._process_lead(lead=lead, dry_run=dry_run)
             if result == "processed":
                 processed += 1
             elif result == "skipped":
@@ -142,17 +157,34 @@ class Orchestrator:
                 failed += 1
             if failed_tiktok_link:
                 failed_tiktok_links.append(failed_tiktok_link)
+            if summary is not None:
+                lead_summaries.append(summary)
 
         return OrchestratorResult(
             processed=processed,
             failed=failed,
             skipped=skipped,
             failed_tiktok_links=failed_tiktok_links,
+            lead_summaries=lead_summaries,
         )
 
-    def _process_lead(self, lead: LeadRow, dry_run: bool) -> tuple[str, str | None]:
+    def _process_lead(self, lead: LeadRow, dry_run: bool) -> tuple[str, str | None, LeadRunSummary | None]:
         if self._dedupe_enabled and self._firestore.was_processed_url(lead.creator_url):
-            return "skipped", None
+            return (
+                "skipped",
+                None,
+                LeadRunSummary(
+                    row_index=lead.row_index,
+                    url=lead.creator_url,
+                    final_status="skipped_dedupe",
+                    email_status="skipped",
+                    email_error="dedupe",
+                    ig_status="skipped",
+                    ig_error="dedupe",
+                    tiktok_status="skipped",
+                    tiktok_error="dedupe",
+                ),
+            )
 
         now = datetime.now(UTC)
         email_result = ChannelResult(status="skipped", error_code="not_attempted")
@@ -174,18 +206,60 @@ class Orchestrator:
             self._sheets.update_status(lead.row_index, "failed_missing_tier")
             self._write_validation_job(lead, "failed_missing_tier", dry_run)
             self._sheets.clear_creator_link(lead)
-            return "failed", None
+            return (
+                "failed",
+                None,
+                LeadRunSummary(
+                    row_index=lead.row_index,
+                    url=lead.creator_url,
+                    final_status="failed_missing_tier",
+                    email_status="skipped",
+                    email_error="failed_missing_tier",
+                    ig_status="skipped",
+                    ig_error="failed_missing_tier",
+                    tiktok_status="skipped",
+                    tiktok_error="failed_missing_tier",
+                ),
+            )
         except InvalidTierError:
             self._sheets.update_status(lead.row_index, "failed_invalid_tier")
             self._write_validation_job(lead, "failed_invalid_tier", dry_run)
             self._sheets.clear_creator_link(lead)
-            return "failed", None
+            return (
+                "failed",
+                None,
+                LeadRunSummary(
+                    row_index=lead.row_index,
+                    url=lead.creator_url,
+                    final_status="failed_invalid_tier",
+                    email_status="skipped",
+                    email_error="failed_invalid_tier",
+                    ig_status="skipped",
+                    ig_error="failed_invalid_tier",
+                    tiktok_status="skipped",
+                    tiktok_error="failed_invalid_tier",
+                ),
+            )
 
         if not lead.creator_url.strip():
             self._sheets.update_status(lead.row_index, "failed_missing_url")
             self._write_validation_job(lead, "failed_missing_url", dry_run)
             self._sheets.clear_creator_link(lead)
-            return "failed", None
+            return (
+                "failed",
+                None,
+                LeadRunSummary(
+                    row_index=lead.row_index,
+                    url=lead.creator_url,
+                    final_status="failed_missing_url",
+                    email_status="skipped",
+                    email_error="failed_missing_url",
+                    ig_status="skipped",
+                    ig_error="failed_missing_url",
+                    tiktok_status="skipped",
+                    tiktok_error="failed_missing_url",
+                ),
+            )
 
         try:
             scrape = self._scraper.scrape(
@@ -288,7 +362,18 @@ class Orchestrator:
         )
         self._firestore.write_job(str(uuid4()), record)
         failed_tiktok_link = lead.creator_url if tiktok_result.status == "failed" else None
-        return return_value, failed_tiktok_link
+        summary = LeadRunSummary(
+            row_index=lead.row_index,
+            url=lead.creator_url,
+            final_status=final_status,
+            email_status=email_result.status,
+            email_error=email_result.error_code,
+            ig_status=ig_result.status,
+            ig_error=ig_result.error_code,
+            tiktok_status=tiktok_result.status,
+            tiktok_error=tiktok_result.error_code,
+        )
+        return return_value, failed_tiktok_link, summary
 
     def _write_validation_job(self, lead: LeadRow, status: str, dry_run: bool) -> None:
         now = datetime.now(UTC)

@@ -102,6 +102,8 @@ python -m outreach_automation.run_once --live --channels instagram
 python -m outreach_automation.run_once --live --channels email,tiktok
 # force rerun same lead URL for testing
 python -m outreach_automation.run_once --live --channels instagram --lead-row-index 15 --ignore-dedupe
+# print per-lead channel status/error summary
+python -m outreach_automation.run_once --live --max-leads 10 --verbose-summary
 ```
 
 Stop an active run:

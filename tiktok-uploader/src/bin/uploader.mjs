@@ -5,6 +5,7 @@ import path from 'path';
 import os from 'os';
 import { Command } from 'commander';
 import { parse } from 'csv-parse/sync';
+import { DateTime } from 'luxon';
 import open from 'open';
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'uploader-v2');
@@ -65,13 +66,28 @@ async function authedRequest(baseUrl, endpoint, apiKey, options = {}) {
   return request(baseUrl, endpoint, { ...options, headers });
 }
 
-function normalizeCsvRow(row, root) {
+function normalizeScheduleAt(raw, tz) {
+  const value = String(raw || '').trim();
+  if (!value) return undefined;
+
+  if (/z$|[+-]\\d{2}:?\\d{2}$/i.test(value)) {
+    const dt = DateTime.fromISO(value);
+    if (!dt.isValid) throw new Error(`Invalid schedule datetime: ${value}`);
+    return dt.toUTC().toISO();
+  }
+
+  const dt = tz === 'local' ? DateTime.fromISO(value) : DateTime.fromISO(value, { zone: tz });
+  if (!dt.isValid) throw new Error(`Invalid schedule datetime (${tz}): ${value}`);
+  return dt.toUTC().toISO();
+}
+
+function normalizeCsvRow(row, root, scheduleTz = 'local') {
   const fileType = (row.file_type || '').trim();
   const accountId = (row.account_id || '').trim();
   const mode = (row.mode || 'draft').trim();
   const caption = row.caption || '';
   const platform = (row.platform || 'tiktok').trim();
-  const scheduleAt = (row.schedule_at || '').trim();
+  const scheduleAt = normalizeScheduleAt(row.schedule_at || '', row.schedule_tz || scheduleTz);
 
   if (!fileType || !accountId || !mode) {
     throw new Error('CSV row missing required fields: file_type, account_id, mode');
@@ -90,7 +106,7 @@ function normalizeCsvRow(row, root) {
       provider: platform,
       videoPath,
       clientRef: row.client_ref || undefined,
-      scheduleAt: scheduleAt || undefined,
+      scheduleAt,
     };
   }
 
@@ -110,7 +126,7 @@ function normalizeCsvRow(row, root) {
       provider: platform,
       imagePaths,
       clientRef: row.client_ref || undefined,
-      scheduleAt: scheduleAt || undefined,
+      scheduleAt,
     };
   }
 
@@ -308,6 +324,7 @@ program
   .requiredOption('--file <path>', 'Video path')
   .option('--mode <mode>', 'draft|direct', 'draft')
   .option('--schedule-at <iso>', 'Optional ISO datetime for scheduled dispatch')
+  .option('--schedule-tz <tz>', 'Timezone for naive schedule datetime', 'local')
   .option('--base-url <url>', 'Uploader base URL')
   .option('--api-key <key>', 'API key override')
   .option('--send-now', 'Trigger dispatcher after enqueue', true)
@@ -324,7 +341,7 @@ program
         postType: 'video',
         caption: opts.caption,
         videoPath: path.resolve(opts.file),
-        scheduleAt: opts.scheduleAt || undefined,
+        scheduleAt: normalizeScheduleAt(opts.scheduleAt || '', opts.scheduleTz),
         sendNow: Boolean(opts.sendNow),
       }),
     });
@@ -340,6 +357,7 @@ program
   .requiredOption('--images <paths>', 'Comma-separated image paths')
   .option('--mode <mode>', 'draft|direct', 'draft')
   .option('--schedule-at <iso>', 'Optional ISO datetime for scheduled dispatch')
+  .option('--schedule-tz <tz>', 'Timezone for naive schedule datetime', 'local')
   .option('--base-url <url>', 'Uploader base URL')
   .option('--api-key <key>', 'API key override')
   .option('--send-now', 'Trigger dispatcher after enqueue', true)
@@ -361,7 +379,7 @@ program
         postType: 'slideshow',
         caption: opts.caption,
         imagePaths: images,
-        scheduleAt: opts.scheduleAt || undefined,
+        scheduleAt: normalizeScheduleAt(opts.scheduleAt || '', opts.scheduleTz),
         sendNow: Boolean(opts.sendNow),
       }),
     });
@@ -374,6 +392,7 @@ program
   .description('Queue a batch using CSV schema')
   .requiredOption('--csv <path>', 'CSV file path')
   .option('--root <path>', 'Path root for relative media paths', '.')
+  .option('--schedule-tz <tz>', 'Default timezone for naive schedule_at values', 'local')
   .option('--name <name>', 'Batch name', `CLI Batch ${new Date().toISOString()}`)
   .option('--send-now', 'Trigger dispatcher after enqueue', true)
   .option('--base-url <url>', 'Uploader base URL')
@@ -386,7 +405,7 @@ program
 
     const raw = fs.readFileSync(csvPath, 'utf8');
     const rows = parse(raw, { columns: true, skip_empty_lines: true, trim: true });
-    const jobs = rows.map((row) => normalizeCsvRow(row, root));
+    const jobs = rows.map((row) => normalizeCsvRow(row, root, opts.scheduleTz));
 
     const data = await authedRequest(baseUrl, '/api/uploads/batches', apiKey, {
       method: 'POST',
@@ -449,6 +468,57 @@ program
       await authedRequest(baseUrl, `/api/uploads/jobs/${job.id}/cancel`, apiKey, { method: 'POST' });
       console.log(`Canceled ${job.id}`);
     }
+  });
+
+program
+  .command('queue:control:get')
+  .description('Get queue pause/dispatch control state')
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+    const data = await authedRequest(baseUrl, '/api/queue/control', apiKey);
+    console.log(JSON.stringify(data.control, null, 2));
+  });
+
+program
+  .command('queue:control:set')
+  .description('Set queue control (pause + dispatch mode)')
+  .option('--paused <bool>', 'true|false')
+  .option('--dispatch-mode <mode>', 'due_only|all_queued')
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+    const payload = {};
+    if (opts.paused !== undefined) payload.paused = String(opts.paused).toLowerCase() === 'true';
+    if (opts.dispatchMode) payload.dispatchMode = opts.dispatchMode;
+    const data = await authedRequest(baseUrl, '/api/queue/control', apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(data.control, null, 2));
+  });
+
+program
+  .command('dispatcher:run')
+  .description('Run dispatcher manually')
+  .option('--mode <mode>', 'due_only|all_queued', 'due_only')
+  .option('--force-paused', 'Run once even if queue is paused', false)
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+    const data = await authedRequest(baseUrl, '/api/dispatcher/run', apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: opts.mode, forcePaused: Boolean(opts.forcePaused) }),
+    });
+    console.log(`Processed ${data.processed} job(s)`);
   });
 
 program.parseAsync(process.argv).catch((error) => {

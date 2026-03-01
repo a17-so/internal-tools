@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { UploadMode, UploadPostType } from '@prisma/client';
+import { DateTime } from 'luxon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,9 +28,12 @@ type DraftItem = {
   postType: UploadPostType;
   caption: string;
   scheduleAt?: string;
+  scheduleTz?: string;
   video?: File;
   images?: File[];
 };
+
+const scheduleTimezones = ['local', 'UTC', 'America/Los_Angeles', 'America/New_York', 'Europe/London'];
 
 function uid() {
   return Math.random().toString(36).slice(2);
@@ -48,6 +52,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
   const [postType, setPostType] = useState<UploadPostType>(UploadPostType.video);
   const [caption, setCaption] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
+  const [scheduleTz, setScheduleTz] = useState('local');
   const [video, setVideo] = useState<File | null>(null);
   const [images, setImages] = useState<File[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -130,19 +135,33 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
       return;
     }
 
+    let scheduleAtIso: string | undefined;
+    if (scheduleAt) {
+      const dt = scheduleTz === 'local'
+        ? DateTime.fromISO(scheduleAt)
+        : DateTime.fromISO(scheduleAt, { zone: scheduleTz });
+      if (!dt.isValid) {
+        toast.error('Invalid schedule datetime');
+        return;
+      }
+      scheduleAtIso = dt.toUTC().toISO() || undefined;
+    }
+
     setTray((prev) => [...prev, {
       id: uid(),
       connectedAccountId,
       mode,
       postType,
       caption,
-      scheduleAt: scheduleAt || undefined,
+      scheduleAt: scheduleAtIso,
+      scheduleTz,
       video: video || undefined,
       images: images.length ? images : undefined,
     }]);
 
     setCaption('');
     setScheduleAt('');
+    setScheduleTz('local');
     setVideo(null);
     setImages([]);
     setDragIndex(null);
@@ -256,6 +275,9 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
         <div className="space-y-2">
           <Label>Schedule At (optional)</Label>
           <Input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} />
+          <select className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={scheduleTz} onChange={(e) => setScheduleTz(e.target.value)}>
+            {scheduleTimezones.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+          </select>
         </div>
 
         {postType === UploadPostType.video ? (
@@ -358,7 +380,11 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
               <div>
                 <p className="font-medium text-slate-900">{item.postType.toUpperCase()} · {item.mode.toUpperCase()}</p>
                 <p className="text-xs text-slate-500">{accountLabel(item.connectedAccountId)}</p>
-                {item.scheduleAt ? <p className="text-xs text-amber-700">Scheduled: {new Date(item.scheduleAt).toLocaleString()}</p> : null}
+                {item.scheduleAt ? (
+                  <p className="text-xs text-amber-700">
+                    Scheduled: {DateTime.fromISO(item.scheduleAt).setZone(item.scheduleTz === 'local' ? DateTime.local().zoneName : item.scheduleTz || 'local').toLocaleString(DateTime.DATETIME_MED)}
+                  </p>
+                ) : null}
                 <p className="text-slate-600">{item.caption || '(No caption)'}</p>
               </div>
               <Button variant="outline" onClick={() => setTray((prev) => prev.filter((x) => x.id !== item.id))}>Remove</Button>

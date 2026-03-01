@@ -31,44 +31,6 @@ def col_num_to_letter(n: int) -> str:
     return result
 
 
-def _ensure_raw_leads_row_schema(service: Any, spreadsheet_id: str) -> Dict[str, int]:
-    """Ensure Raw Leads contains row-based schema headers and return column indices (0-based)."""
-    required_headers = ["creator_url", "creator_tier", "status", "added_by", "added_at"]
-    result = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range="Raw Leads!1:1"
-    ).execute()
-    headers = result.get("values", [[]])[0] if result.get("values") else []
-    normalized = [str(h).strip().lower() for h in headers]
-
-    col_map: Dict[str, int] = {}
-    pending_writes: List[Dict[str, Any]] = []
-    next_col_index = len(headers)
-
-    for header in required_headers:
-        if header in normalized:
-            col_map[header] = normalized.index(header)
-            continue
-        col_map[header] = next_col_index
-        col_letter = col_num_to_letter(next_col_index)
-        pending_writes.append({
-            "range": f"Raw Leads!{col_letter}1",
-            "values": [[header]],
-        })
-        next_col_index += 1
-
-    if pending_writes:
-        service.spreadsheets().values().batchUpdate(
-            spreadsheetId=spreadsheet_id,
-            body={
-                "valueInputOption": "USER_ENTERED",
-                "data": pending_writes,
-            },
-        ).execute()
-
-    return col_map
-
-
 def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
     """Check if a creator already exists in the spreadsheet by IG or TT handle.
     
@@ -252,81 +214,112 @@ def _append_url_to_raw_leads_column(
     creator_tier: str,
     delegated_user: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Append a raw lead row with explicit creator_url + creator_tier schema."""
+    """Append URL to daily sender column and tier to paired tier column.
+
+    URL header format remains the same as before: "Feb 27 (Abhay)".
+    Creator tier is stored in a paired column: "Feb 27 (Abhay) Tier".
+    """
     service = _sheets_client(delegated_user=delegated_user)
     if not service:
-        _log("rawleads.row.no_client")
+        _log("rawleads.matrix.no_client")
         return {"ok": False, "error": "Sheets client not configured"}
 
+    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+    date_str = now_pst.strftime("%b %d")
+    first_name = sender_name.split()[0] if sender_name else "Unknown"
+    url_header = f"{date_str} ({first_name})"
+    tier_header = f"{url_header} Tier"
+
     try:
-        col_map = _ensure_raw_leads_row_schema(service, spreadsheet_id)
-        url_col_index = col_map["creator_url"]
-        tier_col_index = col_map["creator_tier"]
-        status_col_index = col_map["status"]
-        added_by_col_index = col_map["added_by"]
-        added_at_col_index = col_map["added_at"]
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range="Raw Leads!1:1"
+        ).execute()
+        headers = result.get("values", [[]])[0] if result.get("values") else []
+
+        url_col_index: int | None = None
+        tier_col_index: int | None = None
+        for idx, header in enumerate(headers):
+            if header == url_header:
+                url_col_index = idx
+            if header == tier_header:
+                tier_col_index = idx
+
+        pending_writes: List[Dict[str, Any]] = []
+        if url_col_index is None:
+            url_col_index = len(headers)
+            pending_writes.append(
+                {
+                    "range": f"Raw Leads!{col_num_to_letter(url_col_index)}1",
+                    "values": [[url_header]],
+                }
+            )
+            headers.append(url_header)
+
+        if tier_col_index is None:
+            tier_col_index = len(headers)
+            pending_writes.append(
+                {
+                    "range": f"Raw Leads!{col_num_to_letter(tier_col_index)}1",
+                    "values": [[tier_header]],
+                }
+            )
+            headers.append(tier_header)
+
+        if pending_writes:
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"valueInputOption": "USER_ENTERED", "data": pending_writes},
+            ).execute()
 
         url_col_letter = col_num_to_letter(url_col_index)
         result = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
-            range=f"Raw Leads!{url_col_letter}2:{url_col_letter}"
+            range=f"Raw Leads!{url_col_letter}:{url_col_letter}"
         ).execute()
 
-        url_rows = result.get("values", [])
-        next_row = len(url_rows) + 2
-        for idx, row in enumerate(url_rows, start=2):
-            cell_value = row[0].strip() if row and row[0] else ""
+        column_values = result.get("values", [])
+        next_row = len(column_values) + 1
+        for idx, row in enumerate(column_values[1:], start=2):
+            cell_value = (row[0] if row else "").strip()
             if cell_value == url:
-                _log("rawleads.row.duplicate_found", url=url, row=idx)
+                _log("rawleads.matrix.duplicate_found", url=url, row=idx, header=url_header)
                 return {
                     "ok": False,
                     "error": "Duplicate URL",
-                    "message": f"URL already exists in Raw Leads at row {idx}",
+                    "message": f"URL already exists in column '{url_header}' at row {idx}",
                     "duplicate_row": idx
                 }
 
-            if not cell_value:
-                next_row = idx
-                break
-
-        now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
-        timestamp = now_pst.strftime("%Y-%m-%d %H:%M:%S %Z")
+        url_cell = f"Raw Leads!{col_num_to_letter(url_col_index)}{next_row}"
+        tier_cell = f"Raw Leads!{col_num_to_letter(tier_col_index)}{next_row}"
         writes = [
-            {
-                "range": f"Raw Leads!{col_num_to_letter(url_col_index)}{next_row}",
-                "values": [[url]],
-            },
-            {
-                "range": f"Raw Leads!{col_num_to_letter(tier_col_index)}{next_row}",
-                "values": [[creator_tier]],
-            },
-            {
-                "range": f"Raw Leads!{col_num_to_letter(status_col_index)}{next_row}",
-                "values": [[""]],
-            },
-            {
-                "range": f"Raw Leads!{col_num_to_letter(added_by_col_index)}{next_row}",
-                "values": [[sender_name or "Unknown"]],
-            },
-            {
-                "range": f"Raw Leads!{col_num_to_letter(added_at_col_index)}{next_row}",
-                "values": [[timestamp]],
-            },
+            {"range": url_cell, "values": [[url]]},
+            {"range": tier_cell, "values": [[creator_tier]]},
         ]
         service.spreadsheets().values().batchUpdate(
             spreadsheetId=spreadsheet_id,
             body={"valueInputOption": "USER_ENTERED", "data": writes},
         ).execute()
 
-        _log("rawleads.row.success", row=next_row, tier=creator_tier, sender=sender_name)
+        _log(
+            "rawleads.matrix.success",
+            row=next_row,
+            sender=sender_name,
+            tier=creator_tier,
+            url_header=url_header,
+            tier_header=tier_header,
+        )
         return {
             "ok": True,
+            "column_header": url_header,
+            "tier_column_header": tier_header,
             "row_added": next_row,
             "stored_tier": creator_tier,
-            "stored_sender": sender_name or "Unknown",
+            "stored_sender": first_name,
         }
     except Exception as e:
-        _log("rawleads.row.error", error=str(e))
+        _log("rawleads.matrix.error", error=str(e))
         return {"ok": False, "error": str(e)}
 
 

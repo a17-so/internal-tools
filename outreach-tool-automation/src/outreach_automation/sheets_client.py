@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 import google.auth
 import gspread
@@ -142,7 +143,11 @@ class SheetsClient:
         if col is None:
             return
         self._sheet.update_cell(lead.row_index, col, "")
+        if lead.tier_col_index is not None:
+            self._sheet.update_cell(lead.row_index, lead.tier_col_index, "")
         self._set_cell_background_color(lead.row_index, col, red=1.0, green=1.0, blue=1.0)
+        if lead.tier_col_index is not None:
+            self._set_cell_background_color(lead.row_index, lead.tier_col_index, red=1.0, green=1.0, blue=1.0)
 
     def mark_creator_link_error(self, lead: LeadRow) -> None:
         col = self._resolve_lead_url_col(lead)
@@ -219,43 +224,56 @@ class SheetsClient:
         batch_size: int,
         row_index: int | None,
     ) -> list[LeadRow]:
-        target_col = self._find_first_link_column(rows)
-        if target_col is None:
+        url_columns = self._find_matrix_url_columns(rows)
+        if not url_columns:
             return []
 
+        tier_column_by_url = self._find_matrix_tier_columns(rows, url_columns)
         out: list[LeadRow] = []
         seen: set[str] = set()
-        for r_idx, row in enumerate(rows[1:], start=2):
-            if row_index is not None and r_idx != row_index:
-                continue
-            value = self._get_cell(row, target_col).strip()
-            if not value:
-                continue
-            lower = value.lower()
-            if not (lower.startswith("http://") or lower.startswith("https://")):
-                continue
-            if "tiktok.com/" not in lower:
-                continue
-            if value in seen:
-                continue
-            seen.add(value)
-            out.append(
-                LeadRow(
-                    row_index=r_idx,
-                    col_index=target_col,
-                    creator_url=value,
-                    creator_tier="",
-                    status="",
+        for target_col in sorted(url_columns):
+            for r_idx, row in enumerate(rows[1:], start=2):
+                if row_index is not None and r_idx != row_index:
+                    continue
+                value = self._get_cell(row, target_col).strip()
+                if not value:
+                    continue
+                lower = value.lower()
+                if not (lower.startswith("http://") or lower.startswith("https://")):
+                    continue
+                if "tiktok.com/" not in lower:
+                    continue
+                if value in seen:
+                    continue
+                seen.add(value)
+                tier_col = tier_column_by_url.get(target_col)
+                creator_tier = self._get_cell(row, tier_col).strip() if tier_col is not None else ""
+                out.append(
+                    LeadRow(
+                        row_index=r_idx,
+                        col_index=target_col,
+                        tier_col_index=tier_col,
+                        creator_url=value,
+                        creator_tier=creator_tier,
+                        status="",
+                    )
                 )
-            )
-            if len(out) >= batch_size:
-                return out
+                if len(out) >= batch_size:
+                    return out
         return out
 
-    def _find_first_link_column(self, rows: list[list[str]]) -> int | None:
-        first_col: int | None = None
+    def _find_matrix_url_columns(self, rows: list[list[str]]) -> set[int]:
+        header = rows[0] if rows else []
+        tier_header_cols = {
+            idx
+            for idx, name in enumerate(header, start=1)
+            if self._is_tier_header(name)
+        }
+        columns: set[int] = set()
         for row in rows[1:]:
             for c_idx, cell in enumerate(row, start=1):
+                if c_idx in tier_header_cols:
+                    continue
                 value = cell.strip().lower()
                 if not value:
                     continue
@@ -263,6 +281,33 @@ class SheetsClient:
                     continue
                 if "tiktok.com/" not in value:
                     continue
-                if first_col is None or c_idx < first_col:
-                    first_col = c_idx
-        return first_col
+                columns.add(c_idx)
+        return columns
+
+    def _find_matrix_tier_columns(self, rows: list[list[str]], url_columns: set[int]) -> dict[int, int]:
+        header = rows[0] if rows else []
+        normalized_header: dict[str, int] = {}
+        for idx, name in enumerate(header, start=1):
+            key = self._normalize_header(name)
+            if key and key not in normalized_header:
+                normalized_header[key] = idx
+
+        out: dict[int, int] = {}
+        for url_col in url_columns:
+            name = header[url_col - 1] if url_col - 1 < len(header) else ""
+            normalized = self._normalize_header(name)
+            if not normalized:
+                continue
+            tier_col = normalized_header.get(f"{normalized} tier")
+            if tier_col is not None:
+                out[url_col] = tier_col
+        return out
+
+    @staticmethod
+    def _normalize_header(header: str) -> str:
+        return re.sub(r"\s+", " ", (header or "").strip().lower())
+
+    @staticmethod
+    def _is_tier_header(header: str) -> bool:
+        normalized = SheetsClient._normalize_header(header)
+        return normalized.endswith(" tier")

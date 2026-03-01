@@ -36,6 +36,7 @@ class LeadRow:
     creator_tier: str
     status: str = ""
     col_index: int | None = None
+    tier_col_index: int | None = None
 
 
 @dataclass(slots=True)

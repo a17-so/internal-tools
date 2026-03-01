@@ -1,36 +1,171 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Uploader V2
 
-## Getting Started
+Multi-account, queue-based social uploader (TikTok implemented first) with a web UI and a CLI.
 
-First, run the development server:
+## What This Version Adds
+
+- Internal app login (single-operator mode)
+- Persistent connected TikTok accounts (not cookie-only)
+- Account picker for uploads
+- Draft-first upload mode with optional direct mode
+- Video and slideshow (image set) post types
+- Bulk queue + batch dispatch with retries and throttling
+- Upload history + queue management
+- CLI support for single uploads and CSV batch ingestion
+- Provider abstraction with Instagram scaffold for next platform
+
+## Tech
+
+- Next.js App Router
+- Prisma + SQLite
+- Typed provider and queue services
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Configure env vars in `.env.local`:
+
+```bash
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# TikTok app credentials
+TIKTOK_CLIENT_KEY=...
+TIKTOK_CLIENT_SECRET=...
+
+# Internal app auth bootstrap user
+APP_USER_EMAIL=you@company.com
+APP_USER_PASSWORD=strong-password
+
+# Token encryption secret (passphrase or base64 32-byte key)
+ENCRYPTION_KEY=change-me
+
+# Optional overrides
+DATABASE_URL=file:./prisma/dev.db
+UPLOADS_DIR=./uploads
+QUEUE_GLOBAL_CONCURRENCY=5
+QUEUE_ACCOUNT_CONCURRENCY=2
+```
+
+3. Push schema to SQLite:
+
+```bash
+npm run db:push
+```
+
+4. Start the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Open [http://localhost:3000/login](http://localhost:3000/login)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Web Workflow
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Login with `APP_USER_EMAIL` / `APP_USER_PASSWORD`
+2. Go to `Accounts` and click `Connect TikTok`
+3. Authorize account(s)
+4. Go to `Compose`
+5. Select account + mode + post type
+6. Add posts to tray
+7. Click `Send All`
+8. Track progress in `Queue` and `History`
 
-## Learn More
+## CLI
 
-To learn more about Next.js, take a look at the following resources:
+CLI entrypoint is installed as `uploader` (bin maps to `src/bin/uploader.mjs`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Create API key
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+uploader auth:token:create \
+  --email you@company.com \
+  --password strong-password \
+  --base-url http://localhost:3000
+```
 
-## Deploy on Vercel
+### List connected accounts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+uploader accounts:list --provider tiktok
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Queue one video
+
+```bash
+uploader upload:file \
+  --account <connected_account_id> \
+  --caption "Caption text #tags" \
+  --file ../edit-maker/output/feature_001.mp4 \
+  --mode draft
+```
+
+### Queue one slideshow
+
+```bash
+uploader upload:slideshow \
+  --account <connected_account_id> \
+  --caption "Slideshow caption" \
+  --images ./a.jpg,./b.jpg,./c.jpg \
+  --mode draft
+```
+
+### Queue a CSV batch
+
+```bash
+uploader upload:batch \
+  --csv ./posts.csv \
+  --root ../edit-maker/output \
+  --send-now
+```
+
+### Job control
+
+```bash
+uploader jobs:list --status queued,running,failed
+uploader jobs:retry --batch <batch_id>
+uploader jobs:cancel --batch <batch_id>
+```
+
+## CSV Schema
+
+Required columns:
+
+- `file_type` (`video` or `slideshow`)
+- `account_id`
+- `mode` (`draft` or `direct`)
+- `caption`
+
+Video rows:
+
+- `video_path`
+
+Slideshow rows:
+
+- `image_paths` (semicolon-separated ordered paths)
+
+Optional columns:
+
+- `platform` (defaults to `tiktok`)
+- `client_ref`
+- `schedule_at` (currently ignored)
+
+Example:
+
+```csv
+file_type,account_id,mode,caption,video_path,image_paths,platform,client_ref
+video,cmabc123,draft,"Post 1 #fyp",feature_001.mp4,,tiktok,job-001
+slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok,job-002
+```
+
+## Notes
+
+- Draft mode is default everywhere.
+- Duplicate prevention uses idempotency hash (media + caption + mode + account).
+- Retries are exponential backoff for retryable errors.
+- Instagram provider is scaffolded but not implemented yet.

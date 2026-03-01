@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import socket
 import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import FrameType
 from urllib.parse import urlparse
 
 from outreach_automation.account_router import AccountRouter
@@ -23,6 +25,7 @@ from outreach_automation.tiktok_dm import TiktokDmSender
 
 
 def main() -> int:
+    _install_signal_handlers()
     parser = argparse.ArgumentParser(description="Run outreach orchestration once")
     parser.add_argument("--dry-run", action="store_true", help="Do not send messages/emails")
     parser.add_argument("--live", action="store_true", help="Force live mode even if DRY_RUN=true")
@@ -119,6 +122,14 @@ def main() -> int:
         return 0
     finally:
         firestore_client.release_run_lock(holder=holder)
+
+
+def _install_signal_handlers() -> None:
+    def _handle_signal(signum: int, _frame: FrameType | None) -> None:
+        raise KeyboardInterrupt(f"received signal {signum}")
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
 
 
 def _build_scrape_client(settings: Settings) -> LocalScrapeClient:

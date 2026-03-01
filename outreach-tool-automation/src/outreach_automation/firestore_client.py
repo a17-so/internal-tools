@@ -82,6 +82,9 @@ class FirestoreClient:
         if data.get("holder") == holder:
             lock_ref.delete()
 
+    def force_release_run_lock(self) -> None:
+        self._db.collection("locks").document("orchestrator").delete()
+
     def next_account(self, platform: Platform) -> Account | None:
         candidates = sorted(
             self._active_account_docs(platform),

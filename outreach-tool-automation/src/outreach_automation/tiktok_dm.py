@@ -171,26 +171,25 @@ async def _type_message(page: Any, input_locator: Any, text: str) -> None:
     await input_locator.click()
     with contextlib.suppress(Exception):
         await input_locator.fill("")
-    lines = text.split("\n")
-    for idx, line in enumerate(lines):
-        if line:
-            with contextlib.suppress(Exception):
-                await input_locator.type(line, delay=random.randint(6, 16))
-            if line and not await _has_composer_text(input_locator):
-                await page.keyboard.insert_text(line)
-        if idx < len(lines) - 1:
-            await page.keyboard.press("Shift+Enter")
-
-
-async def _has_composer_text(input_locator: Any) -> bool:
+        await input_locator.fill(text)
+        return
     with contextlib.suppress(Exception):
-        value = (await input_locator.inner_text()).strip()
-        if value:
-            return True
-    with contextlib.suppress(Exception):
-        value = (await input_locator.text_content() or "").strip()
-        return bool(value)
-    return False
+        await input_locator.click()
+        await page.keyboard.insert_text(text)
+        return
+    await input_locator.evaluate(
+        """(el, value) => {
+            el.focus();
+            if ("value" in el) {
+              el.value = value;
+            } else {
+              el.textContent = value;
+            }
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+        }""",
+        text,
+    )
 
 
 async def _send_message(page: Any) -> None:

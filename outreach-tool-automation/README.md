@@ -110,6 +110,12 @@ Stop an active run:
 # press Ctrl+C in the same terminal
 ```
 
+Clear a stale run lock if a prior process crashed:
+
+```bash
+python -m outreach_automation.unlock_run_lock
+```
+
 Current success policy:
 - A lead is marked `Processed` if any channel (`email`, `instagram`, or `tiktok`) sends successfully.
 - All enabled channels are still attempted per lead.

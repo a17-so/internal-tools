@@ -59,6 +59,10 @@ Authentication options:
   - `RAW_LEADS_URL_COLUMN`
   - `RAW_LEADS_TIER_COLUMN`
   - `RAW_LEADS_STATUS_COLUMN`
+- Optional sender pinning (recommended while you test with one operator account):
+  - `EMAIL_SENDER_HANDLE=ethan@a17.so`
+  - `INSTAGRAM_SENDER_HANDLE=@ethan.peps`
+  - `TIKTOK_SENDER_HANDLE=@regen.app`
 
 Scrape setup:
 - Set `SEARCHAPI_KEY`; local scraper uses `LOCAL_TEMPLATES_DIR` scripts.
@@ -98,6 +102,12 @@ python -m outreach_automation.run_once --live --channels instagram
 python -m outreach_automation.run_once --live --channels email,tiktok
 # force rerun same lead URL for testing
 python -m outreach_automation.run_once --live --channels instagram --lead-row-index 15 --ignore-dedupe
+```
+
+Stop an active run:
+
+```bash
+# press Ctrl+C in the same terminal
 ```
 
 Current success policy:

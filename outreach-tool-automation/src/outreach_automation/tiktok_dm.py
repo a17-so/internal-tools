@@ -171,10 +171,26 @@ async def _type_message(page: Any, input_locator: Any, text: str) -> None:
     await input_locator.click()
     with contextlib.suppress(Exception):
         await input_locator.fill("")
+    lines = text.split("\n")
+    for idx, line in enumerate(lines):
+        if line:
+            with contextlib.suppress(Exception):
+                await input_locator.type(line, delay=random.randint(6, 16))
+            if line and not await _has_composer_text(input_locator):
+                await page.keyboard.insert_text(line)
+        if idx < len(lines) - 1:
+            await page.keyboard.press("Shift+Enter")
+
+
+async def _has_composer_text(input_locator: Any) -> bool:
     with contextlib.suppress(Exception):
-        await input_locator.type(text, delay=random.randint(6, 16))
-        return
-    await page.keyboard.insert_text(text)
+        value = (await input_locator.inner_text()).strip()
+        if value:
+            return True
+    with contextlib.suppress(Exception):
+        value = (await input_locator.text_content() or "").strip()
+        return bool(value)
+    return False
 
 
 async def _send_message(page: Any) -> None:

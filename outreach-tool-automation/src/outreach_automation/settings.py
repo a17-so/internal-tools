@@ -33,6 +33,9 @@ class Settings:
     batch_size: int
     run_lock_ttl_seconds: int
     sender_profile: str
+    email_sender_handle: str | None
+    instagram_sender_handle: str | None
+    tiktok_sender_handle: str | None
     dry_run: bool
     email_send_enabled: bool
     gmail_client_id: str | None
@@ -106,6 +109,9 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         batch_size=int(os.getenv("BATCH_SIZE", "100")),
         run_lock_ttl_seconds=int(os.getenv("RUN_LOCK_TTL_SECONDS", "1800")),
         sender_profile=os.getenv("SENDER_PROFILE", "default"),
+        email_sender_handle=os.getenv("EMAIL_SENDER_HANDLE", "").strip() or None,
+        instagram_sender_handle=os.getenv("INSTAGRAM_SENDER_HANDLE", "").strip() or None,
+        tiktok_sender_handle=os.getenv("TIKTOK_SENDER_HANDLE", "").strip() or None,
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
         email_send_enabled=os.getenv("EMAIL_SEND_ENABLED", "true").lower() == "true",
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID"),

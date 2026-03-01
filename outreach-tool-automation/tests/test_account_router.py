@@ -27,6 +27,12 @@ class FakeFirestore:
     def next_account(self, platform: Platform) -> Account | None:
         return self._accounts.get(platform)
 
+    def next_account_for_handle(self, platform: Platform, handle: str) -> Account | None:
+        account = self._accounts.get(platform)
+        if account is None:
+            return None
+        return account if account.handle.lower() == handle.lower() else None
+
 
 def test_route_all() -> None:
     router = AccountRouter(FakeFirestore())

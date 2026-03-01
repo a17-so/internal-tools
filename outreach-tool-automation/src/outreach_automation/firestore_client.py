@@ -96,6 +96,22 @@ class FirestoreClient:
                 return acc
         return None
 
+    def next_account_for_handle(self, platform: Platform, handle: str) -> Account | None:
+        normalized = handle.strip().lower()
+        if not normalized:
+            return None
+        candidates = self._active_account_docs(platform)
+        for doc in candidates:
+            acc = self._doc_to_account(doc.id, doc.to_dict() or {})
+            if acc.handle.strip().lower() != normalized:
+                continue
+            if acc.daily_sent >= acc.daily_limit:
+                return None
+            if self._try_increment_daily_sent(doc.id, acc.daily_sent):
+                return acc
+            break
+        return None
+
     def list_active_accounts(self, platform: Platform) -> list[Account]:
         docs = self._active_account_docs(platform)
         return [self._doc_to_account(doc.id, doc.to_dict() or {}) for doc in docs]

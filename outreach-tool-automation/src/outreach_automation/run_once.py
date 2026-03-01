@@ -82,7 +82,12 @@ def main() -> int:
             sheets_client=sheets_client,
             scrape_client=scrape_client,
             firestore_client=firestore_client,
-            account_router=AccountRouter(firestore_client),
+            account_router=AccountRouter(
+                firestore_client,
+                email_handle=settings.email_sender_handle,
+                instagram_handle=settings.instagram_sender_handle,
+                tiktok_handle=settings.tiktok_sender_handle,
+            ),
             email_sender=EmailSender(settings),
             ig_sender=InstagramDmSender(session_manager),
             tiktok_sender=TiktokDmSender(
@@ -98,11 +103,15 @@ def main() -> int:
             enable_tiktok="tiktok" in enabled_channels,
             dedupe_enabled=not args.ignore_dedupe,
         )
-        result = orchestrator.run(
-            batch_size=effective_batch,
-            dry_run=dry_run,
-            row_index=args.lead_row_index,
-        )
+        try:
+            result = orchestrator.run(
+                batch_size=effective_batch,
+                dry_run=dry_run,
+                row_index=args.lead_row_index,
+            )
+        except KeyboardInterrupt:
+            print("Run interrupted by user (Ctrl+C).")
+            return 130
         print(
             f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
             f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"

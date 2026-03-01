@@ -9,10 +9,11 @@ Multi-account, queue-based social uploader (TikTok implemented first) with a web
 - Account picker for uploads
 - Draft-first upload mode with optional direct mode
 - Video and slideshow (image set) post types
+- Production fallback for TikTok slideshows (auto-fallback to generated video if native slideshow init fails)
 - Bulk queue + batch dispatch with retries and throttling
 - Upload history + queue management
 - CLI support for single uploads and CSV batch ingestion
-- Provider abstraction with Instagram scaffold for next platform
+- Multi-provider architecture with TikTok + Instagram live (Instagram direct video/Reels)
 
 ## Tech
 
@@ -49,6 +50,9 @@ DATABASE_URL=file:./prisma/dev.db
 UPLOADS_DIR=./uploads
 QUEUE_GLOBAL_CONCURRENCY=5
 QUEUE_ACCOUNT_CONCURRENCY=2
+TIKTOK_SLIDESHOW_FALLBACK=video
+SLIDESHOW_FALLBACK_FRAME_SECONDS=1.2
+INSTAGRAM_GRAPH_VERSION=v24.0
 ```
 
 3. Push schema to SQLite:
@@ -70,6 +74,8 @@ npm run dev
 1. Login with `APP_USER_EMAIL` / `APP_USER_PASSWORD`
 2. Go to `Accounts` and click `Connect TikTok`
 3. Authorize account(s)
+   - TikTok: OAuth via `Connect TikTok`
+   - Instagram: token connect via `Accounts` page (`instagram_user_id` + access token)
 4. Go to `Compose`
 5. Select account + mode + post type
 6. Add posts to tray
@@ -93,6 +99,12 @@ uploader auth:token:create \
 
 ```bash
 uploader accounts:list --provider tiktok
+```
+
+```bash
+uploader accounts:connect-instagram \
+  --instagram-user-id <IG_USER_ID> \
+  --access-token <GRAPH_ACCESS_TOKEN>
 ```
 
 ### Queue one video
@@ -166,6 +178,7 @@ slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok
 ## Notes
 
 - Draft mode is default everywhere.
+- Instagram currently supports `direct` video/Reels mode only in this uploader.
 - Duplicate prevention uses idempotency hash (media + caption + mode + account).
 - Retries are exponential backoff for retryable errors.
-- Instagram provider is scaffolded but not implemented yet.
+- Compose includes bulk caption tools (prepend/append/find-replace) and slideshow image reordering.

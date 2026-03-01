@@ -26,18 +26,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-muted/30">
       <div className="mx-auto grid min-h-screen max-w-[1400px] grid-cols-1 gap-4 px-3 py-4 md:grid-cols-[250px_minmax(0,1fr)] md:px-5 md:py-5">
         <aside className="panel flex flex-col overflow-hidden md:sticky md:top-5 md:h-[calc(100vh-2.5rem)]">
-          <div className="border-b border-slate-100/90 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Internal Tools</p>
+          <div className="border-b px-4 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Internal Tools</p>
             <div className="mt-2 flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-sky-500 to-indigo-500 p-2 text-white">
+              <div className="rounded-lg bg-primary p-2 text-primary-foreground">
                 <Layers className="h-4 w-4" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-slate-900">Uploader V2</h1>
-                <p className="text-xs text-slate-500">Multi-account control room</p>
+                <h1 className="text-lg font-semibold">Uploader V2</h1>
+                <p className="text-xs text-muted-foreground">Multi-account control room</p>
               </div>
             </div>
           </div>
@@ -53,21 +53,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   className={cn(
                     'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all',
                     active
-                      ? 'bg-gradient-to-r from-indigo-600 to-sky-600 font-semibold text-white shadow-[0_12px_22px_-14px_rgba(56,89,220,0.8)]'
-                      : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   )}
                 >
-                  <Icon className={cn('h-4 w-4', active ? 'text-white' : 'text-slate-500 group-hover:text-slate-700')} />
+                  <Icon className={cn('h-4 w-4', active ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground')} />
                   <div className="min-w-0">
                     <p className="truncate">{item.label}</p>
-                    <p className={cn('truncate text-[11px]', active ? 'text-white/85' : 'text-slate-400')}>{item.hint}</p>
+                    <p className={cn('truncate text-[11px]', active ? 'text-primary-foreground/80' : 'text-muted-foreground/80')}>{item.hint}</p>
                   </div>
                 </Link>
               );
             })}
           </nav>
 
-          <div className="mx-3 mt-auto space-y-2 border-t border-slate-100/90 py-3">
+          <div className="mx-3 mt-auto space-y-2 border-t py-3">
             <Button asChild className="w-full justify-start rounded-xl" size="sm">
               <Link href="/compose">
                 <Send className="h-4 w-4" />

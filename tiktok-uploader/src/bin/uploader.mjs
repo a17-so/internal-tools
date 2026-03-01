@@ -71,6 +71,7 @@ function normalizeCsvRow(row, root) {
   const mode = (row.mode || 'draft').trim();
   const caption = row.caption || '';
   const platform = (row.platform || 'tiktok').trim();
+  const scheduleAt = (row.schedule_at || '').trim();
 
   if (!fileType || !accountId || !mode) {
     throw new Error('CSV row missing required fields: file_type, account_id, mode');
@@ -89,6 +90,7 @@ function normalizeCsvRow(row, root) {
       provider: platform,
       videoPath,
       clientRef: row.client_ref || undefined,
+      scheduleAt: scheduleAt || undefined,
     };
   }
 
@@ -108,6 +110,7 @@ function normalizeCsvRow(row, root) {
       provider: platform,
       imagePaths,
       clientRef: row.client_ref || undefined,
+      scheduleAt: scheduleAt || undefined,
     };
   }
 
@@ -304,6 +307,7 @@ program
   .requiredOption('--caption <text>', 'Caption')
   .requiredOption('--file <path>', 'Video path')
   .option('--mode <mode>', 'draft|direct', 'draft')
+  .option('--schedule-at <iso>', 'Optional ISO datetime for scheduled dispatch')
   .option('--base-url <url>', 'Uploader base URL')
   .option('--api-key <key>', 'API key override')
   .option('--send-now', 'Trigger dispatcher after enqueue', true)
@@ -320,6 +324,7 @@ program
         postType: 'video',
         caption: opts.caption,
         videoPath: path.resolve(opts.file),
+        scheduleAt: opts.scheduleAt || undefined,
         sendNow: Boolean(opts.sendNow),
       }),
     });
@@ -334,6 +339,7 @@ program
   .requiredOption('--caption <text>', 'Caption')
   .requiredOption('--images <paths>', 'Comma-separated image paths')
   .option('--mode <mode>', 'draft|direct', 'draft')
+  .option('--schedule-at <iso>', 'Optional ISO datetime for scheduled dispatch')
   .option('--base-url <url>', 'Uploader base URL')
   .option('--api-key <key>', 'API key override')
   .option('--send-now', 'Trigger dispatcher after enqueue', true)
@@ -355,6 +361,7 @@ program
         postType: 'slideshow',
         caption: opts.caption,
         imagePaths: images,
+        scheduleAt: opts.scheduleAt || undefined,
         sendNow: Boolean(opts.sendNow),
       }),
     });

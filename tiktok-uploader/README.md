@@ -50,6 +50,11 @@ DATABASE_URL=file:./prisma/dev.db
 UPLOADS_DIR=./uploads
 QUEUE_GLOBAL_CONCURRENCY=5
 QUEUE_ACCOUNT_CONCURRENCY=2
+UPLOAD_FAILURE_WEBHOOK_URLS=https://hooks.slack.com/services/xxx,https://example.com/webhook
+RETRY_MAX_TIKTOK=4
+RETRY_MAX_INSTAGRAM=3
+RETRY_MAX_YOUTUBE=4
+RETRY_MAX_FACEBOOK=3
 TIKTOK_SLIDESHOW_FALLBACK=video
 SLIDESHOW_FALLBACK_FRAME_SECONDS=1.2
 INSTAGRAM_GRAPH_VERSION=v24.0
@@ -144,7 +149,8 @@ uploader upload:file \
   --account <connected_account_id> \
   --caption "Caption text #tags" \
   --file ../edit-maker/output/feature_001.mp4 \
-  --mode draft
+  --mode draft \
+  --schedule-at "2026-03-05T18:30:00Z"
 ```
 
 ### Queue one slideshow
@@ -196,6 +202,7 @@ Optional columns:
 - `platform` (defaults to `tiktok`)
 - `client_ref`
 - `schedule_at` (currently ignored)
+  - `schedule_at` supports scheduled dispatch (ISO timestamp or local datetime string)
 
 Example:
 
@@ -213,6 +220,8 @@ slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok
 - Facebook currently supports `direct` page video uploads only.
 - Duplicate prevention uses idempotency hash (media + caption + mode + account).
 - Retries are exponential backoff for retryable errors.
+- Retry policy is provider-specific and configurable with `RETRY_*` env vars.
 - Compose includes bulk caption tools (prepend/append/find-replace) and slideshow image reordering.
 - Accounts page surfaces automated token-expiry warnings (`expires soon` / `needs reauth`).
 - Providers with refresh support (TikTok, YouTube, Instagram/Facebook long-lived exchange) attempt automatic token renewal during uploads.
+- Final job failures can push webhook notifications via `UPLOAD_FAILURE_WEBHOOK_URLS`.

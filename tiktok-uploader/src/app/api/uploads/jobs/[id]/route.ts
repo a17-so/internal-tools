@@ -15,6 +15,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         connectedAccount: true,
         assets: { orderBy: { sortOrder: 'asc' } },
         attempts: { orderBy: { createdAt: 'desc' } },
+        notifications: { orderBy: { createdAt: 'desc' } },
       },
     });
 

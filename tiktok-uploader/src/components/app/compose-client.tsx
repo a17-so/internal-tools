@@ -26,6 +26,7 @@ type DraftItem = {
   mode: UploadMode;
   postType: UploadPostType;
   caption: string;
+  scheduleAt?: string;
   video?: File;
   images?: File[];
 };
@@ -46,6 +47,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
   const [mode, setMode] = useState<UploadMode>(UploadMode.draft);
   const [postType, setPostType] = useState<UploadPostType>(UploadPostType.video);
   const [caption, setCaption] = useState('');
+  const [scheduleAt, setScheduleAt] = useState('');
   const [video, setVideo] = useState<File | null>(null);
   const [images, setImages] = useState<File[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -134,11 +136,13 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
       mode,
       postType,
       caption,
+      scheduleAt: scheduleAt || undefined,
       video: video || undefined,
       images: images.length ? images : undefined,
     }]);
 
     setCaption('');
+    setScheduleAt('');
     setVideo(null);
     setImages([]);
     setDragIndex(null);
@@ -178,6 +182,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
         fd.set('mode', item.mode);
         fd.set('postType', item.postType);
         fd.set('caption', item.caption);
+        if (item.scheduleAt) fd.set('scheduleAt', item.scheduleAt);
         fd.set('batchId', batchId);
         fd.set('sendNow', 'false');
 
@@ -246,6 +251,11 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
           <Label>Caption</Label>
           <Input value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={cap?.captionLimit || 2200} placeholder="Caption + hashtags" />
           <p className="text-xs text-slate-500">{caption.length}/{cap?.captionLimit || 2200}</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Schedule At (optional)</Label>
+          <Input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} />
         </div>
 
         {postType === UploadPostType.video ? (
@@ -348,6 +358,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
               <div>
                 <p className="font-medium text-slate-900">{item.postType.toUpperCase()} · {item.mode.toUpperCase()}</p>
                 <p className="text-xs text-slate-500">{accountLabel(item.connectedAccountId)}</p>
+                {item.scheduleAt ? <p className="text-xs text-amber-700">Scheduled: {new Date(item.scheduleAt).toLocaleString()}</p> : null}
                 <p className="text-slate-600">{item.caption || '(No caption)'}</p>
               </div>
               <Button variant="outline" onClick={() => setTray((prev) => prev.filter((x) => x.id !== item.id))}>Remove</Button>

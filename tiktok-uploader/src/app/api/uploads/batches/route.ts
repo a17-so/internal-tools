@@ -13,6 +13,7 @@ const itemSchema = z.object({
   videoPath: z.string().optional(),
   imagePaths: z.array(z.string()).optional(),
   clientRef: z.string().optional(),
+  scheduleAt: z.string().optional(),
 });
 
 const schema = z.object({
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     const results = [] as Array<{ id: string; duplicate: boolean }>;
 
     for (const item of payload.jobs) {
+      const parsedScheduleAt = item.scheduleAt ? new Date(item.scheduleAt) : null;
+      if (parsedScheduleAt && Number.isNaN(parsedScheduleAt.getTime())) {
+        return NextResponse.json({ error: `Invalid scheduleAt datetime in batch item (${item.connectedAccountId})` }, { status: 400 });
+      }
+
       const jobInput = await buildJobInputFromFiles({
         userId: user.id,
         batchId: batch.id,
@@ -40,6 +46,7 @@ export async function POST(request: Request) {
         videoPath: item.videoPath,
         imagePaths: item.imagePaths,
         clientRef: item.clientRef,
+        scheduledAt: parsedScheduleAt,
       });
 
       const { job, duplicate } = await createJob(jobInput);

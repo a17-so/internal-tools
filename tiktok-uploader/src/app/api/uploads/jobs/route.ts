@@ -18,6 +18,7 @@ const createJsonSchema = z.object({
   imagePaths: z.array(z.string()).optional(),
   batchId: z.string().optional(),
   clientRef: z.string().optional(),
+  scheduleAt: z.string().optional(),
   sendNow: z.boolean().optional().default(true),
 });
 
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
         connectedAccount: true,
         assets: { orderBy: { sortOrder: 'asc' } },
         attempts: { orderBy: { createdAt: 'desc' }, take: 5 },
+        notifications: { orderBy: { createdAt: 'desc' }, take: 5 },
       },
     });
 
@@ -104,6 +106,8 @@ export async function POST(request: Request) {
       const postType = (String(formData.get('postType') || UploadPostType.video) as UploadPostType);
       const caption = String(formData.get('caption') || '');
       const batchId = formData.get('batchId') ? String(formData.get('batchId')) : undefined;
+      const scheduleAtRaw = formData.get('scheduleAt') ? String(formData.get('scheduleAt')) : undefined;
+      const scheduleAt = scheduleAtRaw ? new Date(scheduleAtRaw) : null;
       const sendNow = String(formData.get('sendNow') || 'true') !== 'false';
 
       const account = await validateCapability({
@@ -145,6 +149,7 @@ export async function POST(request: Request) {
         caption,
         videoPath,
         imagePaths,
+        scheduledAt: scheduleAt,
       });
 
       const { job, duplicate } = await createJob(jobInput);
@@ -156,6 +161,10 @@ export async function POST(request: Request) {
     }
 
     const payload = createJsonSchema.parse(await request.json());
+    const parsedScheduleAt = payload.scheduleAt ? new Date(payload.scheduleAt) : null;
+    if (parsedScheduleAt && Number.isNaN(parsedScheduleAt.getTime())) {
+      return NextResponse.json({ error: 'Invalid scheduleAt datetime' }, { status: 400 });
+    }
     const account = await validateCapability({
       accountId: payload.connectedAccountId,
       userId: user.id,
@@ -175,6 +184,7 @@ export async function POST(request: Request) {
       videoPath: payload.videoPath,
       imagePaths: payload.imagePaths,
       clientRef: payload.clientRef,
+      scheduledAt: parsedScheduleAt,
     });
 
     const { job, duplicate } = await createJob(jobInput);

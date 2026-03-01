@@ -1,5 +1,6 @@
 'use client';
 
+import { PauseCircle, PlayCircle, Power, TimerReset } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -50,35 +51,42 @@ export default function QueueControls({ initialControl }: { initialControl: Queu
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">Queue Controls</h3>
-        <span className="text-xs text-slate-500">Mode: {control.dispatchMode}</span>
+    <div className="panel p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Queue Controls</h3>
+          <p className="text-xs text-slate-500">Dispatch mode: {control.dispatchMode === 'due_only' ? 'Due jobs only' : 'All queued jobs'}</p>
+        </div>
+        <span className={`status-pill ${control.paused ? 'status-failed' : 'status-succeeded'}`}>{control.paused ? 'paused' : 'active'}</span>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={loading} onClick={() => void updateControl({ paused: !control.paused })}>
+        <Button variant="outline" className="rounded-xl" disabled={loading} onClick={() => void updateControl({ paused: !control.paused })}>
+          {control.paused ? <PlayCircle className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
           {control.paused ? 'Resume Queue' : 'Pause Queue'}
         </Button>
 
         <Button
           variant="outline"
+          className="rounded-xl"
           disabled={loading}
           onClick={() => void updateControl({ dispatchMode: control.dispatchMode === 'due_only' ? 'all_queued' : 'due_only' })}
         >
-          Toggle Mode ({control.dispatchMode === 'due_only' ? 'Switch to all queued' : 'Switch to due only'})
+          <Power className="h-4 w-4" />
+          {control.dispatchMode === 'due_only' ? 'Switch to all queued' : 'Switch to due only'}
         </Button>
 
-        <Button disabled={loading} onClick={() => void runDispatch('due_only')}>
+        <Button className="rounded-xl" disabled={loading} onClick={() => void runDispatch('due_only')}>
           Drain Due Jobs
         </Button>
 
-        <Button variant="outline" disabled={loading} onClick={() => void runDispatch('all_queued')}>
+        <Button variant="outline" className="rounded-xl" disabled={loading} onClick={() => void runDispatch('all_queued')}>
+          <TimerReset className="h-4 w-4" />
           Drain All Queued
         </Button>
 
         {control.paused ? (
-          <Button variant="outline" disabled={loading} onClick={() => void runDispatch(control.dispatchMode, true)}>
+          <Button variant="outline" className="rounded-xl" disabled={loading} onClick={() => void runDispatch(control.dispatchMode, true)}>
             Run Once While Paused
           </Button>
         ) : null}

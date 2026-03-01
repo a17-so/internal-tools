@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -26,9 +27,12 @@ export type AccountView = {
   }>;
 };
 
+const providerOptions = ['all', 'tiktok', 'instagram', 'youtube', 'facebook'];
+
 export default function AccountsClient({ initialAccounts }: { initialAccounts: AccountView[] }) {
   const [accounts, setAccounts] = useState<AccountView[]>(initialAccounts);
   const [loading, setLoading] = useState(false);
+  const [providerFilter, setProviderFilter] = useState('all');
   const [igUserId, setIgUserId] = useState('');
   const [igAccessToken, setIgAccessToken] = useState('');
   const [igDisplayName, setIgDisplayName] = useState('');
@@ -46,7 +50,15 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
     setLoading(false);
   };
 
-  const hasAccounts = useMemo(() => accounts.length > 0, [accounts]);
+  const filteredAccounts = useMemo(() => {
+    if (providerFilter === 'all') return accounts;
+    return accounts.filter((account) => account.provider === providerFilter);
+  }, [accounts, providerFilter]);
+
+  const warningAccounts = useMemo(
+    () => accounts.filter((a) => a.health?.needsReauth || a.health?.expiresSoon),
+    [accounts]
+  );
 
   const removeAccount = async (id: string) => {
     const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
@@ -150,162 +162,149 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Accounts</h2>
-          <p className="text-slate-600">Connect and manage TikTok, Instagram, YouTube, and Facebook accounts.</p>
+    <div className="space-y-4">
+      <section className="panel p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">Accounts</h2>
+            <p className="text-slate-600">Connect channels once, then target them in compose and CLI.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => void refresh()} disabled={loading}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+            <Button asChild className="rounded-xl">
+              <Link href="/api/auth/tiktok">Connect TikTok</Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/api/auth/instagram">OAuth Instagram</Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/api/auth/youtube">OAuth YouTube</Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/api/auth/facebook">OAuth Facebook</Link>
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => void refresh()} disabled={loading}>Refresh</Button>
-          <Button asChild>
-            <Link href="/api/auth/tiktok">Connect TikTok</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/api/auth/instagram">OAuth Instagram</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/api/auth/youtube">OAuth YouTube</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/api/auth/facebook">OAuth Facebook</Link>
-          </Button>
-        </div>
-      </div>
 
-      {loading ? <p className="text-slate-500">Loading...</p> : null}
-
-      {!loading && !hasAccounts ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-          No connected accounts yet.
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="pill">Total: {accounts.length}</span>
+          <span className="pill">Needs Reauth: {warningAccounts.filter((a) => a.health?.needsReauth).length}</span>
+          <span className="pill">Expiring Soon: {warningAccounts.filter((a) => a.health?.expiresSoon).length}</span>
         </div>
+      </section>
+
+      {warningAccounts.length ? (
+        <section className="panel border-amber-200 bg-amber-50/90 p-4">
+          <div className="mb-2 flex items-center gap-2 text-amber-800">
+            <ShieldAlert className="h-4 w-4" />
+            <p className="text-sm font-semibold">Authentication attention needed</p>
+          </div>
+          <div className="space-y-1 text-sm text-amber-900">
+            {warningAccounts.map((a) => (
+              <p key={`warn-${a.id}`}>{a.provider} · {a.displayName || a.username || a.externalAccountId}: {a.health?.message}</p>
+            ))}
+          </div>
+        </section>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {accounts.some((a) => a.health?.needsReauth || a.health?.expiresSoon) ? (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 md:col-span-2">
-            <p className="font-semibold">Authentication Warnings</p>
-            {accounts
-              .filter((a) => a.health?.needsReauth || a.health?.expiresSoon)
-              .map((a) => (
-                <p key={`warn-${a.id}`}>
-                  {a.provider} · {a.displayName || a.username || a.externalAccountId}: {a.health?.message}
-                </p>
-              ))}
+      <section className="panel p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">Connected accounts</h3>
+          <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+            {providerOptions.map((provider) => (
+              <button
+                key={provider}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium ${providerFilter === provider ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                onClick={() => setProviderFilter(provider)}
+              >
+                {provider}
+              </button>
+            ))}
           </div>
+        </div>
+
+        {loading ? <p className="text-sm text-slate-500">Loading...</p> : null}
+        {!loading && !filteredAccounts.length ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center text-slate-500">No accounts in this filter.</div>
         ) : null}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect Instagram (token method)</h3>
-          <p className="mb-4 text-xs text-slate-500">
-            Use an Instagram Graph API token and professional IG user ID. Instagram currently supports direct video/Reels in this uploader.
-          </p>
-          <div className="grid gap-2 md:grid-cols-3">
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Instagram User ID"
-              value={igUserId}
-              onChange={(e) => setIgUserId(e.target.value)}
-            />
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Display Name (optional)"
-              value={igDisplayName}
-              onChange={(e) => setIgDisplayName(e.target.value)}
-            />
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Access Token"
-              value={igAccessToken}
-              onChange={(e) => setIgAccessToken(e.target.value)}
-            />
-          </div>
-          <div className="mt-3">
-            <Button onClick={() => void connectInstagram()} disabled={loading}>Connect Instagram</Button>
-          </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {filteredAccounts.map((account) => {
+            const cap = account.capabilities[0];
+            const hasWarning = Boolean(account.health?.needsReauth || account.health?.expiresSoon);
+            return (
+              <article key={account.id} className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{account.provider}</p>
+                    <h4 className="mt-1 text-lg font-semibold text-slate-900">{account.displayName || account.username || account.externalAccountId}</h4>
+                    <p className="text-sm text-slate-500">{account.username ? `@${account.username}` : account.externalAccountId}</p>
+                  </div>
+                  <Button variant="outline" size="sm" className="rounded-lg" onClick={() => void removeAccount(account.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <span className="pill">Draft: {cap?.supportsDraftVideo ? 'Yes' : 'No'}</span>
+                  <span className="pill">Direct: {cap?.supportsDirectVideo ? 'Yes' : 'No'}</span>
+                  <span className="pill">Slideshow: {cap?.supportsPhotoSlideshow ? 'Yes' : 'No'}</span>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/80 p-2.5 text-xs text-slate-600">
+                  {hasWarning ? (
+                    <p className="flex items-center gap-1.5 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />{account.health?.message}</p>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />Token status healthy</p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect YouTube (token method)</h3>
-          <p className="mb-4 text-xs text-slate-500">
-            Use a YouTube Data API OAuth access token with channel scope. This uploader supports direct video upload (set to private).
-          </p>
-          <div className="grid gap-2 md:grid-cols-2">
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Display Name (optional)"
-              value={ytDisplayName}
-              onChange={(e) => setYtDisplayName(e.target.value)}
-            />
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Access Token"
-              value={ytAccessToken}
-              onChange={(e) => setYtAccessToken(e.target.value)}
-            />
-          </div>
-          <div className="mt-3">
-            <Button onClick={() => void connectYouTube()} disabled={loading}>Connect YouTube</Button>
-          </div>
+      </section>
+
+      <section className="panel p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-slate-500" />
+          <h3 className="text-sm font-semibold text-slate-900">Manual token connect</h3>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect Facebook (token method)</h3>
-          <p className="mb-4 text-xs text-slate-500">
-            Use a Facebook Page access token and Page ID. This uploader supports direct video upload for connected pages.
-          </p>
-          <div className="grid gap-2 md:grid-cols-3">
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Page ID"
-              value={fbPageId}
-              onChange={(e) => setFbPageId(e.target.value)}
-            />
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Display Name (optional)"
-              value={fbDisplayName}
-              onChange={(e) => setFbDisplayName(e.target.value)}
-            />
-            <input
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Access Token"
-              value={fbAccessToken}
-              onChange={(e) => setFbAccessToken(e.target.value)}
-            />
-          </div>
-          <div className="mt-3">
-            <Button onClick={() => void connectFacebook()} disabled={loading}>Connect Facebook</Button>
-          </div>
-        </div>
-
-        {accounts.map((account) => {
-          const cap = account.capabilities[0];
-          return (
-            <div key={account.id} className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-slate-500">{account.provider}</p>
-                  <h3 className="text-lg font-semibold text-slate-900">{account.displayName || account.username || account.externalAccountId}</h3>
-                  <p className="text-sm text-slate-600">{account.username ? `@${account.username}` : account.externalAccountId}</p>
-                  {account.health?.message ? (
-                    <p className={`mt-1 text-xs ${account.health.needsReauth ? 'text-red-600' : 'text-amber-700'}`}>
-                      {account.health.message}
-                    </p>
-                  ) : null}
-                </div>
-                <Button variant="outline" onClick={() => void removeAccount(account.id)}>Remove</Button>
-              </div>
-              {cap ? (
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className="rounded bg-slate-100 px-2 py-1">Draft video: {cap.supportsDraftVideo ? 'Yes' : 'No'}</span>
-                  <span className="rounded bg-slate-100 px-2 py-1">Direct video: {cap.supportsDirectVideo ? 'Yes' : 'No'}</span>
-                  <span className="rounded bg-slate-100 px-2 py-1">Slideshow: {cap.supportsPhotoSlideshow ? 'Yes' : 'No'}</span>
-                </div>
-              ) : null}
+        <div className="grid gap-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Instagram</p>
+            <div className="grid gap-2 md:grid-cols-3">
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Instagram User ID" value={igUserId} onChange={(e) => setIgUserId(e.target.value)} />
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Display Name (optional)" value={igDisplayName} onChange={(e) => setIgDisplayName(e.target.value)} />
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Access Token" value={igAccessToken} onChange={(e) => setIgAccessToken(e.target.value)} />
             </div>
-          );
-        })}
-      </div>
+            <Button size="sm" className="mt-2 rounded-lg" onClick={() => void connectInstagram()} disabled={loading}>Connect Instagram</Button>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">YouTube</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Display Name (optional)" value={ytDisplayName} onChange={(e) => setYtDisplayName(e.target.value)} />
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Access Token" value={ytAccessToken} onChange={(e) => setYtAccessToken(e.target.value)} />
+            </div>
+            <Button size="sm" className="mt-2 rounded-lg" onClick={() => void connectYouTube()} disabled={loading}>Connect YouTube</Button>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <p className="mb-2 text-sm font-semibold text-slate-800">Facebook</p>
+            <div className="grid gap-2 md:grid-cols-3">
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Page ID" value={fbPageId} onChange={(e) => setFbPageId(e.target.value)} />
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Display Name (optional)" value={fbDisplayName} onChange={(e) => setFbDisplayName(e.target.value)} />
+              <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Access Token" value={fbAccessToken} onChange={(e) => setFbAccessToken(e.target.value)} />
+            </div>
+            <Button size="sm" className="mt-2 rounded-lg" onClick={() => void connectFacebook()} disabled={loading}>Connect Facebook</Button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

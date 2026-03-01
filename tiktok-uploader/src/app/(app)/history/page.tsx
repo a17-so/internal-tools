@@ -21,10 +21,10 @@ export default async function HistoryPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <section className="panel p-5">
         <h2 className="text-2xl font-semibold text-slate-900">History</h2>
-        <p className="text-slate-600">Completed and failed upload history.</p>
-      </div>
+        <p className="text-slate-600">Audit completed, failed, and canceled jobs with quick search.</p>
+      </section>
       <JobsTable mode="history" initialJobs={jobs as unknown as JobView[]} />
     </div>
   );

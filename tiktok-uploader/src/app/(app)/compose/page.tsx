@@ -20,10 +20,10 @@ export default async function ComposePage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <section className="panel p-5">
         <h2 className="text-2xl font-semibold text-slate-900">Compose</h2>
-        <p className="text-slate-600">Build a mixed batch and dispatch all uploads together.</p>
-      </div>
+        <p className="text-slate-600">Build mixed video/slideshow batches and dispatch in one action.</p>
+      </section>
       <ComposeClient accounts={accounts as unknown as ComposeAccount[]} />
     </div>
   );

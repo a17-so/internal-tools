@@ -129,14 +129,14 @@ class TiktokDmSender:
                             await extra.close()
                 close_context = True
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
-            await _slow_settle(page)
+            await _settle_creator_profile_page(page)
             if await _needs_login(page):
                 raise RuntimeError("missing tiktok auth")
 
             opened_target_thread = await _open_profile_message_thread(page)
             if not opened_target_thread:
                 raise RuntimeError("missing tiktok target thread")
-            await _slow_settle(page)
+            await _settle_dm_thread_page(page)
 
             message_text = normalize_dm_text(dm_text)
             if not message_text:
@@ -196,10 +196,16 @@ async def _open_profile_message_thread(page: Any) -> bool:
     return False
 
 
-async def _slow_settle(page: Any) -> None:
+async def _settle_creator_profile_page(page: Any) -> None:
     with contextlib.suppress(Exception):
         await page.wait_for_load_state("networkidle", timeout=7000)
-    await page.wait_for_timeout(random.randint(1500, 3200))
+    await page.wait_for_timeout(random.randint(2600, 3400))
+
+
+async def _settle_dm_thread_page(page: Any) -> None:
+    with contextlib.suppress(Exception):
+        await page.wait_for_load_state("networkidle", timeout=2500)
+    await page.wait_for_timeout(random.randint(700, 1300))
 
 
 async def _needs_login(page: Any) -> bool:

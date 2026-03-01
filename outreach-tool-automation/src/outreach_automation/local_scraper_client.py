@@ -29,6 +29,13 @@ _LINK_HUB_DOMAINS = {
     "beacons.ai",
     "beacons.page",
     "campsite.bio",
+    "msha.ke",
+    "bio.site",
+    "tap.bio",
+    "hoo.be",
+    "allmylinks.com",
+    "lnk.to",
+    "carrd.co",
     "lnk.bio",
     "solo.to",
     "stan.store",
@@ -188,11 +195,22 @@ def _extract_contact_from_link_page(link_url: str) -> tuple[str, str]:
 
 
 def _extract_email(text: str) -> str:
-    match = _EMAIL_RE.search(text or "")
+    raw = text or ""
+    normalized = _normalize_obfuscated_email(raw)
+    match = _EMAIL_RE.search(raw) or _EMAIL_RE.search(normalized)
     if not match:
         return ""
     email = match.group(0).replace("(at)", "@").replace(" ", "")
     return "" if email.lower() in _IGNORE_EMAILS else email
+
+
+def _normalize_obfuscated_email(value: str) -> str:
+    text = value
+    text = re.sub(r"\s+at\s+", "@", text, flags=re.I)
+    text = re.sub(r"\s+dot\s+", ".", text, flags=re.I)
+    text = re.sub(r"\(at\)", "@", text, flags=re.I)
+    text = re.sub(r"\(dot\)", ".", text, flags=re.I)
+    return text
 
 
 def _is_valid_handle(value: str) -> bool:

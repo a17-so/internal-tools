@@ -217,11 +217,12 @@ def test_missing_tier_fails_validation() -> None:
     result = orchestrator.run(batch_size=1, dry_run=True)
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_missing_tier"
-    assert sheets.error_rows == [2]
+    assert sheets.error_rows == []
     assert sheets.cleared_error_rows == []
-    assert sheets.cleared_rows == []
+    assert sheets.cleared_rows == [2]
     assert scraper.last_category is None
     assert len(firestore.jobs) == 1
+    assert result.failed_tiktok_links == []
 
 
 def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> None:
@@ -247,9 +248,10 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
     assert sheets.error_rows == []
     assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == [2]
+    assert result.failed_tiktok_links == []
 
 
-def test_full_failure_marks_link_error() -> None:
+def test_full_failure_clears_link_and_tracks_tiktok_failure() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()
     scraper = FakeScraper()
@@ -269,9 +271,10 @@ def test_full_failure_marks_link_error() -> None:
     result = orchestrator.run(batch_size=1, dry_run=False)
     assert result.failed == 1
     assert sheets._statuses[2].startswith("failed_")
-    assert sheets.error_rows == [2]
+    assert sheets.error_rows == []
     assert sheets.cleared_error_rows == []
-    assert sheets.cleared_rows == []
+    assert sheets.cleared_rows == [2]
+    assert result.failed_tiktok_links == ["https://tiktok.com/@user"]
 
 
 def test_invalid_tier_fails_validation() -> None:
@@ -297,5 +300,7 @@ def test_invalid_tier_fails_validation() -> None:
     result = orchestrator.run(batch_size=1, dry_run=True)
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_invalid_tier"
-    assert sheets.error_rows == [2]
+    assert sheets.error_rows == []
+    assert sheets.cleared_rows == [2]
     assert scraper.last_category is None
+    assert result.failed_tiktok_links == []

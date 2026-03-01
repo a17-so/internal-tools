@@ -119,6 +119,10 @@ def main() -> int:
             f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
             f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"
         )
+        if result.failed_tiktok_links:
+            print("failed_tiktok_links:")
+            for url in result.failed_tiktok_links:
+                print(f"- {url}")
         return 0
     finally:
         firestore_client.release_run_lock(holder=holder)

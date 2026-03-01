@@ -90,6 +90,7 @@ class OrchestratorResult:
     processed: int
     failed: int
     skipped: int
+    failed_tiktok_links: list[str]
 
 
 class Orchestrator:
@@ -129,21 +130,29 @@ class Orchestrator:
         processed = 0
         failed = 0
         skipped = 0
+        failed_tiktok_links: list[str] = []
 
         for lead in leads:
-            result = self._process_lead(lead=lead, dry_run=dry_run)
+            result, failed_tiktok_link = self._process_lead(lead=lead, dry_run=dry_run)
             if result == "processed":
                 processed += 1
             elif result == "skipped":
                 skipped += 1
             else:
                 failed += 1
+            if failed_tiktok_link:
+                failed_tiktok_links.append(failed_tiktok_link)
 
-        return OrchestratorResult(processed=processed, failed=failed, skipped=skipped)
+        return OrchestratorResult(
+            processed=processed,
+            failed=failed,
+            skipped=skipped,
+            failed_tiktok_links=failed_tiktok_links,
+        )
 
-    def _process_lead(self, lead: LeadRow, dry_run: bool) -> str:
+    def _process_lead(self, lead: LeadRow, dry_run: bool) -> tuple[str, str | None]:
         if self._dedupe_enabled and self._firestore.was_processed_url(lead.creator_url):
-            return "skipped"
+            return "skipped", None
 
         now = datetime.now(UTC)
         email_result = ChannelResult(status="skipped", error_code="not_attempted")
@@ -164,18 +173,19 @@ class Orchestrator:
         except MissingTierError:
             self._sheets.update_status(lead.row_index, "failed_missing_tier")
             self._write_validation_job(lead, "failed_missing_tier", dry_run)
-            self._sheets.mark_creator_link_error(lead)
-            return "failed"
+            self._sheets.clear_creator_link(lead)
+            return "failed", None
         except InvalidTierError:
             self._sheets.update_status(lead.row_index, "failed_invalid_tier")
             self._write_validation_job(lead, "failed_invalid_tier", dry_run)
-            self._sheets.mark_creator_link_error(lead)
-            return "failed"
+            self._sheets.clear_creator_link(lead)
+            return "failed", None
 
         if not lead.creator_url.strip():
             self._sheets.update_status(lead.row_index, "failed_missing_url")
             self._write_validation_job(lead, "failed_missing_url", dry_run)
-            return "failed"
+            self._sheets.clear_creator_link(lead)
+            return "failed", None
 
         try:
             scrape = self._scraper.scrape(
@@ -236,13 +246,7 @@ class Orchestrator:
 
             final_status = final_sheet_status(email_result, ig_result, tiktok_result)
             self._sheets.update_status(lead.row_index, final_status)
-            if final_status == "Processed":
-                self._sheets.clear_creator_link(lead)
-            elif final_status.startswith("failed"):
-                if _any_channel_sent(email_result, ig_result, tiktok_result):
-                    self._sheets.clear_creator_link_error(lead)
-                else:
-                    self._sheets.mark_creator_link_error(lead)
+            self._sheets.clear_creator_link(lead)
 
             if final_status == "Processed":
                 return_value = "processed"
@@ -258,8 +262,7 @@ class Orchestrator:
         except Exception as exc:
             final_status = "failed_internal_error"
             self._sheets.update_status(lead.row_index, final_status)
-            if not _any_channel_sent(email_result, ig_result, tiktok_result):
-                self._sheets.mark_creator_link_error(lead)
+            self._sheets.clear_creator_link(lead)
             job_error = str(exc)
             job_status = "dead"
             self._firestore.mark_dead_job(str(uuid4()), reason=str(exc))
@@ -284,7 +287,8 @@ class Orchestrator:
             status=job_status,
         )
         self._firestore.write_job(str(uuid4()), record)
-        return return_value
+        failed_tiktok_link = lead.creator_url if tiktok_result.status == "failed" else None
+        return return_value, failed_tiktok_link
 
     def _write_validation_job(self, lead: LeadRow, status: str, dry_run: bool) -> None:
         now = datetime.now(UTC)
@@ -304,7 +308,3 @@ class Orchestrator:
             status="dead",
         )
         self._firestore.write_job(str(uuid4()), record)
-
-
-def _any_channel_sent(*results: ChannelResult) -> bool:
-    return any(result.status == "sent" for result in results)

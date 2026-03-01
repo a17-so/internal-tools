@@ -11,13 +11,16 @@ Usage:
 import argparse
 import logging
 import sys
+from pathlib import Path
 
+from config import OUTPUT_DIR
 from generator import (
     audit_feature_assets,
     generate_video,
     get_feature_info,
     list_all_features,
 )
+from uploader_csv import CsvExportOptions, discover_output_videos, export_uploader_csv
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +99,19 @@ def cmd_batch(args: argparse.Namespace) -> None:
         for o in outputs:
             print(f"  - {o}")
 
+        if args.export_csv:
+            csv_path = Path(args.export_csv).expanduser()
+            options = CsvExportOptions(
+                account_id=args.account_id,
+                mode=args.upload_mode,
+                platform=args.platform,
+                hashtags=args.hashtags,
+                root_dir=Path(args.root_dir).expanduser(),
+                absolute_paths=args.absolute_paths,
+            )
+            row_count = export_uploader_csv(outputs, csv_path, options)
+            print(f"\n✓ Exported {row_count} row(s) to uploader CSV: {csv_path}")
+
 def cmd_audit(_args: argparse.Namespace) -> None:
     """Run a consistency audit across hooks and assets."""
     errors, warnings = audit_feature_assets()
@@ -116,6 +132,29 @@ def cmd_audit(_args: argparse.Namespace) -> None:
 
     if errors:
         sys.exit(1)
+
+def cmd_export_uploader_csv(args: argparse.Namespace) -> None:
+    """Export uploader CSV from existing edit-maker output files."""
+    root_dir = Path(args.root_dir).expanduser()
+    videos = discover_output_videos(root_dir)
+
+    if not videos:
+        logger.error("No .mp4 files found in %s", root_dir)
+        sys.exit(1)
+
+    output_csv = Path(args.output_csv).expanduser()
+    options = CsvExportOptions(
+        account_id=args.account_id,
+        mode=args.upload_mode,
+        platform=args.platform,
+        hashtags=args.hashtags,
+        root_dir=root_dir,
+        absolute_paths=args.absolute_paths,
+    )
+    row_count = export_uploader_csv(videos, output_csv, options)
+
+    print(f"✓ Exported {row_count} row(s) to: {output_csv}")
+    print("Next: uploader upload:batch --csv <that file> --root <root_dir> --send-now")
 
 
 def main() -> None:
@@ -148,11 +187,81 @@ def main() -> None:
     batch_parser.add_argument("feature", help="Feature ID")
     batch_parser.add_argument("-n", "--count", type=int, default=2, help="Number of videos")
     batch_parser.add_argument("--dry-run", action="store_true", help="Test without rendering")
+    batch_parser.add_argument(
+        "--export-csv",
+        help="Write uploader CSV after generation (requires account options)",
+    )
+    batch_parser.add_argument(
+        "--account-id",
+        default="",
+        help="Connected account ID for uploader CSV rows",
+    )
+    batch_parser.add_argument(
+        "--upload-mode",
+        default="draft",
+        choices=["draft", "direct"],
+        help="Uploader mode for generated CSV rows",
+    )
+    batch_parser.add_argument(
+        "--platform",
+        default="tiktok",
+        help="Platform value in uploader CSV rows",
+    )
+    batch_parser.add_argument(
+        "--hashtags",
+        default="",
+        help="Hashtag block appended to generated captions, e.g. '#pretti #makeup'",
+    )
+    batch_parser.add_argument(
+        "--root-dir",
+        default=str(OUTPUT_DIR),
+        help="Root directory used for relative video paths in CSV",
+    )
+    batch_parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        help="Write absolute file paths instead of paths relative to --root-dir",
+    )
     batch_parser.set_defaults(func=cmd_batch)
 
     # audit
     audit_parser = subparsers.add_parser("audit", help="Audit hooks/assets integrity")
     audit_parser.set_defaults(func=cmd_audit)
+
+    # export-uploader-csv
+    export_parser = subparsers.add_parser(
+        "export-uploader-csv",
+        help="Export uploader CSV from existing output videos",
+    )
+    export_parser.add_argument("--account-id", required=True, help="Connected account ID")
+    export_parser.add_argument("--output-csv", required=True, help="Destination CSV path")
+    export_parser.add_argument(
+        "--upload-mode",
+        default="draft",
+        choices=["draft", "direct"],
+        help="Uploader mode for generated rows",
+    )
+    export_parser.add_argument(
+        "--platform",
+        default="tiktok",
+        help="Platform value in generated rows",
+    )
+    export_parser.add_argument(
+        "--hashtags",
+        default="",
+        help="Hashtag block appended to each generated caption",
+    )
+    export_parser.add_argument(
+        "--root-dir",
+        default=str(OUTPUT_DIR),
+        help="Folder to scan for .mp4 output videos",
+    )
+    export_parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        help="Write absolute file paths in CSV",
+    )
+    export_parser.set_defaults(func=cmd_export_uploader_csv)
 
     args = parser.parse_args()
 
@@ -166,6 +275,10 @@ def main() -> None:
 
     if not args.command:
         parser.print_help()
+        sys.exit(1)
+
+    if args.command == "batch" and args.export_csv and not args.account_id:
+        logger.error("--account-id is required when --export-csv is provided.")
         sys.exit(1)
 
     args.func(args)

@@ -43,6 +43,25 @@ Options:
 python main.py batch facial_features short_philtrum -n 3
 ```
 
+### One-command: generate + export uploader CSV
+
+```bash
+python main.py batch facial_features short_philtrum -n 5 \
+  --export-csv ../tiktok-uploader/posts.csv \
+  --account-id <CONNECTED_ACCOUNT_ID> \
+  --hashtags "#pretti #makeup #fyp"
+```
+
+### Export uploader CSV from existing outputs
+
+```bash
+python main.py export-uploader-csv \
+  --account-id <CONNECTED_ACCOUNT_ID> \
+  --output-csv ../tiktok-uploader/posts.csv \
+  --root-dir output \
+  --hashtags "#pretti #makeup #fyp"
+```
+
 ### Generate random videos across features
 
 ```bash
@@ -60,6 +79,13 @@ python main.py audit
 
 ```bash
 python main.py -v generate facial_features short_philtrum
+```
+
+### Upload exported CSV with uploader CLI
+
+```bash
+cd ../tiktok-uploader
+uploader upload:batch --csv ./posts.csv --root ../edit-maker/output --send-now
 ```
 
 ## Project Structure

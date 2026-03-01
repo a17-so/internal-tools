@@ -31,6 +31,24 @@ def col_num_to_letter(n: int) -> str:
     return result
 
 
+def _get_sheet_id(service: Any, spreadsheet_id: str, sheet_name: str) -> Optional[int]:
+    cache_key = f"{spreadsheet_id}:{sheet_name}"
+    cached = _SHEET_ID_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    meta = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties(sheetId,title))",
+    ).execute()
+    for sheet in (meta.get("sheets") or []):
+        props = sheet.get("properties") or {}
+        if props.get("title") == sheet_name:
+            sheet_id = int(props.get("sheetId"))
+            _SHEET_ID_CACHE[cache_key] = sheet_id
+            return sheet_id
+    return None
+
+
 def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
     """Check if a creator already exists in the spreadsheet by IG or TT handle.
     
@@ -271,6 +289,45 @@ def _append_url_to_raw_leads_column(
                 spreadsheetId=spreadsheet_id,
                 body={"valueInputOption": "USER_ENTERED", "data": pending_writes},
             ).execute()
+            sheet_id = _get_sheet_id(service, spreadsheet_id, "Raw Leads")
+            if sheet_id is not None:
+                header_requests: List[Dict[str, Any]] = []
+                for write in pending_writes:
+                    a1 = write.get("range", "")
+                    m = re.search(r"Raw Leads!([A-Z]+)1", a1)
+                    if not m:
+                        continue
+                    col_letters = m.group(1)
+                    col_index = 0
+                    for ch in col_letters:
+                        col_index = col_index * 26 + (ord(ch) - ord("A") + 1)
+                    col_index -= 1
+                    header_requests.append(
+                        {
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 0,
+                                    "endRowIndex": 1,
+                                    "startColumnIndex": col_index,
+                                    "endColumnIndex": col_index + 1,
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "textFormat": {
+                                            "bold": True
+                                        }
+                                    }
+                                },
+                                "fields": "userEnteredFormat.textFormat.bold",
+                            }
+                        }
+                    )
+                if header_requests:
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={"requests": header_requests},
+                    ).execute()
 
         url_col_letter = col_num_to_letter(url_col_index)
         result = service.spreadsheets().values().get(

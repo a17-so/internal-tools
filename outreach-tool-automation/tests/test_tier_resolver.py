@@ -13,6 +13,9 @@ from outreach_automation.tier_resolver import InvalidTierError, MissingTierError
         ("submicro", Tier.SUBMICRO),
         ("sub-micro", Tier.SUBMICRO),
         ("Ambassador", Tier.AMBASSADOR),
+        ("Themepage", Tier.THEMEPAGE),
+        ("Theme Page", Tier.THEMEPAGE),
+        ("theme-pages", Tier.THEMEPAGE),
     ],
 )
 def test_resolve_tier(raw: str, expected: Tier) -> None:

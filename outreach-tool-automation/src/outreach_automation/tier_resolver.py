@@ -8,6 +8,11 @@ _ALLOWED: dict[str, Tier] = {
     "submicro": Tier.SUBMICRO,
     "sub-micro": Tier.SUBMICRO,
     "ambassador": Tier.AMBASSADOR,
+    "themepage": Tier.THEMEPAGE,
+    "theme-page": Tier.THEMEPAGE,
+    "theme page": Tier.THEMEPAGE,
+    "themepages": Tier.THEMEPAGE,
+    "theme-pages": Tier.THEMEPAGE,
 }
 
 

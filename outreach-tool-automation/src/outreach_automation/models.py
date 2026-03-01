@@ -11,6 +11,7 @@ class Tier(StrEnum):
     MICRO = "Micro"
     SUBMICRO = "Submicro"
     AMBASSADOR = "Ambassador"
+    THEMEPAGE = "Themepage"
 
 
 class Platform(StrEnum):

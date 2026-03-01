@@ -25,6 +25,11 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
   const [igUserId, setIgUserId] = useState('');
   const [igAccessToken, setIgAccessToken] = useState('');
   const [igDisplayName, setIgDisplayName] = useState('');
+  const [ytAccessToken, setYtAccessToken] = useState('');
+  const [ytDisplayName, setYtDisplayName] = useState('');
+  const [fbPageId, setFbPageId] = useState('');
+  const [fbAccessToken, setFbAccessToken] = useState('');
+  const [fbDisplayName, setFbDisplayName] = useState('');
 
   const refresh = async () => {
     setLoading(true);
@@ -74,6 +79,66 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
     setIgUserId('');
     setIgAccessToken('');
     setIgDisplayName('');
+    await refresh();
+  };
+
+  const connectYouTube = async () => {
+    if (!ytAccessToken.trim()) {
+      toast.error('YouTube access token is required');
+      return;
+    }
+
+    setLoading(true);
+    const res = await fetch('/api/accounts/youtube/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: ytAccessToken.trim(),
+        displayName: ytDisplayName.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || 'Failed to connect YouTube');
+      setLoading(false);
+      return;
+    }
+
+    toast.success('YouTube account connected');
+    setYtAccessToken('');
+    setYtDisplayName('');
+    await refresh();
+  };
+
+  const connectFacebook = async () => {
+    if (!fbPageId.trim() || !fbAccessToken.trim()) {
+      toast.error('Facebook Page ID and access token are required');
+      return;
+    }
+
+    setLoading(true);
+    const res = await fetch('/api/accounts/facebook/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageId: fbPageId.trim(),
+        accessToken: fbAccessToken.trim(),
+        displayName: fbDisplayName.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || 'Failed to connect Facebook');
+      setLoading(false);
+      return;
+    }
+
+    toast.success('Facebook account connected');
+    setFbPageId('');
+    setFbAccessToken('');
+    setFbDisplayName('');
     await refresh();
   };
 
@@ -128,6 +193,59 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
           </div>
           <div className="mt-3">
             <Button onClick={() => void connectInstagram()} disabled={loading}>Connect Instagram</Button>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
+          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect YouTube (token method)</h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Use a YouTube Data API OAuth access token with channel scope. This uploader supports direct video upload (set to private).
+          </p>
+          <div className="grid gap-2 md:grid-cols-2">
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Display Name (optional)"
+              value={ytDisplayName}
+              onChange={(e) => setYtDisplayName(e.target.value)}
+            />
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Access Token"
+              value={ytAccessToken}
+              onChange={(e) => setYtAccessToken(e.target.value)}
+            />
+          </div>
+          <div className="mt-3">
+            <Button onClick={() => void connectYouTube()} disabled={loading}>Connect YouTube</Button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
+          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect Facebook (token method)</h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Use a Facebook Page access token and Page ID. This uploader supports direct video upload for connected pages.
+          </p>
+          <div className="grid gap-2 md:grid-cols-3">
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Page ID"
+              value={fbPageId}
+              onChange={(e) => setFbPageId(e.target.value)}
+            />
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Display Name (optional)"
+              value={fbDisplayName}
+              onChange={(e) => setFbDisplayName(e.target.value)}
+            />
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Access Token"
+              value={fbAccessToken}
+              onChange={(e) => setFbAccessToken(e.target.value)}
+            />
+          </div>
+          <div className="mt-3">
+            <Button onClick={() => void connectFacebook()} disabled={loading}>Connect Facebook</Button>
           </div>
         </div>
 

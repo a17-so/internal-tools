@@ -220,6 +220,54 @@ program
   });
 
 program
+  .command('accounts:connect-youtube')
+  .description('Connect YouTube account using access token')
+  .requiredOption('--access-token <token>', 'YouTube Data API access token')
+  .option('--display-name <name>', 'Display name override')
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+
+    const data = await authedRequest(baseUrl, '/api/accounts/youtube/connect', apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: opts.accessToken,
+        displayName: opts.displayName,
+      }),
+    });
+
+    console.log(`Connected YouTube account ${data.account.id}`);
+  });
+
+program
+  .command('accounts:connect-facebook')
+  .description('Connect Facebook page using page token + page id')
+  .requiredOption('--page-id <id>', 'Facebook page id')
+  .requiredOption('--access-token <token>', 'Facebook page access token')
+  .option('--display-name <name>', 'Display name override')
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+
+    const data = await authedRequest(baseUrl, '/api/accounts/facebook/connect', apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageId: opts.pageId,
+        accessToken: opts.accessToken,
+        displayName: opts.displayName,
+      }),
+    });
+
+    console.log(`Connected Facebook account ${data.account.id}`);
+  });
+
+program
   .command('upload:file')
   .description('Queue a single video file')
   .requiredOption('--account <id>', 'Connected account id')

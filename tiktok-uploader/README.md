@@ -13,7 +13,7 @@ Multi-account, queue-based social uploader (TikTok implemented first) with a web
 - Bulk queue + batch dispatch with retries and throttling
 - Upload history + queue management
 - CLI support for single uploads and CSV batch ingestion
-- Multi-provider architecture with TikTok + Instagram live (Instagram direct video/Reels)
+- Multi-provider architecture with TikTok + Instagram + YouTube + Facebook live
 
 ## Tech
 
@@ -53,6 +53,7 @@ QUEUE_ACCOUNT_CONCURRENCY=2
 TIKTOK_SLIDESHOW_FALLBACK=video
 SLIDESHOW_FALLBACK_FRAME_SECONDS=1.2
 INSTAGRAM_GRAPH_VERSION=v24.0
+FACEBOOK_GRAPH_VERSION=v24.0
 ```
 
 3. Push schema to SQLite:
@@ -76,6 +77,8 @@ npm run dev
 3. Authorize account(s)
    - TikTok: OAuth via `Connect TikTok`
    - Instagram: token connect via `Accounts` page (`instagram_user_id` + access token)
+   - YouTube: token connect via `Accounts` page (YouTube Data API token)
+   - Facebook: token connect via `Accounts` page (`page_id` + page token)
 4. Go to `Compose`
 5. Select account + mode + post type
 6. Add posts to tray
@@ -105,6 +108,17 @@ uploader accounts:list --provider tiktok
 uploader accounts:connect-instagram \
   --instagram-user-id <IG_USER_ID> \
   --access-token <GRAPH_ACCESS_TOKEN>
+```
+
+```bash
+uploader accounts:connect-youtube \
+  --access-token <YOUTUBE_ACCESS_TOKEN>
+```
+
+```bash
+uploader accounts:connect-facebook \
+  --page-id <FACEBOOK_PAGE_ID> \
+  --access-token <FACEBOOK_PAGE_ACCESS_TOKEN>
 ```
 
 ### Queue one video
@@ -178,7 +192,9 @@ slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok
 ## Notes
 
 - Draft mode is default everywhere.
-- Instagram currently supports `direct` video/Reels mode only in this uploader.
+- Instagram currently supports `direct` video/Reels mode only.
+- YouTube currently supports `direct` video uploads only (uploaded as private by default).
+- Facebook currently supports `direct` page video uploads only.
 - Duplicate prevention uses idempotency hash (media + caption + mode + account).
 - Retries are exponential backoff for retryable errors.
 - Compose includes bulk caption tools (prepend/append/find-replace) and slideshow image reordering.

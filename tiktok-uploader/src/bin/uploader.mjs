@@ -193,6 +193,36 @@ program
   });
 
 program
+  .command('accounts:oauth-instagram')
+  .description('Open Instagram OAuth connect flow in browser')
+  .option('--base-url <url>', 'Uploader base URL')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    await open(`${baseUrl}/api/auth/instagram`);
+    console.log(`Opened ${baseUrl}/api/auth/instagram`);
+  });
+
+program
+  .command('accounts:oauth-youtube')
+  .description('Open YouTube OAuth connect flow in browser')
+  .option('--base-url <url>', 'Uploader base URL')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    await open(`${baseUrl}/api/auth/youtube`);
+    console.log(`Opened ${baseUrl}/api/auth/youtube`);
+  });
+
+program
+  .command('accounts:oauth-facebook')
+  .description('Open Facebook OAuth connect flow in browser')
+  .option('--base-url <url>', 'Uploader base URL')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    await open(`${baseUrl}/api/auth/facebook`);
+    console.log(`Opened ${baseUrl}/api/auth/facebook`);
+  });
+
+program
   .command('accounts:connect-instagram')
   .description('Connect Instagram account using access token + IG user ID')
   .requiredOption('--instagram-user-id <id>', 'Instagram professional account user ID')

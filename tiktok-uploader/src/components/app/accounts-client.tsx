@@ -12,6 +12,13 @@ export type AccountView = {
   displayName: string | null;
   externalAccountId: string;
   tokenExpiresAt: string | null;
+  health?: {
+    needsReauth: boolean;
+    expiresSoon: boolean;
+    tokenExpiresAt: string | null;
+    refreshExpiresAt: string | null;
+    message: string | null;
+  };
   capabilities: Array<{
     supportsDraftVideo: boolean;
     supportsDirectVideo: boolean;
@@ -147,12 +154,21 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Accounts</h2>
-          <p className="text-slate-600">Connect and manage TikTok + Instagram accounts.</p>
+          <p className="text-slate-600">Connect and manage TikTok, Instagram, YouTube, and Facebook accounts.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => void refresh()} disabled={loading}>Refresh</Button>
           <Button asChild>
             <Link href="/api/auth/tiktok">Connect TikTok</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/api/auth/instagram">OAuth Instagram</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/api/auth/youtube">OAuth YouTube</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/api/auth/facebook">OAuth Facebook</Link>
           </Button>
         </div>
       </div>
@@ -166,6 +182,19 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
+        {accounts.some((a) => a.health?.needsReauth || a.health?.expiresSoon) ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 md:col-span-2">
+            <p className="font-semibold">Authentication Warnings</p>
+            {accounts
+              .filter((a) => a.health?.needsReauth || a.health?.expiresSoon)
+              .map((a) => (
+                <p key={`warn-${a.id}`}>
+                  {a.provider} · {a.displayName || a.username || a.externalAccountId}: {a.health?.message}
+                </p>
+              ))}
+          </div>
+        ) : null}
+
         <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
           <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect Instagram (token method)</h3>
           <p className="mb-4 text-xs text-slate-500">
@@ -258,6 +287,11 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
                   <p className="text-xs uppercase tracking-wider text-slate-500">{account.provider}</p>
                   <h3 className="text-lg font-semibold text-slate-900">{account.displayName || account.username || account.externalAccountId}</h3>
                   <p className="text-sm text-slate-600">{account.username ? `@${account.username}` : account.externalAccountId}</p>
+                  {account.health?.message ? (
+                    <p className={`mt-1 text-xs ${account.health.needsReauth ? 'text-red-600' : 'text-amber-700'}`}>
+                      {account.health.message}
+                    </p>
+                  ) : null}
                 </div>
                 <Button variant="outline" onClick={() => void removeAccount(account.id)}>Remove</Button>
               </div>

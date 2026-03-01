@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Provider } from '@prisma/client';
 import { withAuth } from '@/lib/api-auth';
 import { db } from '@/lib/db';
+import { getAccountHealth } from '@/lib/account-health';
 
 export async function GET(request: Request) {
   return withAuth(async (user) => {
@@ -22,6 +23,11 @@ export async function GET(request: Request) {
       },
     });
 
-    return NextResponse.json({ accounts });
+    return NextResponse.json({
+      accounts: accounts.map((account) => ({
+        ...account,
+        health: getAccountHealth(account),
+      })),
+    });
   });
 }

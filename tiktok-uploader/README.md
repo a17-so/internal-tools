@@ -54,6 +54,16 @@ TIKTOK_SLIDESHOW_FALLBACK=video
 SLIDESHOW_FALLBACK_FRAME_SECONDS=1.2
 INSTAGRAM_GRAPH_VERSION=v24.0
 FACEBOOK_GRAPH_VERSION=v24.0
+
+# OAuth app credentials
+YOUTUBE_CLIENT_ID=
+YOUTUBE_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+FACEBOOK_APP_ID=
+FACEBOOK_APP_SECRET=
+INSTAGRAM_APP_ID=
+INSTAGRAM_APP_SECRET=
 ```
 
 3. Push schema to SQLite:
@@ -76,9 +86,9 @@ npm run dev
 2. Go to `Accounts` and click `Connect TikTok`
 3. Authorize account(s)
    - TikTok: OAuth via `Connect TikTok`
-   - Instagram: token connect via `Accounts` page (`instagram_user_id` + access token)
-   - YouTube: token connect via `Accounts` page (YouTube Data API token)
-   - Facebook: token connect via `Accounts` page (`page_id` + page token)
+   - Instagram: OAuth button (`/api/auth/instagram`) or token connect
+   - YouTube: OAuth button (`/api/auth/youtube`) or token connect
+   - Facebook: OAuth button (`/api/auth/facebook`) or token connect
 4. Go to `Compose`
 5. Select account + mode + post type
 6. Add posts to tray
@@ -119,6 +129,12 @@ uploader accounts:connect-youtube \
 uploader accounts:connect-facebook \
   --page-id <FACEBOOK_PAGE_ID> \
   --access-token <FACEBOOK_PAGE_ACCESS_TOKEN>
+```
+
+```bash
+uploader accounts:oauth-instagram
+uploader accounts:oauth-youtube
+uploader accounts:oauth-facebook
 ```
 
 ### Queue one video
@@ -198,3 +214,5 @@ slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok
 - Duplicate prevention uses idempotency hash (media + caption + mode + account).
 - Retries are exponential backoff for retryable errors.
 - Compose includes bulk caption tools (prepend/append/find-replace) and slideshow image reordering.
+- Accounts page surfaces automated token-expiry warnings (`expires soon` / `needs reauth`).
+- Providers with refresh support (TikTok, YouTube, Instagram/Facebook long-lived exchange) attempt automatic token renewal during uploads.

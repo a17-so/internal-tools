@@ -2,6 +2,7 @@ import { getOptionalAuth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import AccountsClient from '@/components/app/accounts-client';
 import type { AccountView } from '@/components/app/accounts-client';
+import { getAccountHealth } from '@/lib/account-health';
 
 export default async function AccountsPage() {
   const user = await getOptionalAuth();
@@ -25,6 +26,7 @@ export default async function AccountsPage() {
     displayName: account.displayName,
     externalAccountId: account.externalAccountId,
     tokenExpiresAt: account.tokenExpiresAt ? account.tokenExpiresAt.toISOString() : null,
+    health: getAccountHealth(account),
     capabilities: account.capabilities.map((cap) => ({
       supportsDraftVideo: cap.supportsDraftVideo,
       supportsDirectVideo: cap.supportsDirectVideo,

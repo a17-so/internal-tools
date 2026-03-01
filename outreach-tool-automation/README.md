@@ -100,6 +100,10 @@ python -m outreach_automation.run_once --live --channels email,tiktok
 python -m outreach_automation.run_once --live --channels instagram --lead-row-index 15 --ignore-dedupe
 ```
 
+Current success policy:
+- A lead is marked `Processed` if any channel (`email`, `instagram`, or `tiktok`) sends successfully.
+- All enabled channels are still attempted per lead.
+
 Bootstrap IG/TikTok login sessions (one-time 2FA per active account):
 
 ```bash
@@ -127,6 +131,7 @@ Notes for attach mode:
 - Keep TikTok logged in on that Chrome instance.
 - Do not run multiple outreach processes against the same attached Chrome at once.
 - The automation will open/close only the tab it creates and will not close your attached Chrome browser.
+- Live preflight fails fast if `TIKTOK_ATTACH_MODE=true` but `TIKTOK_CDP_URL` is unreachable.
 
 Seed Firestore accounts:
 

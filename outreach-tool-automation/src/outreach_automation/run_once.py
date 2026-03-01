@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import socket
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 from outreach_automation.account_router import AccountRouter
 from outreach_automation.email_sender import EmailSender
@@ -150,12 +151,15 @@ def _run_startup_preflight(
             platform=Platform.INSTAGRAM,
             session_manager=session_manager,
         )
-    if "tiktok" in enabled_channels and not settings.tiktok_attach_mode:
-        _ensure_account_sessions_exist(
-            accounts=firestore_client.list_active_accounts(Platform.TIKTOK),
-            platform=Platform.TIKTOK,
-            session_manager=session_manager,
-        )
+    if "tiktok" in enabled_channels:
+        if settings.tiktok_attach_mode:
+            _ensure_tiktok_attach_available(settings.tiktok_cdp_url)
+        else:
+            _ensure_account_sessions_exist(
+                accounts=firestore_client.list_active_accounts(Platform.TIKTOK),
+                platform=Platform.TIKTOK,
+                session_manager=session_manager,
+            )
 
 
 def _ensure_account_sessions_exist(
@@ -194,6 +198,24 @@ def _parse_channels(raw: str) -> set[str]:
     if not normalized:
         raise ValueError("No valid channels selected. Use email,instagram,tiktok.")
     return normalized
+
+
+def _ensure_tiktok_attach_available(cdp_url: str | None) -> None:
+    if not cdp_url:
+        raise ValueError("TIKTOK_ATTACH_MODE=true requires TIKTOK_CDP_URL.")
+    parsed = urlparse(cdp_url)
+    host = parsed.hostname
+    port = parsed.port
+    if not host or not port:
+        raise ValueError(f"Invalid TIKTOK_CDP_URL: {cdp_url}")
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return
+    except OSError as exc:
+        raise ValueError(
+            f"TikTok attach mode is enabled but Chrome debugger is unreachable at {cdp_url}. "
+            "Start debug Chrome first with ./ops/start_chrome_debug.sh 9222."
+        ) from exc
 
 
 if __name__ == "__main__":

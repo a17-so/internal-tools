@@ -242,11 +242,11 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
     )
 
     result = orchestrator.run(batch_size=1, dry_run=False)
-    assert result.failed == 1
-    assert sheets._statuses[2] == "failed_ig_send_failed"
+    assert result.processed == 1
+    assert sheets._statuses[2] == "Processed"
     assert sheets.error_rows == []
-    assert sheets.cleared_error_rows == [2]
-    assert sheets.cleared_rows == []
+    assert sheets.cleared_error_rows == []
+    assert sheets.cleared_rows == [2]
 
 
 def test_full_failure_marks_link_error() -> None:

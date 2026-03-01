@@ -20,6 +20,9 @@ def final_sheet_status(
 ) -> str:
     results = [email_result, ig_result, tiktok_result]
 
+    if any(result.status == "sent" for result in results):
+        return "Processed"
+
     if all(_is_success_equivalent(result) for result in results):
         return "Processed"
 

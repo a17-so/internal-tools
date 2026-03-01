@@ -20,7 +20,7 @@ def test_status_pending_tomorrow() -> None:
             ChannelResult(status="pending_tomorrow", error_code="no_ig_account"),
             ChannelResult(status="sent"),
         )
-        == "pending_tomorrow"
+        == "Processed"
     )
 
 
@@ -30,6 +30,17 @@ def test_status_failed_with_code() -> None:
             ChannelResult(status="failed", error_code="smtp"),
             ChannelResult(status="sent"),
             ChannelResult(status="sent"),
+        )
+        == "Processed"
+    )
+
+
+def test_status_failed_when_no_channel_sent() -> None:
+    assert (
+        final_sheet_status(
+            ChannelResult(status="failed", error_code="smtp"),
+            ChannelResult(status="skipped", error_code="missing_ig_handle"),
+            ChannelResult(status="failed", error_code="tiktok_send_failed"),
         )
         == "failed_smtp"
     )

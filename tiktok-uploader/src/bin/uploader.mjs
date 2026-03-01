@@ -8,7 +8,7 @@ import { parse } from 'csv-parse/sync';
 import { DateTime } from 'luxon';
 import open from 'open';
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'uploader-v2');
+const CONFIG_DIR = path.join(os.homedir(), '.config', 'uploader');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 function readConfig() {
@@ -134,7 +134,7 @@ function normalizeCsvRow(row, root, scheduleTz = 'local') {
 }
 
 const program = new Command();
-program.name('uploader').description('Uploader V2 CLI').version('0.1.0');
+program.name('uploader').description('Uploader CLI').version('0.1.0');
 
 program
   .command('auth:login')

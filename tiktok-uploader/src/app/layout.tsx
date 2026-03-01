@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Uploader V2',
+  title: 'Uploader',
   description: 'Multi-account bulk publishing pipeline',
 };
 

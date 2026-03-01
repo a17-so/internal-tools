@@ -36,7 +36,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <Layers className="h-4 w-4" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">Uploader V2</h1>
+                <h1 className="text-lg font-semibold">Uploader</h1>
                 <p className="text-xs text-muted-foreground">Multi-account control room</p>
               </div>
             </div>

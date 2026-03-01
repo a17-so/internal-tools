@@ -1,4 +1,4 @@
-# Uploader V2
+# Uploader
 
 Multi-account, queue-based social uploader (TikTok implemented first) with a web UI and a CLI.
 

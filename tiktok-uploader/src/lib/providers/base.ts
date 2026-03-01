@@ -12,10 +12,15 @@ export type ProviderError = {
 export interface SocialProvider {
   provider: Provider;
   connectAccount(input: {
-    code: string;
+    code?: string;
     codeVerifier?: string;
-    redirectUri: string;
+    redirectUri?: string;
     userId: string;
+    accessToken?: string;
+    externalAccountId?: string;
+    username?: string;
+    displayName?: string;
+    metadata?: Record<string, unknown>;
   }): Promise<ConnectedAccount>;
   getCapabilities(account: ConnectedAccount): Promise<ProviderCapabilities>;
   upload(job: UploadJob, account: ConnectedAccount, assets: UploadAsset[]): Promise<ProviderUploadResult>;

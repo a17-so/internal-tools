@@ -22,6 +22,9 @@ export type AccountView = {
 export default function AccountsClient({ initialAccounts }: { initialAccounts: AccountView[] }) {
   const [accounts, setAccounts] = useState<AccountView[]>(initialAccounts);
   const [loading, setLoading] = useState(false);
+  const [igUserId, setIgUserId] = useState('');
+  const [igAccessToken, setIgAccessToken] = useState('');
+  const [igDisplayName, setIgDisplayName] = useState('');
 
   const refresh = async () => {
     setLoading(true);
@@ -43,12 +46,43 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
     await refresh();
   };
 
+  const connectInstagram = async () => {
+    if (!igUserId.trim() || !igAccessToken.trim()) {
+      toast.error('Instagram User ID and Access Token are required');
+      return;
+    }
+
+    setLoading(true);
+    const res = await fetch('/api/accounts/instagram/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instagramUserId: igUserId.trim(),
+        accessToken: igAccessToken.trim(),
+        displayName: igDisplayName.trim() || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || 'Failed to connect Instagram');
+      setLoading(false);
+      return;
+    }
+
+    toast.success('Instagram account connected');
+    setIgUserId('');
+    setIgAccessToken('');
+    setIgDisplayName('');
+    await refresh();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Accounts</h2>
-          <p className="text-slate-600">Connect and manage TikTok accounts.</p>
+          <p className="text-slate-600">Connect and manage TikTok + Instagram accounts.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => void refresh()} disabled={loading}>Refresh</Button>
@@ -67,6 +101,36 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 md:col-span-2">
+          <h3 className="mb-2 text-sm font-semibold text-slate-900">Connect Instagram (token method)</h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Use an Instagram Graph API token and professional IG user ID. Instagram currently supports direct video/Reels in this uploader.
+          </p>
+          <div className="grid gap-2 md:grid-cols-3">
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Instagram User ID"
+              value={igUserId}
+              onChange={(e) => setIgUserId(e.target.value)}
+            />
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Display Name (optional)"
+              value={igDisplayName}
+              onChange={(e) => setIgDisplayName(e.target.value)}
+            />
+            <input
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Access Token"
+              value={igAccessToken}
+              onChange={(e) => setIgAccessToken(e.target.value)}
+            />
+          </div>
+          <div className="mt-3">
+            <Button onClick={() => void connectInstagram()} disabled={loading}>Connect Instagram</Button>
+          </div>
+        </div>
+
         {accounts.map((account) => {
           const cap = account.capabilities[0];
           return (

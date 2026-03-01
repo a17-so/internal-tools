@@ -34,6 +34,13 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
+function reorder<T>(arr: T[], from: number, to: number) {
+  const next = [...arr];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
 export default function ComposeClient({ accounts }: { accounts: ComposeAccount[] }) {
   const [connectedAccountId, setConnectedAccountId] = useState(accounts[0]?.id || '');
   const [mode, setMode] = useState<UploadMode>(UploadMode.draft);
@@ -41,15 +48,73 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
   const [caption, setCaption] = useState('');
   const [video, setVideo] = useState<File | null>(null);
   const [images, setImages] = useState<File[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [tray, setTray] = useState<DraftItem[]>([]);
   const [sending, setSending] = useState(false);
+
+  const [prependText, setPrependText] = useState('');
+  const [appendText, setAppendText] = useState('');
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
 
   const selected = useMemo(() => accounts.find((a) => a.id === connectedAccountId), [accounts, connectedAccountId]);
   const cap = selected?.capabilities?.[0];
 
+  const modeOptions = useMemo(() => {
+    const options: UploadMode[] = [];
+    if (cap?.supportsDraftVideo) options.push(UploadMode.draft);
+    if (cap?.supportsDirectVideo) options.push(UploadMode.direct);
+    return options.length ? options : [UploadMode.draft];
+  }, [cap]);
+
+  const postTypeOptions = useMemo(() => {
+    const options: UploadPostType[] = [UploadPostType.video];
+    if (cap?.supportsPhotoSlideshow) options.push(UploadPostType.slideshow);
+    return options;
+  }, [cap]);
+
+  const accountLabel = (accountId: string) => {
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) return accountId;
+    return `${account.provider} · ${account.displayName || account.username || account.id}`;
+  };
+
+  const onAccountChange = (nextId: string) => {
+    setConnectedAccountId(nextId);
+    const next = accounts.find((a) => a.id === nextId);
+    const nextCap = next?.capabilities?.[0];
+
+    const nextModeOptions: UploadMode[] = [];
+    if (nextCap?.supportsDraftVideo) nextModeOptions.push(UploadMode.draft);
+    if (nextCap?.supportsDirectVideo) nextModeOptions.push(UploadMode.direct);
+    if (!nextModeOptions.includes(mode)) {
+      setMode(nextModeOptions[0] || UploadMode.draft);
+    }
+
+    if (!nextCap?.supportsPhotoSlideshow && postType === UploadPostType.slideshow) {
+      setPostType(UploadPostType.video);
+      setImages([]);
+    }
+  };
+
+  const onSelectImages = (files: File[]) => {
+    setImages(files);
+    setDragIndex(null);
+  };
+
   const addToTray = () => {
     if (!connectedAccountId) {
       toast.error('Pick an account');
+      return;
+    }
+
+    if (!modeOptions.includes(mode)) {
+      toast.error('Selected mode is not supported by this account');
+      return;
+    }
+
+    if (!postTypeOptions.includes(postType)) {
+      toast.error('Selected post type is not supported by this account');
       return;
     }
 
@@ -76,10 +141,13 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     setCaption('');
     setVideo(null);
     setImages([]);
+    setDragIndex(null);
+
     const vidInput = document.getElementById('compose-video') as HTMLInputElement | null;
     if (vidInput) vidInput.value = '';
     const imageInput = document.getElementById('compose-images') as HTMLInputElement | null;
     if (imageInput) imageInput.value = '';
+
     toast.success('Added to batch tray');
   };
 
@@ -148,11 +216,11 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
           <select
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2"
             value={connectedAccountId}
-            onChange={(e) => setConnectedAccountId(e.target.value)}
+            onChange={(e) => onAccountChange(e.target.value)}
           >
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.displayName || account.username || account.id}
+                {account.provider} · {account.displayName || account.username || account.id}
               </option>
             ))}
           </select>
@@ -161,8 +229,8 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
         <div className="space-y-2">
           <Label>Mode</Label>
           <select className="w-full rounded-md border border-slate-300 bg-white px-3 py-2" value={mode} onChange={(e) => setMode(e.target.value as UploadMode)}>
-            <option value={UploadMode.draft}>Draft (preferred)</option>
-            {cap?.supportsDirectVideo ? <option value={UploadMode.direct}>Direct</option> : null}
+            {modeOptions.includes(UploadMode.draft) ? <option value={UploadMode.draft}>Draft (preferred)</option> : null}
+            {modeOptions.includes(UploadMode.direct) ? <option value={UploadMode.direct}>Direct</option> : null}
           </select>
         </div>
 
@@ -170,7 +238,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
           <Label>Post Type</Label>
           <select className="w-full rounded-md border border-slate-300 bg-white px-3 py-2" value={postType} onChange={(e) => setPostType(e.target.value as UploadPostType)}>
             <option value={UploadPostType.video}>Video</option>
-            {cap?.supportsPhotoSlideshow ? <option value={UploadPostType.slideshow}>Slideshow</option> : null}
+            {postTypeOptions.includes(UploadPostType.slideshow) ? <option value={UploadPostType.slideshow}>Slideshow</option> : null}
           </select>
         </div>
 
@@ -186,21 +254,81 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             <Input id="compose-video" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => setVideo(e.target.files?.[0] || null)} />
           </div>
         ) : (
-          <div className="space-y-2 md:col-span-2">
+          <div className="space-y-3 md:col-span-2">
             <Label>Slideshow Images</Label>
             <Input
               id="compose-images"
               type="file"
               accept="image/png,image/jpeg,image/webp"
               multiple
-              onChange={(e) => setImages(Array.from(e.target.files || []))}
+              onChange={(e) => onSelectImages(Array.from(e.target.files || []))}
             />
-            <p className="text-xs text-slate-500">Upload in the desired sequence.</p>
+            <p className="text-xs text-slate-500">Drag rows to reorder sequence or use Up/Down.</p>
+
+            <div className="space-y-2">
+              {images.map((img, idx) => (
+                <div
+                  key={`${img.name}-${idx}`}
+                  className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm"
+                  draggable
+                  onDragStart={() => setDragIndex(idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (dragIndex === null || dragIndex === idx) return;
+                    setImages((prev) => reorder(prev, dragIndex, idx));
+                    setDragIndex(null);
+                  }}
+                >
+                  <span className="truncate">{idx + 1}. {img.name}</span>
+                  <div className="space-x-2">
+                    <Button variant="outline" onClick={() => setImages((prev) => idx > 0 ? reorder(prev, idx, idx - 1) : prev)}>Up</Button>
+                    <Button variant="outline" onClick={() => setImages((prev) => idx < prev.length - 1 ? reorder(prev, idx, idx + 1) : prev)}>Down</Button>
+                    <Button variant="outline" onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}>Remove</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         <div className="md:col-span-2">
           <Button onClick={addToTray}>Add To Batch Tray</Button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-3 text-sm font-semibold text-slate-900">Bulk Caption Tools</h3>
+        <div className="grid gap-2 md:grid-cols-4">
+          <Input placeholder="Prepend text" value={prependText} onChange={(e) => setPrependText(e.target.value)} />
+          <Input placeholder="Append text" value={appendText} onChange={(e) => setAppendText(e.target.value)} />
+          <Input placeholder="Find" value={findText} onChange={(e) => setFindText(e.target.value)} />
+          <Input placeholder="Replace" value={replaceText} onChange={(e) => setReplaceText(e.target.value)} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setTray((prev) => prev.map((item) => ({ ...item, caption: `${prependText}${item.caption}` })))}
+            disabled={!prependText}
+          >
+            Apply Prepend
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setTray((prev) => prev.map((item) => ({ ...item, caption: `${item.caption}${appendText}` })))}
+            disabled={!appendText}
+          >
+            Apply Append
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (!findText) return;
+              setTray((prev) => prev.map((item) => ({ ...item, caption: item.caption.split(findText).join(replaceText) })));
+            }}
+            disabled={!findText}
+          >
+            Apply Find/Replace
+          </Button>
         </div>
       </div>
 
@@ -219,6 +347,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             <div key={item.id} className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm">
               <div>
                 <p className="font-medium text-slate-900">{item.postType.toUpperCase()} · {item.mode.toUpperCase()}</p>
+                <p className="text-xs text-slate-500">{accountLabel(item.connectedAccountId)}</p>
                 <p className="text-slate-600">{item.caption || '(No caption)'}</p>
               </div>
               <Button variant="outline" onClick={() => setTray((prev) => prev.filter((x) => x.id !== item.id))}>Remove</Button>

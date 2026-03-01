@@ -193,6 +193,33 @@ program
   });
 
 program
+  .command('accounts:connect-instagram')
+  .description('Connect Instagram account using access token + IG user ID')
+  .requiredOption('--instagram-user-id <id>', 'Instagram professional account user ID')
+  .requiredOption('--access-token <token>', 'Instagram Graph API access token')
+  .option('--display-name <name>', 'Display name override')
+  .option('--username <name>', 'Username override')
+  .option('--base-url <url>', 'Uploader base URL')
+  .option('--api-key <key>', 'API key override')
+  .action(async (opts) => {
+    const baseUrl = resolveBaseUrl(opts.baseUrl);
+    const apiKey = getApiKey(opts.apiKey);
+
+    const data = await authedRequest(baseUrl, '/api/accounts/instagram/connect', apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instagramUserId: opts.instagramUserId,
+        accessToken: opts.accessToken,
+        displayName: opts.displayName,
+        username: opts.username,
+      }),
+    });
+
+    console.log(`Connected Instagram account ${data.account.id}`);
+  });
+
+program
   .command('upload:file')
   .description('Queue a single video file')
   .requiredOption('--account <id>', 'Connected account id')

@@ -1,9 +1,15 @@
 import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { ConnectedAccount, Provider, UploadAsset, UploadJob, UploadMode, UploadPostType } from '@prisma/client';
 import { db } from '@/lib/db';
 import { decrypt, encrypt } from '@/lib/crypto';
 import { ProviderCapabilities, ProviderUploadResult } from '@/lib/types';
 import { ProviderError, SocialProvider } from '@/lib/providers/base';
+
+const execFileAsync = promisify(execFile);
 
 function parseJsonSafely(value: string | null | undefined): unknown {
   if (!value) return null;
@@ -125,41 +131,111 @@ async function uploadBinaryToUrl(uploadUrl: string, payload: Buffer, mimeType: s
   }
 }
 
-async function initializeSlideshowUpload(accessToken: string, mode: UploadMode, caption: string, imageCount: number) {
-  // API shape intentionally abstracted behind provider. Endpoint support can vary by app review scope.
-  const endpoint = mode === UploadMode.draft
-    ? 'https://open.tiktokapis.com/v2/post/publish/inbox/photo/init/'
-    : 'https://open.tiktokapis.com/v2/post/publish/photo/init/';
-
-  const response = await fetch(endpoint, {
+async function requestJson(url: string, accessToken: string, payload: unknown) {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json; charset=UTF-8',
     },
-    body: JSON.stringify({
-      post_info: {
-        title: caption,
-      },
-      source_info: {
-        source: 'FILE_UPLOAD',
-        photo_count: imageCount,
-      },
-    }),
+    body: JSON.stringify(payload),
   });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
 
-  const data = await response.json();
-  if (!response.ok || (data?.error?.code && data.error.code !== 'ok')) {
-    throw new Error(data?.error?.message || 'Failed to initialize TikTok slideshow upload');
+async function initializeSlideshowUpload(accessToken: string, mode: UploadMode, caption: string, imageCount: number) {
+  const tries = [
+    {
+      label: 'inbox-photo-init',
+      endpoint: mode === UploadMode.draft
+        ? 'https://open.tiktokapis.com/v2/post/publish/inbox/photo/init/'
+        : 'https://open.tiktokapis.com/v2/post/publish/photo/init/',
+      payload: {
+        post_info: { title: caption },
+        source_info: { source: 'FILE_UPLOAD', photo_count: imageCount },
+      },
+    },
+    {
+      label: 'content-init-photo',
+      endpoint: 'https://open.tiktokapis.com/v2/post/publish/content/init/',
+      payload: {
+        post_info: {
+          title: caption,
+          post_mode: mode === UploadMode.draft ? 'MEDIA_UPLOAD_TO_INBOX' : 'DIRECT_POST',
+          media_type: 'PHOTO',
+        },
+        source_info: {
+          source: 'FILE_UPLOAD',
+          photo_count: imageCount,
+        },
+      },
+    },
+  ] as const;
+
+  const errors: string[] = [];
+
+  for (const attempt of tries) {
+    const { response, data } = await requestJson(attempt.endpoint, accessToken, attempt.payload);
+    const hasProviderError = Boolean(data?.error?.code && data?.error?.code !== 'ok');
+    const uploadUrls = Array.isArray(data?.data?.upload_urls) ? data.data.upload_urls : [];
+
+    if (response.ok && !hasProviderError && uploadUrls.length > 0) {
+      return data.data;
+    }
+
+    errors.push(
+      `${attempt.label}: ${data?.error?.message || data?.error?.code || response.status || 'unknown_error'}`
+    );
   }
 
-  return data?.data;
+  throw new Error(`TikTok slideshow init failed across known endpoints: ${errors.join(' | ')}`);
+}
+
+async function createSlideshowVideoFallback(imageAssets: UploadAsset[]) {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'uploader-slideshow-'));
+  const concatFilePath = path.join(tmpDir, 'frames.txt');
+  const outPath = path.join(tmpDir, `slideshow_${Date.now()}.mp4`);
+  const frameSeconds = Number(process.env.SLIDESHOW_FALLBACK_FRAME_SECONDS || 1.2);
+
+  try {
+    const lines: string[] = [];
+    for (const asset of imageAssets) {
+      lines.push(`file '${asset.filePath.replace(/'/g, "'\\''")}'`);
+      lines.push(`duration ${frameSeconds}`);
+    }
+    const lastAsset = imageAssets[imageAssets.length - 1];
+    lines.push(`file '${lastAsset.filePath.replace(/'/g, "'\\''")}'`);
+    await fs.writeFile(concatFilePath, `${lines.join('\n')}\n`, 'utf8');
+
+    await execFileAsync('ffmpeg', [
+      '-y',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatFilePath,
+      '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2',
+      '-r', '30',
+      '-pix_fmt', 'yuv420p',
+      outPath,
+    ]);
+
+    return outPath;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Slideshow fallback video generation failed. Ensure ffmpeg is installed. ${message}`);
+  } finally {
+    await fs.rm(concatFilePath, { force: true }).catch(() => undefined);
+  }
 }
 
 export const tiktokProvider: SocialProvider = {
   provider: Provider.tiktok,
 
   async connectAccount(input) {
+    if (!input.code) {
+      throw new Error('TikTok connect requires authorization code');
+    }
+
     const tokenData = await exchangeCodeForToken({
       code: input.code,
       codeVerifier: input.codeVerifier,
@@ -259,23 +335,51 @@ export const tiktokProvider: SocialProvider = {
         throw new Error('A slideshow requires at least 2 images');
       }
 
-      const initData = await initializeSlideshowUpload(accessToken, job.mode, job.caption, imageAssets.length);
-      const uploadUrls = Array.isArray(initData?.upload_urls) ? initData.upload_urls : [];
+      try {
+        const initData = await initializeSlideshowUpload(accessToken, job.mode, job.caption, imageAssets.length);
+        const uploadUrls = Array.isArray(initData?.upload_urls) ? initData.upload_urls : [];
 
-      if (uploadUrls.length !== imageAssets.length) {
-        throw new Error('TikTok slideshow API did not return the expected upload URLs');
+        if (uploadUrls.length !== imageAssets.length) {
+          throw new Error('TikTok slideshow API did not return the expected upload URLs');
+        }
+
+        for (let i = 0; i < imageAssets.length; i += 1) {
+          const asset = imageAssets[i];
+          const uploadUrl = uploadUrls[i];
+          const data = await fs.readFile(asset.filePath);
+          await uploadBinaryToUrl(uploadUrl, data, asset.mimeType || 'image/jpeg');
+        }
+
+        return {
+          raw: {
+            ...initData,
+            fallbackUsed: false,
+          },
+        };
+      } catch (slideshowError) {
+        const fallbackMode = (process.env.TIKTOK_SLIDESHOW_FALLBACK || 'video').toLowerCase();
+        if (fallbackMode !== 'video') {
+          throw slideshowError;
+        }
+
+        const fallbackVideoPath = await createSlideshowVideoFallback(imageAssets);
+        const fallbackVideo = await fs.readFile(fallbackVideoPath);
+        const uploadUrl = await initializeVideoUpload(accessToken, job.mode, job.caption, fallbackVideo.length);
+        if (!uploadUrl) {
+          throw new Error('TikTok fallback video upload URL missing');
+        }
+
+        await uploadBinaryToUrl(uploadUrl, fallbackVideo, 'video/mp4');
+        await fs.rm(fallbackVideoPath, { force: true }).catch(() => undefined);
+
+        return {
+          raw: {
+            fallbackUsed: true,
+            fallbackReason: slideshowError instanceof Error ? slideshowError.message : 'unknown slideshow init error',
+            fallbackType: 'video',
+          },
+        };
       }
-
-      for (let i = 0; i < imageAssets.length; i += 1) {
-        const asset = imageAssets[i];
-        const uploadUrl = uploadUrls[i];
-        const data = await fs.readFile(asset.filePath);
-        await uploadBinaryToUrl(uploadUrl, data, asset.mimeType || 'image/jpeg');
-      }
-
-      return {
-        raw: initData,
-      };
     }
 
     throw new Error(`Unsupported post type: ${job.postType}`);
@@ -283,6 +387,14 @@ export const tiktokProvider: SocialProvider = {
 
   normalizeError(error: unknown): ProviderError {
     const message = error instanceof Error ? error.message : 'Unknown TikTok upload error';
+
+    if (/unsupported|requires|invalid|not support|caption exceeds|a slideshow requires/i.test(message)) {
+      return {
+        message,
+        retryable: false,
+        raw: error,
+      };
+    }
 
     const retryable =
       /timeout|network|rate|429|5\d\d|temporar/i.test(message) ||

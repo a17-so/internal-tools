@@ -8,7 +8,7 @@ export default async function ComposePage() {
   if (!user) return null;
 
   const accounts = await db.connectedAccount.findMany({
-    where: { userId: user.id, provider: 'tiktok' },
+    where: { userId: user.id },
     include: {
       capabilities: {
         orderBy: { fetchedAt: 'desc' },

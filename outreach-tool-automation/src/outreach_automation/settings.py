@@ -33,7 +33,6 @@ class Settings:
     batch_size: int
     run_lock_ttl_seconds: int
     sender_profile: str
-    default_creator_tier: str
     dry_run: bool
     email_send_enabled: bool
     gmail_client_id: str | None
@@ -106,7 +105,6 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         batch_size=int(os.getenv("BATCH_SIZE", "100")),
         run_lock_ttl_seconds=int(os.getenv("RUN_LOCK_TTL_SECONDS", "1800")),
         sender_profile=os.getenv("SENDER_PROFILE", "default"),
-        default_creator_tier=os.getenv("DEFAULT_CREATOR_TIER", "Submicro"),
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
         email_send_enabled=os.getenv("EMAIL_SEND_ENABLED", "true").lower() == "true",
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID"),

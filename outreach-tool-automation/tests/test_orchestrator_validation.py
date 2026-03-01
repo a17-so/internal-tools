@@ -21,7 +21,7 @@ class FakeSheets:
 
     def fetch_unprocessed(self, batch_size: int, row_index: int | None = None) -> list[LeadRow]:
         _ = (batch_size, row_index)
-        return [LeadRow(row_index=2, creator_url="https://tiktok.com/@user", creator_tier="", status="")]
+        return [LeadRow(row_index=2, creator_url="https://tiktok.com/@user", creator_tier="Micro", status="")]
 
     def update_status(self, row_index: int, status: str) -> None:
         self._statuses[row_index] = status
@@ -194,8 +194,11 @@ class FailingTiktokSender:
         return ChannelResult(status="failed", error_code="tiktok_send_failed")
 
 
-def test_missing_tier_defaults_to_submicro_and_processes() -> None:
+def test_missing_tier_fails_validation() -> None:
     sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://tiktok.com/@user", creator_tier="", status="")
+    ]
     firestore = FakeFirestore()
     scraper = FakeScraper()
 
@@ -209,16 +212,15 @@ def test_missing_tier_defaults_to_submicro_and_processes() -> None:
         tiktok_sender=FakeTiktokSender(),
         sender_profile="ethan",
         scrape_app="regen",
-        default_creator_tier="Submicro",
     )
 
     result = orchestrator.run(batch_size=1, dry_run=True)
-    assert result.processed == 1
-    assert sheets._statuses[2] == "Processed"
-    assert sheets.cleared_rows == [2]
-    assert sheets.error_rows == []
+    assert result.failed == 1
+    assert sheets._statuses[2] == "failed_missing_tier"
+    assert sheets.error_rows == [2]
     assert sheets.cleared_error_rows == []
-    assert scraper.last_category == "Submicro"
+    assert sheets.cleared_rows == []
+    assert scraper.last_category is None
     assert len(firestore.jobs) == 1
 
 
@@ -237,7 +239,6 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
         tiktok_sender=FakeTiktokSender(),
         sender_profile="ethan",
         scrape_app="regen",
-        default_creator_tier="Submicro",
     )
 
     result = orchestrator.run(batch_size=1, dry_run=False)
@@ -263,7 +264,6 @@ def test_full_failure_marks_link_error() -> None:
         tiktok_sender=FailingTiktokSender(),
         sender_profile="ethan",
         scrape_app="regen",
-        default_creator_tier="Submicro",
     )
 
     result = orchestrator.run(batch_size=1, dry_run=False)
@@ -272,3 +272,30 @@ def test_full_failure_marks_link_error() -> None:
     assert sheets.error_rows == [2]
     assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == []
+
+
+def test_invalid_tier_fails_validation() -> None:
+    sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://tiktok.com/@user", creator_tier="invalid-tier", status="")
+    ]
+    firestore = FakeFirestore()
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=True)
+    assert result.failed == 1
+    assert sheets._statuses[2] == "failed_invalid_tier"
+    assert sheets.error_rows == [2]
+    assert scraper.last_category is None

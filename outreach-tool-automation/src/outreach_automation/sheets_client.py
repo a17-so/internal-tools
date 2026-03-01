@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 import google.auth
 import gspread
@@ -41,7 +41,7 @@ class SheetsClient:
                 scopes=_SCOPES,
             )
         else:
-            creds, _ = google.auth.default(scopes=_SCOPES)
+            creds, _ = google.auth.default(scopes=_SCOPES)  # type: ignore[no-untyped-call]
         self._gc = gspread.authorize(creds)
         self._sheet = self._gc.open_by_key(sheet_id).worksheet(worksheet_name)
         self._columns = self._discover_columns(

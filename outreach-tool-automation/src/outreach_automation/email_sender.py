@@ -60,7 +60,7 @@ class EmailSender:
             client_secret=self._settings.gmail_client_secret,
             scopes=["https://www.googleapis.com/auth/gmail.send"],
         )
-        creds.refresh(Request())
+        creds.refresh(Request())  # type: ignore[no-untyped-call]
 
         service = build("gmail", "v1", credentials=creds)
         message = MIMEText(body)

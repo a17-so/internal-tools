@@ -104,7 +104,6 @@ class Orchestrator:
         tiktok_sender: TiktokSenderProto,
         sender_profile: str,
         scrape_app: str = "regen",
-        default_creator_tier: str = "Submicro",
         enable_email: bool = True,
         enable_instagram: bool = True,
         enable_tiktok: bool = True,
@@ -119,7 +118,6 @@ class Orchestrator:
         self._tiktok_sender = tiktok_sender
         self._sender_profile = sender_profile
         self._scrape_app = scrape_app
-        self._default_creator_tier = default_creator_tier
         self._enable_email = enable_email
         self._enable_instagram = enable_instagram
         self._enable_tiktok = enable_tiktok
@@ -163,8 +161,16 @@ class Orchestrator:
         try:
             tier = resolve_tier(lead.creator_tier)
             category = tier.value
-        except (MissingTierError, InvalidTierError):
-            category = self._default_creator_tier
+        except MissingTierError:
+            self._sheets.update_status(lead.row_index, "failed_missing_tier")
+            self._write_validation_job(lead, "failed_missing_tier", dry_run)
+            self._sheets.mark_creator_link_error(lead)
+            return "failed"
+        except InvalidTierError:
+            self._sheets.update_status(lead.row_index, "failed_invalid_tier")
+            self._write_validation_job(lead, "failed_invalid_tier", dry_run)
+            self._sheets.mark_creator_link_error(lead)
+            return "failed"
 
         if not lead.creator_url.strip():
             self._sheets.update_status(lead.row_index, "failed_missing_url")

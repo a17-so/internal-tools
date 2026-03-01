@@ -5,10 +5,12 @@ Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok 
 ## v1 Behavior
 
 - Source of truth for category: `creator_tier` column from `Raw Leads`
-- If tier is missing/invalid, fallback defaults to `Submicro` (`DEFAULT_CREATOR_TIER`)
 - Supports two lead layouts:
   - Standard columns (`creator_url`, optional `creator_tier`, optional `status`)
-  - Matrix mode (no explicit URL column): auto-selects the first column containing TikTok links and processes down that column
+  - Matrix mode (no explicit URL column): scans all TikTok URL columns and, when present, reads tier from the paired header `<date/name> Tier`
+- Missing/invalid tiers are rejected with deterministic sheet statuses:
+  - `failed_missing_tier`
+  - `failed_invalid_tier`
 - Sequential execution per lead: Email -> Instagram -> TikTok
 - No automatic retries for IG/TikTok sends
 - Dry-run mode available for full pipeline validation without sending
@@ -81,6 +83,12 @@ Live run:
 
 ```bash
 python -m outreach_automation.run_once --live
+```
+
+Run exactly 30 leads (your current testing flow):
+
+```bash
+python -m outreach_automation.run_once --live --max-leads 30
 ```
 
 Run selected channels only (useful for testing):

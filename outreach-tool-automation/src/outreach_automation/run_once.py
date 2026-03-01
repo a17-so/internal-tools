@@ -89,7 +89,6 @@ def main() -> int:
             ),
             sender_profile=settings.sender_profile,
             scrape_app=settings.scrape_app,
-            default_creator_tier=settings.default_creator_tier,
             enable_email="email" in enabled_channels,
             enable_instagram="instagram" in enabled_channels,
             enable_tiktok="tiktok" in enabled_channels,

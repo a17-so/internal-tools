@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -178,12 +179,12 @@ def test_local_scraper_extracts_email_and_ig_from_link_page(tmp_path: Path, monk
             super().__init__({})
             self._body = body
 
-        def iter_content(self, chunk_size: int = 8192):  # noqa: ANN001
+        def iter_content(self, chunk_size: int = 8192) -> Iterator[bytes]:
             data = self._body.encode("utf-8")
             for i in range(0, len(data), chunk_size):
                 yield data[i : i + chunk_size]
 
-    def fake_get(*args: Any, **kwargs: Any):
+    def fake_get(*args: Any, **kwargs: Any) -> Any:
         url = args[0] if args else kwargs.get("url", "")
         if "searchapi.io" in str(url):
             return _FakeResponse(

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LockKeyhole } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,24 @@ export default function LoginPage() {
   const [email, setEmail] = useState(process.env.NEXT_PUBLIC_DEFAULT_LOGIN_EMAIL || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkSession() {
+      const res = await fetch('/api/auth/me');
+      if (cancelled) return;
+      if (res.ok) {
+        router.replace('/');
+        router.refresh();
+      }
+    }
+
+    void checkSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();

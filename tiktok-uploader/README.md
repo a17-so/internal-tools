@@ -4,7 +4,7 @@ Multi-account, queue-based social uploader (TikTok implemented first) with a web
 
 ## What This Version Adds
 
-- Internal app login (single-operator mode)
+- Internal app login (single-operator mode, bypassable in dev)
 - Persistent connected TikTok accounts (not cookie-only)
 - Account picker for uploads
 - Draft-first upload mode with optional direct mode
@@ -38,9 +38,13 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 TIKTOK_CLIENT_KEY=...
 TIKTOK_CLIENT_SECRET=...
 
-# Internal app auth bootstrap user
+# Internal app auth bootstrap user (required when AUTH_BYPASS is off)
 APP_USER_EMAIL=you@company.com
 APP_USER_PASSWORD=strong-password
+
+# Optional auth bypass (enabled by default in non-production unless explicitly false)
+# AUTH_BYPASS=true
+# AUTH_BYPASS_EMAIL=operator@local
 
 # Token encryption secret (passphrase or base64 32-byte key)
 ENCRYPTION_KEY=change-me
@@ -83,11 +87,11 @@ npm run db:push
 npm run dev
 ```
 
-5. Open [http://localhost:3000/login](http://localhost:3000/login)
+5. Open [http://localhost:3000](http://localhost:3000)
 
 ## Web Workflow
 
-1. Login with `APP_USER_EMAIL` / `APP_USER_PASSWORD`
+1. If auth bypass is disabled, login with `APP_USER_EMAIL` / `APP_USER_PASSWORD`
 2. Go to `Accounts` and click `Connect TikTok`
 3. Authorize account(s)
    - TikTok: OAuth via `Connect TikTok`
@@ -215,9 +219,17 @@ slideshow,cmabc123,draft,"Post 2 #tips",,slide1.jpg;slide2.jpg;slide3.jpg,tiktok
 ## Notes
 
 - Draft mode is default everywhere.
+- Auth bypass defaults to enabled in local/dev (`NODE_ENV !== production`) unless `AUTH_BYPASS=false`.
 - Instagram currently supports `direct` video/Reels mode only.
 - YouTube currently supports `direct` video uploads only (uploaded as private by default).
 - Facebook currently supports `direct` page video uploads only.
+
+## TikTok Sandbox Troubleshooting
+
+- `non_sandbox_target` means the currently logged-in TikTok account is not an allowed sandbox tester for your app.
+- In TikTok Developer Console, add that exact account as a sandbox test user.
+- Use a dedicated browser profile/incognito window for sandbox testing to avoid auto-signing with your normal account.
+- Log out of TikTok in that window before starting OAuth, then log in with the sandbox tester account.
 - Duplicate prevention uses idempotency hash (media + caption + mode + account).
 - Retries are exponential backoff for retryable errors.
 - Retry policy is provider-specific and configurable with `RETRY_*` env vars.

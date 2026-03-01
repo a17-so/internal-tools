@@ -1,7 +1,7 @@
 # Raw Leads Shortcut Setup (v2)
 
 Cloud Run API URL:
-- `https://outreach-tool-api-561024281586.us-central1.run.app/add_raw_leads`
+- `https://outreach-tool-api-vwoqhidyxa-uc.a.run.app/add_raw_leads`
 
 Use this JSON payload in the Shortcuts `Get Contents of URL` action (`POST`, `JSON`):
 
@@ -37,7 +37,7 @@ How to create iCloud share link for cofounders:
 Quick API test after sharing sheet:
 
 ```bash
-curl -sS -X POST https://outreach-tool-api-561024281586.us-central1.run.app/add_raw_leads \
+curl -sS -X POST https://outreach-tool-api-vwoqhidyxa-uc.a.run.app/add_raw_leads \
   -H 'Content-Type: application/json' \
   -d '{"app":"regen","url":"https://www.tiktok.com/@example","category":"rawlead","creator_tier":"Micro","sender_profile":"ethan"}'
 ```

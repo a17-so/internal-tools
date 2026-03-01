@@ -119,7 +119,14 @@ class TiktokDmSender:
                     channel="chrome",
                     headless=False,
                 )
-                page = await context.new_page()
+                page = context.pages[0] if context.pages else await context.new_page()
+                # Some Chrome profiles spawn extra blank tabs; close extras to keep browser clean.
+                for extra in context.pages:
+                    if extra == page:
+                        continue
+                    with contextlib.suppress(Exception):
+                        if (await extra.title()).strip().lower() == "about:blank":
+                            await extra.close()
                 close_context = True
             await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
             await _slow_settle(page)

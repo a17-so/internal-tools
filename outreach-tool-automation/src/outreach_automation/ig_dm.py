@@ -63,7 +63,14 @@ class InstagramDmSender:
                 channel="chrome",
                 headless=False,
             )
-            page = await context.new_page()
+            page = context.pages[0] if context.pages else await context.new_page()
+            # Some Chrome profiles spawn an extra about:blank tab; close extras to avoid tab buildup.
+            for extra in context.pages:
+                if extra == page:
+                    continue
+                with contextlib.suppress(Exception):
+                    if (await extra.title()).strip().lower() == "about:blank":
+                        await extra.close()
             opened = await _open_thread_via_inbox_search(page, ig_handle)
             if not opened:
                 raise RuntimeError("No matching selector found: instagram thread row")

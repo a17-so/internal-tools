@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 
@@ -24,6 +24,18 @@ _INSTAGRAM_URL_RE = re.compile(
 _HANDLE_RE = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 _BLOCKED_HANDLES = {"media", "instagram", "com", "www"}
 _IGNORE_EMAILS = {"example@example.com", "email@example.com", "your@email.com"}
+_LINK_HUB_DOMAINS = {
+    "linktr.ee",
+    "beacons.ai",
+    "beacons.page",
+    "campsite.bio",
+    "lnk.bio",
+    "solo.to",
+    "stan.store",
+    "withkoji.com",
+}
+_LINK_CRAWL_TIMEOUT_SECONDS = 3.0
+_LINK_CRAWL_MAX_BYTES = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +64,13 @@ class LocalScrapeClient:
             username=username,
             same_username_fallback=self._settings.same_username_fallback,
         )
+        bio_link = str(profile.get("bio_link", "") or "")
+        if bio_link and (not email or not ig_handle):
+            link_email, link_ig = _extract_contact_from_link_page(bio_link)
+            if not email and link_email:
+                email = link_email
+            if not ig_handle and link_ig:
+                ig_handle = link_ig
         templates = _load_templates(
             app_key=payload.app,
             templates_dir=self._settings.templates_dir,
@@ -123,6 +142,49 @@ def _is_retryable_searchapi_error(exc: Exception) -> bool:
             return True
         return status == 429 or status >= 500
     return False
+
+
+def _extract_contact_from_link_page(link_url: str) -> tuple[str, str]:
+    parsed = urlparse((link_url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        return "", ""
+    host = (parsed.netloc or "").lower().replace("www.", "")
+    if host not in _LINK_HUB_DOMAINS:
+        return "", ""
+
+    try:
+        response = requests.get(
+            link_url,
+            timeout=_LINK_CRAWL_TIMEOUT_SECONDS,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                )
+            },
+            allow_redirects=True,
+            stream=True,
+        )
+        response.raise_for_status()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= _LINK_CRAWL_MAX_BYTES:
+                break
+
+        html = b"".join(chunks).decode("utf-8", errors="ignore")
+        if not html:
+            return "", ""
+        decoded = unquote(html)
+        email = _extract_email(html) or _extract_email(decoded)
+        ig = _extract_ig_from_text(html) or _extract_ig_from_text(decoded)
+        return email, ig
+    except Exception:
+        return "", ""
 
 
 def _extract_email(text: str) -> str:

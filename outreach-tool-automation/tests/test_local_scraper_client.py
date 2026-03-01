@@ -166,3 +166,59 @@ def test_local_scraper_retries_transient_searchapi_error(tmp_path: Path, monkeyp
     )
     assert calls["count"] == 2
     assert result.ig_handle == "retryuser"
+
+
+def test_local_scraper_extracts_email_and_ig_from_link_page(tmp_path: Path, monkeypatch: Any) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    _make_template_script(scripts_dir / "regen.py")
+
+    class _StreamResponse(_FakeResponse):
+        def __init__(self, body: str) -> None:
+            super().__init__({})
+            self._body = body
+
+        def iter_content(self, chunk_size: int = 8192):  # noqa: ANN001
+            data = self._body.encode("utf-8")
+            for i in range(0, len(data), chunk_size):
+                yield data[i : i + chunk_size]
+
+    def fake_get(*args: Any, **kwargs: Any):
+        url = args[0] if args else kwargs.get("url", "")
+        if "searchapi.io" in str(url):
+            return _FakeResponse(
+                {
+                    "profile": {
+                        "username": "withlink",
+                        "name": "With Link",
+                        "bio": "no public email in bio",
+                        "bio_link": "https://linktr.ee/withlink",
+                    }
+                }
+            )
+        return _StreamResponse(
+            '<a href="mailto:lead@example.com">mail</a>'
+            '<a href="https://instagram.com/withlink.ig">ig</a>'
+        )
+
+    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+
+    client = LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key="dummy",
+            request_timeout_seconds=10,
+            same_username_fallback=False,
+            templates_dir=scripts_dir,
+            outreach_apps_json=None,
+        )
+    )
+    result = client.scrape(
+        ScrapePayload(
+            app="regen",
+            creator_url="https://www.tiktok.com/@withlink",
+            category="Submicro",
+            sender_profile="ethan",
+        )
+    )
+    assert result.email_to == "lead@example.com"
+    assert result.ig_handle == "withlink.ig"

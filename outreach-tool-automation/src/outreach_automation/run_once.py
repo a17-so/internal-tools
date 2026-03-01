@@ -92,12 +92,17 @@ def main() -> int:
                 tiktok_handle=settings.tiktok_sender_handle,
             ),
             email_sender=EmailSender(settings),
-            ig_sender=InstagramDmSender(session_manager),
+            ig_sender=InstagramDmSender(
+                session_manager,
+                min_seconds_between_sends=settings.ig_min_seconds_between_sends,
+                send_jitter_seconds=settings.ig_send_jitter_seconds,
+            ),
             tiktok_sender=TiktokDmSender(
                 session_manager,
                 attach_mode=settings.tiktok_attach_mode,
                 cdp_url=settings.tiktok_cdp_url,
                 min_seconds_between_sends=settings.tiktok_min_seconds_between_sends,
+                send_jitter_seconds=settings.tiktok_send_jitter_seconds,
             ),
             sender_profile=settings.sender_profile,
             scrape_app=settings.scrape_app,

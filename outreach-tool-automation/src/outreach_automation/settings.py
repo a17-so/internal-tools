@@ -42,11 +42,14 @@ class Settings:
     gmail_client_secret: str | None
     gmail_accounts: tuple[GmailAccountConfig, ...]
     ig_profile_dir: Path
+    ig_min_seconds_between_sends: int
+    ig_send_jitter_seconds: float
     tiktok_profile_dir: Path
     tiktok_attach_mode: bool
     tiktok_attach_auto_start: bool
     tiktok_cdp_url: str | None
     tiktok_min_seconds_between_sends: int
+    tiktok_send_jitter_seconds: float
 
 
 def _required(name: str) -> str:
@@ -118,9 +121,12 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         gmail_client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
         gmail_accounts=_gmail_accounts(),
         ig_profile_dir=ig_profile_dir,
+        ig_min_seconds_between_sends=int(os.getenv("IG_MIN_SECONDS_BETWEEN_SENDS", "2")),
+        ig_send_jitter_seconds=float(os.getenv("IG_SEND_JITTER_SECONDS", "1.5")),
         tiktok_profile_dir=tiktok_profile_dir,
         tiktok_attach_mode=os.getenv("TIKTOK_ATTACH_MODE", "false").lower() == "true",
         tiktok_attach_auto_start=os.getenv("TIKTOK_ATTACH_AUTO_START", "true").lower() == "true",
         tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
         tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "3")),
+        tiktok_send_jitter_seconds=float(os.getenv("TIKTOK_SEND_JITTER_SECONDS", "2.0")),
     )

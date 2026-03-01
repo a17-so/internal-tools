@@ -148,6 +148,9 @@ Notes for attach mode:
 - Do not run multiple outreach processes against the same attached Chrome at once.
 - The automation will open/close only the tab it creates and will not close your attached Chrome browser.
 - Live preflight fails fast if `TIKTOK_ATTACH_MODE=true` but `TIKTOK_CDP_URL` is unreachable.
+- DM send pacing uses randomized delays (base + jitter), not fixed intervals:
+  - `IG_MIN_SECONDS_BETWEEN_SENDS` + `IG_SEND_JITTER_SECONDS`
+  - `TIKTOK_MIN_SECONDS_BETWEEN_SENDS` + `TIKTOK_SEND_JITTER_SECONDS`
 
 Seed Firestore accounts:
 

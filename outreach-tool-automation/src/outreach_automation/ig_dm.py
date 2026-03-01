@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import random
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
@@ -17,8 +18,18 @@ from outreach_automation.session_manager import SessionManager
 
 
 class InstagramDmSender:
-    def __init__(self, session_manager: SessionManager) -> None:
+    _last_send_ts_by_account: ClassVar[dict[str, float]] = {}
+
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        *,
+        min_seconds_between_sends: int = 2,
+        send_jitter_seconds: float = 1.5,
+    ) -> None:
         self._session_manager = session_manager
+        self._min_seconds_between_sends = max(0, min_seconds_between_sends)
+        self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
     def send(self, ig_handle: str | None, dm_text: str, account: Account | None, *, dry_run: bool) -> ChannelResult:
         if not ig_handle:
@@ -27,6 +38,7 @@ class InstagramDmSender:
             return ChannelResult(status="pending_tomorrow", error_code="no_ig_account")
         if dry_run:
             return ChannelResult(status="sent")
+        self._enforce_send_spacing(account.handle)
         profile_dir = self._session_manager.profile_dir_for(Platform.INSTAGRAM, account.handle)
         if not profile_dir.exists():
             return ChannelResult(status="failed", error_code="missing_ig_session")
@@ -50,6 +62,17 @@ class InstagramDmSender:
                     error_message=str(exc),
                 )
             return ChannelResult(status="failed", error_code="ig_send_failed", error_message=str(exc))
+
+    def _enforce_send_spacing(self, account_handle: str) -> None:
+        target_spacing = self._min_seconds_between_sends + random.uniform(0.0, self._send_jitter_seconds)
+        if target_spacing <= 0:
+            return
+        now = time.time()
+        last_sent = self._last_send_ts_by_account.get(account_handle, 0.0)
+        remaining = target_spacing - (now - last_sent)
+        if remaining > 0:
+            time.sleep(remaining)
+        self._last_send_ts_by_account[account_handle] = time.time()
 
     async def _send_async(self, ig_handle: str, dm_text: str, profile_dir: Path) -> None:
         try:

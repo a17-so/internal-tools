@@ -62,7 +62,7 @@ class EmailSender:
         )
         creds.refresh(Request())  # type: ignore[no-untyped-call]
 
-        service = build("gmail", "v1", credentials=creds)
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         message = MIMEText(body)
         message["to"] = to_email
         message["from"] = account.handle

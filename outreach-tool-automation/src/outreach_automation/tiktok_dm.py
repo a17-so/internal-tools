@@ -24,11 +24,13 @@ class TiktokDmSender:
         attach_mode: bool = False,
         cdp_url: str | None = None,
         min_seconds_between_sends: int = 3,
+        send_jitter_seconds: float = 2.0,
     ) -> None:
         self._session_manager = session_manager
         self._attach_mode = attach_mode
         self._cdp_url = cdp_url
         self._min_seconds_between_sends = max(0, min_seconds_between_sends)
+        self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
     def send(self, creator_url: str, dm_text: str, account: Account | None, *, dry_run: bool) -> ChannelResult:
         handle = _extract_handle(creator_url)
@@ -77,11 +79,12 @@ class TiktokDmSender:
             return ChannelResult(status="failed", error_code="tiktok_send_failed", error_message=str(exc))
 
     def _enforce_send_spacing(self, account_handle: str) -> None:
-        if self._min_seconds_between_sends <= 0:
+        target_spacing = self._min_seconds_between_sends + random.uniform(0.0, self._send_jitter_seconds)
+        if target_spacing <= 0:
             return
         now = time.time()
         last_sent = self._last_send_ts_by_account.get(account_handle, 0.0)
-        remaining = self._min_seconds_between_sends - (now - last_sent)
+        remaining = target_spacing - (now - last_sent)
         if remaining > 0:
             time.sleep(remaining)
         self._last_send_ts_by_account[account_handle] = time.time()

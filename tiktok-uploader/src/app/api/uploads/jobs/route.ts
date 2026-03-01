@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
       const { job, duplicate } = await createJob(jobInput);
       if (sendNow) {
-        await dispatchPendingJobs();
+        await dispatchPendingJobs({ userId: user.id });
       }
 
       return NextResponse.json({ job, duplicate });
@@ -190,7 +190,7 @@ export async function POST(request: Request) {
     const { job, duplicate } = await createJob(jobInput);
 
     if (payload.sendNow) {
-      await dispatchPendingJobs();
+      await dispatchPendingJobs({ userId: user.id });
     }
 
     return NextResponse.json({ job, duplicate });

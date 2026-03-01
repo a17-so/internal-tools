@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.sendNow && payload.jobs.length > 0) {
-      await dispatchPendingJobs();
+      await dispatchPendingJobs({ userId: user.id });
     }
 
     return NextResponse.json({ batch, jobs: results });

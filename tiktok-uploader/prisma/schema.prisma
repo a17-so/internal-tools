@@ -50,6 +50,7 @@ model User {
   uploadBatches     UploadBatch[]
   uploadJobs        UploadJob[]
   defaultAccountId  String?
+  queueControl      QueueControl?
 }
 
 model Session {
@@ -221,4 +222,15 @@ model ProviderCapabilityCache {
   connectedAccount ConnectedAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
 
   @@index([connectedAccountId, fetchedAt])
+}
+
+model QueueControl {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  paused         Boolean  @default(false)
+  dispatchMode   String   @default("due_only")
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

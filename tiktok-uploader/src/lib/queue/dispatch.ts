@@ -2,6 +2,7 @@ import { Provider, UploadStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { notifyJobFailed } from '@/lib/notifications';
 import { getProvider } from '@/lib/providers';
+import { getQueueControl } from '@/lib/queue/control';
 import { getRetryDelayMs, getRetryPolicy } from '@/lib/queue/retry-policy';
 
 const GLOBAL_CONCURRENCY = Number(process.env.QUEUE_GLOBAL_CONCURRENCY || 5);
@@ -133,12 +134,29 @@ async function processJob(jobId: string) {
   }
 }
 
-async function claimNextJobs(limit: number) {
+async function claimNextJobs(limit: number, options: { userId?: string; ignoreSchedule?: boolean; forcePaused?: boolean }) {
   const now = new Date();
+
+  if (options.userId) {
+    const control = await getQueueControl(options.userId);
+    if (control.paused && !options.forcePaused) {
+      return [];
+    }
+  }
+
+  const scheduleClause = options.ignoreSchedule
+    ? {}
+    : {
+      OR: [
+        { scheduledAt: null },
+        { scheduledAt: { lte: now } },
+      ],
+    };
 
   const queuedJobs = await db.uploadJob.findMany({
     where: {
       status: UploadStatus.queued,
+      ...(options.userId ? { userId: options.userId } : {}),
       OR: [
         { startedAt: null },
         { startedAt: { lt: nowMinus(1000 * 60 * 5) } },
@@ -150,12 +168,7 @@ async function claimNextJobs(limit: number) {
             { nextAttemptAt: { lte: now } },
           ],
         },
-        {
-          OR: [
-            { scheduledAt: null },
-            { scheduledAt: { lte: now } },
-          ],
-        },
+        scheduleClause,
       ],
     },
     orderBy: { createdAt: 'asc' },
@@ -215,8 +228,8 @@ async function claimNextJobs(limit: number) {
   return claimed;
 }
 
-export async function dispatchPendingJobs() {
-  const claimed = await claimNextJobs(100);
+export async function dispatchPendingJobs(options?: { userId?: string; ignoreSchedule?: boolean; forcePaused?: boolean }) {
+  const claimed = await claimNextJobs(100, options || {});
   if (claimed.length === 0) return { processed: 0 };
 
   const accountInFlight = new Map<string, number>();

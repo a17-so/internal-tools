@@ -1,7 +1,9 @@
 import JobsTable from '@/components/app/jobs-table';
+import QueueControls from '@/components/app/queue-controls';
 import type { JobView } from '@/components/app/jobs-table';
 import { getOptionalAuth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { getQueueControl } from '@/lib/queue/control';
 
 export default async function QueuePage() {
   const user = await getOptionalAuth();
@@ -18,6 +20,7 @@ export default async function QueuePage() {
     },
     take: 200,
   });
+  const control = await getQueueControl(user.id);
 
   return (
     <div className="space-y-4">
@@ -25,6 +28,7 @@ export default async function QueuePage() {
         <h2 className="text-2xl font-semibold text-slate-900">Queue</h2>
         <p className="text-slate-600">Live queued/running/failed jobs with controls.</p>
       </div>
+      <QueueControls initialControl={{ ...control, updatedAt: control.updatedAt.toISOString() }} />
       <JobsTable mode="queue" initialJobs={jobs as unknown as JobView[]} />
     </div>
   );

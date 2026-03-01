@@ -25,7 +25,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       return NextResponse.json({ error: 'Job not found or not retryable' }, { status: 400 });
     }
 
-    await dispatchPendingJobs();
+    await dispatchPendingJobs({ userId: user.id });
     return NextResponse.json({ success: true });
   });
 }

@@ -13,7 +13,7 @@ export async function notifyJobFailed(job: UploadJob, reason: string) {
   const targets = getWebhookTargets();
   if (targets.length === 0) return;
 
-  const payload = {
+  const eventPayload = {
     event: 'upload.job.failed',
     timestamp: new Date().toISOString(),
     job: {
@@ -32,6 +32,35 @@ export async function notifyJobFailed(job: UploadJob, reason: string) {
 
   await Promise.all(
     targets.map(async (target) => {
+      const isSlackWebhook = /hooks\\.slack\\.com/i.test(target);
+      const payload = isSlackWebhook
+        ? {
+          text: `Upload failed (${job.provider})`,
+          blocks: [
+            {
+              type: 'header',
+              text: { type: 'plain_text', text: 'Uploader Job Failed' },
+            },
+            {
+              type: 'section',
+              fields: [
+                { type: 'mrkdwn', text: `*Provider*\\n${job.provider}` },
+                { type: 'mrkdwn', text: `*Job ID*\\n${job.id}` },
+                { type: 'mrkdwn', text: `*Batch ID*\\n${job.batchId || '-'}` },
+                { type: 'mrkdwn', text: `*Mode / Type*\\n${job.mode} / ${job.postType}` },
+                { type: 'mrkdwn', text: `*Attempts*\\n${job.attemptCount}/${job.maxRetries}` },
+                { type: 'mrkdwn', text: `*Scheduled*\\n${job.scheduledAt ? new Date(job.scheduledAt).toISOString() : 'Immediate'}` },
+              ],
+            },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: `*Error*\\n${reason}` },
+            },
+          ],
+          metadata: eventPayload,
+        }
+        : eventPayload;
+
       try {
         const response = await fetch(target, {
           method: 'POST',

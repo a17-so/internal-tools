@@ -150,6 +150,12 @@ class SheetsClient:
             return
         self._set_cell_background_color(lead.row_index, col, red=1.0, green=0.8, blue=0.8)
 
+    def clear_creator_link_error(self, lead: LeadRow) -> None:
+        col = self._resolve_lead_url_col(lead)
+        if col is None:
+            return
+        self._set_cell_background_color(lead.row_index, col, red=1.0, green=1.0, blue=1.0)
+
     @staticmethod
     def _get_cell(row: list[str], col_index_one_based: int | None) -> str:
         if col_index_one_based is None:

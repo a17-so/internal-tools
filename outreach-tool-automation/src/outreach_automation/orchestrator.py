@@ -26,6 +26,7 @@ class SheetsClientProto(Protocol):
     def update_status(self, row_index: int, status: str) -> None: ...
     def clear_creator_link(self, lead: LeadRow) -> None: ...
     def mark_creator_link_error(self, lead: LeadRow) -> None: ...
+    def clear_creator_link_error(self, lead: LeadRow) -> None: ...
 
 
 class ScraperClientProto(Protocol):
@@ -231,12 +232,11 @@ class Orchestrator:
             self._sheets.update_status(lead.row_index, final_status)
             if final_status == "Processed":
                 self._sheets.clear_creator_link(lead)
-            elif final_status.startswith("failed") and not _any_channel_sent(
-                email_result,
-                ig_result,
-                tiktok_result,
-            ):
-                self._sheets.mark_creator_link_error(lead)
+            elif final_status.startswith("failed"):
+                if _any_channel_sent(email_result, ig_result, tiktok_result):
+                    self._sheets.clear_creator_link_error(lead)
+                else:
+                    self._sheets.mark_creator_link_error(lead)
 
             if final_status == "Processed":
                 return_value = "processed"

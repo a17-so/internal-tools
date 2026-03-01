@@ -17,6 +17,7 @@ class FakeSheets:
         self._statuses: dict[int, str] = {}
         self.cleared_rows: list[int] = []
         self.error_rows: list[int] = []
+        self.cleared_error_rows: list[int] = []
 
     def fetch_unprocessed(self, batch_size: int, row_index: int | None = None) -> list[LeadRow]:
         _ = (batch_size, row_index)
@@ -30,6 +31,9 @@ class FakeSheets:
 
     def mark_creator_link_error(self, lead: LeadRow) -> None:
         self.error_rows.append(lead.row_index)
+
+    def clear_creator_link_error(self, lead: LeadRow) -> None:
+        self.cleared_error_rows.append(lead.row_index)
 
 
 class FakeScraper:
@@ -213,6 +217,7 @@ def test_missing_tier_defaults_to_submicro_and_processes() -> None:
     assert sheets._statuses[2] == "Processed"
     assert sheets.cleared_rows == [2]
     assert sheets.error_rows == []
+    assert sheets.cleared_error_rows == []
     assert scraper.last_category == "Submicro"
     assert len(firestore.jobs) == 1
 
@@ -239,6 +244,7 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_ig_send_failed"
     assert sheets.error_rows == []
+    assert sheets.cleared_error_rows == [2]
     assert sheets.cleared_rows == []
 
 
@@ -264,4 +270,5 @@ def test_full_failure_marks_link_error() -> None:
     assert result.failed == 1
     assert sheets._statuses[2].startswith("failed_")
     assert sheets.error_rows == [2]
+    assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == []

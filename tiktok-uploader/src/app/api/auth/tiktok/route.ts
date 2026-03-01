@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET() {
+    await requireAuth();
+
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`;
-    const scopes = 'user.info.basic,user.info.profile,video.upload,user.info.stats,video.list';
+    const scopes = 'user.info.basic,user.info.profile,user.info.stats,video.list,video.upload,video.publish';
 
     // Create a random string for state to prevent CSRF
     const state = Math.random().toString(36).substring(7);

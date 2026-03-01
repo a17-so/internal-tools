@@ -1,100 +1,60 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { Provider } from '@prisma/client';
+import { getProvider } from '@/lib/providers';
+import { requireAuth } from '@/lib/auth';
+import { db } from '@/lib/db';
 
 export async function GET(request: Request) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+  try {
+    const user = await requireAuth();
     const { searchParams } = new URL(request.url);
 
-    // TikTok may redirect with an error instead of a code
     const error = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
+
     if (error) {
-        console.error('TikTok returned an error:', error, errorDescription);
-        return NextResponse.redirect(
-            `${process.env.NEXT_PUBLIC_APP_URL}?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`
-        );
+      return NextResponse.redirect(`${appUrl}/accounts?error=${encodeURIComponent(errorDescription || error)}`);
     }
 
     const code = searchParams.get('code');
-    const state = searchParams.get('state');
-
     if (!code) {
-        console.error('No code parameter received. Full URL:', request.url);
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}?error=NoCode`);
+      return NextResponse.redirect(`${appUrl}/accounts?error=MissingCode`);
     }
 
     const cookieStore = await cookies();
     const codeVerifier = cookieStore.get('tiktok_code_verifier')?.value;
 
-    console.log('Callback received. code:', code?.substring(0, 10) + '...', 'state:', state, 'has codeVerifier:', !!codeVerifier);
+    const provider = getProvider(Provider.tiktok);
+    const account = await provider.connectAccount({
+      code,
+      codeVerifier,
+      redirectUri: `${appUrl}/api/auth/callback`,
+      userId: user.id,
+    });
 
-    const clientKey = process.env.TIKTOK_CLIENT_KEY;
-    const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`;
+    const capabilities = await provider.getCapabilities(account);
 
-    try {
-        const bodyParams: Record<string, string> = {
-            client_key: clientKey as string,
-            client_secret: clientSecret as string,
-            code,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri,
-        };
+    await db.providerCapabilityCache.create({
+      data: {
+        connectedAccountId: account.id,
+        supportsDraftVideo: capabilities.supportsDraftVideo,
+        supportsDirectVideo: capabilities.supportsDirectVideo,
+        supportsPhotoSlideshow: capabilities.supportsPhotoSlideshow,
+        captionLimit: capabilities.captionLimit,
+        hashtagLimit: capabilities.hashtagLimit,
+        rawJson: JSON.stringify(capabilities.raw || {}),
+      },
+    });
 
-        if (codeVerifier) {
-            bodyParams.code_verifier = codeVerifier;
-        }
-
-        console.log('Requesting token with redirect_uri:', redirectUri);
-
-        const tokenResponse = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams(bodyParams),
-        });
-
-        const data = await tokenResponse.json();
-        console.log('TikTok token response status:', tokenResponse.status, 'body:', JSON.stringify(data));
-
-        // TikTok often returns 200 with error info in the body
-        if (data.error || data.error_code || !data.access_token) {
-            console.error('TikTok Auth Error:', JSON.stringify(data));
-            return NextResponse.redirect(
-                `${process.env.NEXT_PUBLIC_APP_URL}?error=AuthFailed&detail=${encodeURIComponent(data.error_description || data.message || JSON.stringify(data))}`
-            );
-        }
-
-        // Success - store the access token in a cookie
-        const response = NextResponse.redirect(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-
-        response.cookies.set('tiktok_access_token', data.access_token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: data.expires_in || 86400,
-            path: '/',
-        });
-
-        response.cookies.set('tiktok_open_id', data.open_id, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: data.expires_in || 86400,
-            path: '/',
-        });
-
-        if (data.refresh_token) {
-            response.cookies.set('tiktok_refresh_token', data.refresh_token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: data.refresh_expires_in || 31536000,
-                path: '/',
-            });
-        }
-
-        console.log('Auth successful! Redirecting to home.');
-        return response;
-    } catch (err) {
-        console.error('Callback handling failed:', err);
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}?error=ServerError`);
-    }
+    const response = NextResponse.redirect(`${appUrl}/accounts?connected=1`);
+    response.cookies.delete('tiktok_code_verifier');
+    response.cookies.delete('tiktok_auth_state');
+    return response;
+  } catch (err) {
+    console.error('OAuth callback failed:', err);
+    return NextResponse.redirect(`${appUrl}/accounts?error=OAuthFailed`);
+  }
 }

@@ -4,9 +4,10 @@ import { Provider } from '@prisma/client';
 import { requireAuth } from '@/lib/auth';
 import { getProvider } from '@/lib/providers';
 import { db } from '@/lib/db';
+import { normalizeBaseUrl } from '@/lib/oauth';
 
 export async function GET(request: Request) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL, 'http://localhost:3000');
   try {
     const user = await requireAuth();
     const { searchParams } = new URL(request.url);

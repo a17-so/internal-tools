@@ -13,6 +13,7 @@ export type JobView = {
   mode: string;
   caption: string;
   errorMessage: string | null;
+  providerPostId?: string | null;
   scheduledAt?: string | null;
   nextAttemptAt?: string | null;
   connectedAccount: {
@@ -130,6 +131,7 @@ export default function JobsTable({ mode, initialJobs }: { mode: 'queue' | 'hist
                 </td>
                 <td className="px-3 py-3 text-slate-500">{new Date(job.createdAt).toLocaleString()}</td>
                 <td className="space-y-1 px-3 py-3">
+                  {job.providerPostId ? <p className="max-w-[240px] text-xs text-emerald-700">Provider ref: {job.providerPostId}</p> : null}
                   {job.status === 'failed' ? (
                     <Button variant="outline" size="sm" className="rounded-lg" onClick={() => retry(job.id)}>
                       <RotateCcw className="h-3.5 w-3.5" />

@@ -183,7 +183,18 @@ async function initializeVideoUpload(accessToken: string, mode: UploadMode, titl
     throw new Error(data?.error?.message || 'Failed to initialize TikTok video upload');
   }
 
-  return data?.data?.upload_url as string | undefined;
+  const dataPayload = data?.data || {};
+  return {
+    uploadUrl: dataPayload.upload_url as string | undefined,
+    externalPostId:
+      dataPayload.publish_id
+      || dataPayload.publishId
+      || dataPayload.post_id
+      || dataPayload.item_id
+      || dataPayload.video_id
+      || undefined,
+    raw: dataPayload,
+  };
 }
 
 async function uploadBinaryToUrl(uploadUrl: string, payload: Buffer, mimeType: string) {
@@ -263,6 +274,19 @@ async function initializeSlideshowUpload(accessToken: string, mode: UploadMode, 
   }
 
   throw new Error(`TikTok slideshow init failed across known endpoints: ${errors.join(' | ')}`);
+}
+
+function extractExternalPostId(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined;
+  const data = value as Record<string, unknown>;
+  const candidate =
+    data.publish_id
+    || data.publishId
+    || data.post_id
+    || data.item_id
+    || data.video_id
+    || data.task_id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
 }
 
 async function createSlideshowVideoFallback(imageAssets: UploadAsset[]) {
@@ -399,14 +423,18 @@ export const tiktokProvider: SocialProvider = {
       }
 
       const data = await fs.readFile(videoAsset.filePath);
-      const uploadUrl = await initializeVideoUpload(accessToken, job.mode, job.caption, data.length);
-      if (!uploadUrl) {
+      const initResult = await initializeVideoUpload(accessToken, job.mode, job.caption, data.length);
+      if (!initResult.uploadUrl) {
         throw new Error('TikTok video upload URL missing');
       }
 
-      await uploadBinaryToUrl(uploadUrl, data, videoAsset.mimeType || 'video/mp4');
+      await uploadBinaryToUrl(initResult.uploadUrl, data, videoAsset.mimeType || 'video/mp4');
       return {
-        raw: { uploadUrl },
+        externalPostId: initResult.externalPostId,
+        raw: {
+          uploadUrl: initResult.uploadUrl,
+          init: initResult.raw,
+        },
       };
     }
 
@@ -435,6 +463,7 @@ export const tiktokProvider: SocialProvider = {
         }
 
         return {
+          externalPostId: extractExternalPostId(initData),
           raw: {
             ...initData,
             fallbackUsed: false,
@@ -448,16 +477,19 @@ export const tiktokProvider: SocialProvider = {
 
         const fallbackVideoPath = await createSlideshowVideoFallback(imageAssets);
         const fallbackVideo = await fs.readFile(fallbackVideoPath);
-        const uploadUrl = await initializeVideoUpload(accessToken, job.mode, job.caption, fallbackVideo.length);
-        if (!uploadUrl) {
+        const initResult = await initializeVideoUpload(accessToken, job.mode, job.caption, fallbackVideo.length);
+        if (!initResult.uploadUrl) {
           throw new Error('TikTok fallback video upload URL missing');
         }
 
-        await uploadBinaryToUrl(uploadUrl, fallbackVideo, 'video/mp4');
+        await uploadBinaryToUrl(initResult.uploadUrl, fallbackVideo, 'video/mp4');
         await fs.rm(fallbackVideoPath, { force: true }).catch(() => undefined);
 
         return {
+          externalPostId: initResult.externalPostId,
           raw: {
+            uploadUrl: initResult.uploadUrl,
+            init: initResult.raw,
             fallbackUsed: true,
             fallbackReason: slideshowError instanceof Error ? slideshowError.message : 'unknown slideshow init error',
             fallbackType: 'video',

@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -29,7 +28,25 @@ export type AccountView = {
 
 const providerOptions = ['all', 'tiktok', 'instagram', 'youtube', 'facebook'];
 
-export default function AccountsClient({ initialAccounts }: { initialAccounts: AccountView[] }) {
+type AccountsClientProps = {
+  initialAccounts: AccountView[];
+  initialError?: string | null;
+  oauthConfig?: {
+    instagram: boolean;
+  };
+};
+
+function mapErrorMessage(error: string | null | undefined) {
+  if (!error) return null;
+  if (error === 'InstagramOAuthNotConfigured') {
+    return 'Instagram OAuth is not configured. Set INSTAGRAM_APP_ID + INSTAGRAM_APP_SECRET (or FACEBOOK_APP_ID + FACEBOOK_APP_SECRET).';
+  }
+  if (error === 'MissingCode') return 'OAuth callback returned without an authorization code.';
+  if (error === 'OAuthFailed') return 'OAuth flow failed. Reconnect and try again.';
+  return decodeURIComponent(error.replace(/\+/g, ' '));
+}
+
+export default function AccountsClient({ initialAccounts, initialError, oauthConfig }: AccountsClientProps) {
   const [accounts, setAccounts] = useState<AccountView[]>(initialAccounts);
   const [loading, setLoading] = useState(false);
   const [providerFilter, setProviderFilter] = useState('all');
@@ -41,6 +58,7 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
   const [fbPageId, setFbPageId] = useState('');
   const [fbAccessToken, setFbAccessToken] = useState('');
   const [fbDisplayName, setFbDisplayName] = useState('');
+  const accountPageError = mapErrorMessage(initialError);
 
   const refresh = async () => {
     setLoading(true);
@@ -178,16 +196,22 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
               Refresh
             </Button>
             <Button asChild className="rounded-xl">
-              <Link href="/api/auth/tiktok">Connect TikTok</Link>
+              <a href="/api/auth/tiktok">Connect TikTok</a>
+            </Button>
+            {oauthConfig?.instagram ? (
+              <Button asChild variant="outline" className="rounded-xl">
+                <a href="/api/auth/instagram">OAuth Instagram</a>
+              </Button>
+            ) : (
+              <Button variant="outline" className="rounded-xl" disabled>
+                OAuth Instagram (not configured)
+              </Button>
+            )}
+            <Button asChild variant="outline" className="rounded-xl">
+              <a href="/api/auth/youtube">OAuth YouTube</a>
             </Button>
             <Button asChild variant="outline" className="rounded-xl">
-              <Link href="/api/auth/instagram">OAuth Instagram</Link>
-            </Button>
-            <Button asChild variant="outline" className="rounded-xl">
-              <Link href="/api/auth/youtube">OAuth YouTube</Link>
-            </Button>
-            <Button asChild variant="outline" className="rounded-xl">
-              <Link href="/api/auth/facebook">OAuth Facebook</Link>
+              <a href="/api/auth/facebook">OAuth Facebook</a>
             </Button>
           </div>
         </div>
@@ -198,6 +222,16 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
           <span className="pill">Expiring Soon: {warningAccounts.filter((a) => a.health?.expiresSoon).length}</span>
         </div>
       </section>
+
+      {accountPageError ? (
+        <section className="panel border-rose-200 bg-rose-50/90 p-4">
+          <div className="flex items-center gap-2 text-rose-800">
+            <AlertTriangle className="h-4 w-4" />
+            <p className="text-sm font-semibold">Connection error</p>
+          </div>
+          <p className="mt-1 text-sm text-rose-900">{accountPageError}</p>
+        </section>
+      ) : null}
 
       {warningAccounts.length ? (
         <section className="panel border-amber-200 bg-amber-50/90 p-4">

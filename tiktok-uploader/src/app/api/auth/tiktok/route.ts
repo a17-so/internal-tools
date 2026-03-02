@@ -7,9 +7,17 @@ export async function GET() {
     await requireAuth();
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
+    if (!clientKey) {
+        return NextResponse.json({ error: 'Missing TIKTOK_CLIENT_KEY' }, { status: 500 });
+    }
+
     const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL, 'http://localhost:3000');
     const redirectUri = buildCallbackUrl(appUrl);
-    const scopes = 'user.info.basic,user.info.profile,user.info.stats,video.list,video.upload,video.publish';
+    const configuredScopes = process.env.TIKTOK_OAUTH_SCOPES
+      ?.split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+    const scopes = (configuredScopes && configuredScopes.length > 0 ? configuredScopes : ['user.info.basic']).join(',');
 
     // Create a random string for state to prevent CSRF
     const state = Math.random().toString(36).substring(7);

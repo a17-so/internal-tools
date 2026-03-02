@@ -21,19 +21,30 @@ function parseJsonSafely(value: string | null | undefined): unknown {
 }
 
 async function getUserInfo(accessToken: string) {
-  const response = await fetch('https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username', {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+  const fieldSets = [
+    'open_id,union_id,avatar_url,display_name,username',
+    'open_id,union_id,avatar_url,display_name',
+    'open_id',
+  ];
 
-  const data = await response.json();
-  if (!response.ok || data?.error?.code !== 'ok') {
-    throw new Error(data?.error?.message || 'Unable to fetch TikTok user info');
+  let lastError = 'Unable to fetch TikTok user info';
+  for (const fields of fieldSets) {
+    const response = await fetch(`https://open.tiktokapis.com/v2/user/info/?fields=${fields}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await response.json();
+    if (response.ok && data?.error?.code === 'ok') {
+      return data?.data?.user;
+    }
+
+    lastError = data?.error?.message || lastError;
   }
 
-  return data?.data?.user;
+  throw new Error(lastError);
 }
 
 function getRedirectUri() {

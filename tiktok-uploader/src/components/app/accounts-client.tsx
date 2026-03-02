@@ -60,6 +60,9 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
     [accounts]
   );
 
+  const accountTitle = (account: AccountView) => account.displayName || (account.username ? `@${account.username}` : 'Connected account');
+  const accountSubtext = (account: AccountView) => account.username ? `@${account.username}` : `id:${account.externalAccountId.slice(-10)}`;
+
   const removeAccount = async (id: string) => {
     const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
     if (!res.ok) {
@@ -204,7 +207,7 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
           </div>
           <div className="space-y-1 text-sm text-amber-900">
             {warningAccounts.map((a) => (
-              <p key={`warn-${a.id}`}>{a.provider} · {a.displayName || a.username || a.externalAccountId}: {a.health?.message}</p>
+              <p key={`warn-${a.id}`}>{a.provider} · {accountTitle(a)}: {a.health?.message}</p>
             ))}
           </div>
         </section>
@@ -240,8 +243,8 @@ export default function AccountsClient({ initialAccounts }: { initialAccounts: A
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{account.provider}</p>
-                    <h4 className="mt-1 text-lg font-semibold text-slate-900">{account.displayName || account.username || account.externalAccountId}</h4>
-                    <p className="text-sm text-slate-500">{account.username ? `@${account.username}` : account.externalAccountId}</p>
+                    <h4 className="mt-1 text-lg font-semibold text-slate-900">{accountTitle(account)}</h4>
+                    <p className="text-sm text-slate-500">{accountSubtext(account)}</p>
                   </div>
                   <Button variant="outline" size="sm" className="rounded-lg" onClick={() => void removeAccount(account.id)}>
                     <Trash2 className="h-3.5 w-3.5" />

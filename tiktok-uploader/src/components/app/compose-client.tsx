@@ -34,7 +34,7 @@ type DraftItem = {
   orderPreview?: string;
 };
 
-const TRAY_KEY = 'compose_tray_v2';
+const TRAY_KEY = 'compose_tray';
 
 function uid() {
   return Math.random().toString(36).slice(2);
@@ -142,14 +142,10 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     return rawCap;
   }, [rawCap, selected?.provider]);
 
-  const isScopeLimitedTikTok = useMemo(
-    () =>
-      selected?.provider === 'tiktok'
-      && !rawCap?.supportsDraftVideo
-      && !rawCap?.supportsDirectVideo
-      && !rawCap?.supportsPhotoSlideshow,
-    [rawCap, selected?.provider]
-  );
+  const isScopeLimitedTikTok = useMemo(() => {
+    if (selected?.provider !== 'tiktok' || !rawCap) return false;
+    return !rawCap.supportsDraftVideo && !rawCap.supportsDirectVideo && !rawCap.supportsPhotoSlideshow;
+  }, [rawCap, selected?.provider]);
 
   const modeOptions = useMemo(() => {
     const options: UploadMode[] = [];

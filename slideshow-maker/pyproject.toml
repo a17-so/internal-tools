@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slideshow-machine"
+version = "0.1.0"
+description = "Playwright-first slideshow backfill and generation pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.52.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

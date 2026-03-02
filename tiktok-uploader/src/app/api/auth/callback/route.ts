@@ -56,6 +56,7 @@ export async function GET(request: Request) {
     return response;
   } catch (err) {
     console.error('OAuth callback failed:', err);
-    return NextResponse.redirect(`${appUrl}/accounts?error=OAuthFailed`);
+    const message = err instanceof Error ? err.message : 'OAuthFailed';
+    return NextResponse.redirect(`${appUrl}/accounts?error=${encodeURIComponent(message)}`);
   }
 }

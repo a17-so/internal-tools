@@ -304,7 +304,18 @@ export const tiktokProvider: SocialProvider = {
       redirectUri: input.redirectUri || getRedirectUri(),
     });
 
-    const userInfo = await getUserInfo(tokenData.access_token);
+    if (!tokenData.open_id) {
+      throw new Error('TikTok token exchange missing open_id');
+    }
+
+    let userInfo: Awaited<ReturnType<typeof getUserInfo>> | null = null;
+    try {
+      userInfo = await getUserInfo(tokenData.access_token);
+    } catch (error) {
+      // In sandbox/review, apps may only have minimal scopes and user profile fetch can fail.
+      // We can still connect the account using open_id from token exchange.
+      console.warn('TikTok user info fetch failed; continuing with token open_id only', error);
+    }
 
     const account = await db.connectedAccount.upsert({
       where: {

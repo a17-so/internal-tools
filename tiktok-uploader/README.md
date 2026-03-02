@@ -38,9 +38,10 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 TIKTOK_CLIENT_KEY=...
 TIKTOK_CLIENT_SECRET=...
 # Optional: explicit OAuth scopes to request during connect (comma-separated)
-# In strict sandbox/review states you may need to start with:
+# Default requested scopes are:
+# user.info.basic,user.info.profile,user.info.stats,video.list,video.upload
+# Override only if your sandbox/review app has a smaller allowed set:
 # TIKTOK_OAUTH_SCOPES=user.info.basic
-# TIKTOK_OAUTH_SCOPES=user.info.basic,video.upload,video.publish
 
 # Internal app auth bootstrap user (required when AUTH_BYPASS is off)
 APP_USER_EMAIL=you@company.com

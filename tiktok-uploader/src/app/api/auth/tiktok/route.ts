@@ -17,7 +17,8 @@ export async function GET() {
       ?.split(',')
       .map((scope) => scope.trim())
       .filter(Boolean);
-    const scopes = (configuredScopes && configuredScopes.length > 0 ? configuredScopes : ['user.info.basic']).join(',');
+    const defaultScopes = ['user.info.basic', 'user.info.profile', 'user.info.stats', 'video.list', 'video.upload'];
+    const scopes = (configuredScopes && configuredScopes.length > 0 ? configuredScopes : defaultScopes).join(',');
 
     // Create a random string for state to prevent CSRF
     const state = Math.random().toString(36).substring(7);

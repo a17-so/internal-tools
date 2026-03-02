@@ -55,12 +55,12 @@
         ]
       },
       "upper_eye_exposure": {
-        "folder": "facial features/upper eye exposure",
+        "folder": "facial features/no upper eye exposure",
         "hooks": [
-          "upper eye exposure makes you 10x attractive",
-          "the most feminine feature is upper eye exposure",
-          "upper eye exposure is what makes you attractive",
-          "upper eye exposure makes you ultra feminine"
+          "no upper eye exposure makes you 10x more attractive",
+          "the most feminine eye trait is no upper eye exposure",
+          "no upper eye exposure is what makes your eyes stunning",
+          "no upper eye exposure makes you look ultra feminine"
         ]
       },
       "highset_brows": {
@@ -68,7 +68,7 @@
         "hooks": [
           "high set brows make you 10x attractive",
           "the most feminine feature is high set brows",
-          "high set brows are what is what makes you attractive",
+          "high set brows are what makes you attractive",
           "high set brows make you attractive",
           "high set brows make you ultra feminine"
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           "low set brows make you 10x attractive",
           "the most feminine feature is low set brows",
-          "low set brows are what is what makes you attractive",
+          "low set brows are what makes you attractive",
           "low set brows make you attractive",
           "low set brows make you ultra feminine"
         ]
@@ -88,7 +88,7 @@
         "hooks": [
           "chubby cheeks make you 10x attractive",
           "the most feminine feature is chubby cheeks",
-          "chubby cheeks are what is what makes you attractive",
+          "chubby cheeks are what makes you attractive",
           "chubby cheeks make you attractive",
           "chubby cheeks make you ultra feminine"
         ]
@@ -98,7 +98,7 @@
         "hooks": [
           "dimples make you 10x attractive",
           "the most feminine feature is dimples",
-          "dimples are what is what makes you attractive",
+          "dimples are what makes you attractive",
           "dimples make you attractive",
           "dimples make you ultra feminine"
         ]
@@ -108,7 +108,7 @@
         "hooks": [
           "upturned lips make you 10x attractive",
           "the most feminine feature is upturned lips",
-          "upturned lips are what is what makes you attractive",
+          "upturned lips are what makes you attractive",
           "upturned lips make you attractive",
           "upturned lips make you ultra feminine"
         ]
@@ -163,7 +163,7 @@
         "hooks": [
           "nice teeth make you 10x attractive",
           "the most feminine feature is nice teeth",
-          "nice teeth are what is what makes you attractive",
+          "nice teeth are what makes you attractive",
           "nice teeth make you attractive",
           "nice teeth make you ultra feminine"
         ]
@@ -173,7 +173,7 @@
         "hooks": [
           "inner eye corners make you 10x attractive",
           "the most feminine feature is inner eye corners",
-          "inner eye corners are what is what makes you attractive",
+          "inner eye corners are what makes you attractive",
           "inner eye corners make you attractive",
           "inner eye corners make you ultra feminine"
         ]

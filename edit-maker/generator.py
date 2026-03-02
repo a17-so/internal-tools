@@ -32,6 +32,7 @@ from config import (
     FONT_COLOR,
     FONT_PATH,
     FONT_SIZE,
+    HOOK_FONT_SIZE,
     FPS,
     HOOKS_FILE,
     IMAGE_DURATION,
@@ -291,7 +292,7 @@ def create_text_overlay(text: str, video_size: Tuple[int, int]) -> ImageClip:
 
     text_kwargs = dict(
         text=padded_text,
-        font_size=FONT_SIZE,
+        font_size=HOOK_FONT_SIZE,
         color=FONT_COLOR,
         stroke_color=STROKE_COLOR,
         stroke_width=STROKE_WIDTH,

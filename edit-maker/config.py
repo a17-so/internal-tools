@@ -11,7 +11,7 @@ __all__ = [
     "VIDEO_WIDTH", "VIDEO_HEIGHT", "FPS",
     "MIN_IMAGES", "MAX_IMAGES", "IMAGE_DURATION", "DEMO_DURATION",
     "FADE_DURATION", "MUSIC_START_TIME",
-    "FONT_PATH", "FONT_SIZE", "FONT_COLOR", "STROKE_COLOR", "STROKE_WIDTH",
+    "FONT_PATH", "FONT_SIZE", "HOOK_FONT_SIZE", "FONT_COLOR", "STROKE_COLOR", "STROKE_WIDTH",
     "TEXT_POSITION", "CROP_VARIATION", "TEMP_DIR",
 ]
 
@@ -43,7 +43,7 @@ MAX_IMAGES = 11
 IMAGE_DURATION = 1.0   # seconds per image
 DEMO_DURATION = 3.0    # seconds for floating UI at end
 FADE_DURATION = 0.1    # transition fade
-MUSIC_START_TIME = 36.0  # seconds into the track to start
+MUSIC_START_TIME = 37.0  # seconds into the track to start
 
 # Font settings
 _font_candidates = [
@@ -57,6 +57,7 @@ _font_candidates = [
 ]
 FONT_PATH = next((p for p in _font_candidates if p and Path(p).exists()), None)
 FONT_SIZE = 48
+HOOK_FONT_SIZE = 40  # slightly smaller for hook text overlays
 FONT_COLOR = "white"
 STROKE_COLOR = "black"
 STROKE_WIDTH = 3

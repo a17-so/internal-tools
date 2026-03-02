@@ -4,9 +4,10 @@ import { Provider } from '@prisma/client';
 import { getProvider } from '@/lib/providers';
 import { requireAuth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { buildCallbackUrl, normalizeBaseUrl } from '@/lib/oauth';
 
 export async function GET(request: Request) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL, 'http://localhost:3000');
 
   try {
     const user = await requireAuth();
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
     const account = await provider.connectAccount({
       code,
       codeVerifier,
-      redirectUri: `${appUrl}/api/auth/callback`,
+      redirectUri: buildCallbackUrl(appUrl),
       userId: user.id,
     });
 

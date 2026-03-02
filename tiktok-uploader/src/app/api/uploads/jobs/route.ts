@@ -45,7 +45,22 @@ async function validateCapability(input: {
 
   const cached = account.capabilities[0];
   const provider = getProvider(account.provider);
-  const capabilities = cached || (await provider.getCapabilities(account));
+  const resolved = cached || (await provider.getCapabilities(account));
+  const looksLikeRestrictedTikTokScopes =
+    account.provider === Provider.tiktok &&
+    !resolved.supportsDraftVideo &&
+    !resolved.supportsDirectVideo &&
+    !resolved.supportsPhotoSlideshow;
+
+  const capabilities = looksLikeRestrictedTikTokScopes
+    ? {
+      ...resolved,
+      supportsDraftVideo: true,
+      supportsPhotoSlideshow: true,
+      supportsDirectVideo: false,
+      captionLimit: 2200,
+    }
+    : resolved;
 
   if (input.mode === UploadMode.direct && !capabilities.supportsDirectVideo) {
     throw new Error('Selected account does not support direct publishing');

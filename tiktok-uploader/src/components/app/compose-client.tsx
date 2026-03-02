@@ -1,10 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { UploadMode, UploadPostType } from '@prisma/client';
-import { DateTime } from 'luxon';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarClock, Captions, ClipboardList, Image as ImageIcon, PlayCircle, Trash2, WandSparkles } from 'lucide-react';
+import { UploadMode, UploadPostType } from '@prisma/client';
+import { ClipboardList, Image as ImageIcon, PlayCircle, Trash2, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,23 +28,40 @@ type DraftItem = {
   mode: UploadMode;
   postType: UploadPostType;
   caption: string;
-  scheduleAt?: string;
-  scheduleTz?: string;
-  video?: File;
-  images?: File[];
+  videoPath?: string;
+  imagePaths?: string[];
+  assetLabel: string;
 };
 
-const scheduleTimezones = ['local', 'UTC', 'America/Los_Angeles', 'America/New_York', 'Europe/London'];
+const TRAY_KEY = 'compose_tray_v2';
 
 function uid() {
   return Math.random().toString(36).slice(2);
 }
 
-function reorder<T>(arr: T[], from: number, to: number) {
-  const next = [...arr];
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
+function getFolderName(file: File, index: number) {
+  const withPath = file as File & { webkitRelativePath?: string };
+  const rel = withPath.webkitRelativePath || '';
+  if (!rel.includes('/')) return `slideshow-${index + 1}`;
+  return rel.split('/')[0] || `slideshow-${index + 1}`;
+}
+
+function toLines(value: string) {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+async function stageFiles(files: File[]) {
+  const fd = new FormData();
+  files.forEach((file) => fd.append('files', file));
+  const res = await fetch('/api/uploads/stage', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed staging files');
+  }
+  return data.staged as Array<{ filePath: string; fileName: string }>;
 }
 
 export default function ComposeClient({ accounts }: { accounts: ComposeAccount[] }) {
@@ -53,98 +69,92 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
   const [mode, setMode] = useState<UploadMode>(UploadMode.draft);
   const [postType, setPostType] = useState<UploadPostType>(UploadPostType.video);
   const [caption, setCaption] = useState('');
-  const [scheduleAt, setScheduleAt] = useState('');
-  const [scheduleTz, setScheduleTz] = useState('local');
   const [video, setVideo] = useState<File | null>(null);
   const [images, setImages] = useState<File[]>([]);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const [bulkVideoFiles, setBulkVideoFiles] = useState<File[]>([]);
+  const [bulkVideoCaptions, setBulkVideoCaptions] = useState('');
+  const [bulkSlideFiles, setBulkSlideFiles] = useState<File[]>([]);
+  const [bulkSlideCaptions, setBulkSlideCaptions] = useState('');
+
   const [tray, setTray] = useState<DraftItem[]>([]);
   const [sending, setSending] = useState(false);
+  const [staging, setStaging] = useState(false);
 
-  const [prependText, setPrependText] = useState('');
-  const [appendText, setAppendText] = useState('');
-  const [findText, setFindText] = useState('');
-  const [replaceText, setReplaceText] = useState('');
+  useEffect(() => {
+    const raw = localStorage.getItem(TRAY_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as DraftItem[];
+      if (Array.isArray(parsed)) {
+        setTray(parsed);
+      }
+    } catch {
+      // ignore invalid local cache
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(TRAY_KEY, JSON.stringify(tray));
+  }, [tray]);
 
   const selected = useMemo(() => accounts.find((a) => a.id === connectedAccountId), [accounts, connectedAccountId]);
-  const cap = selected?.capabilities?.[0];
+  const rawCap = selected?.capabilities?.[0];
+  const effectiveCap = useMemo(() => {
+    if (!rawCap) return { supportsDraftVideo: true, supportsDirectVideo: false, supportsPhotoSlideshow: true, captionLimit: 2200 };
+    const restrictedTikTok =
+      selected?.provider === 'tiktok' &&
+      !rawCap.supportsDraftVideo &&
+      !rawCap.supportsDirectVideo &&
+      !rawCap.supportsPhotoSlideshow;
+
+    if (restrictedTikTok) {
+      return {
+        ...rawCap,
+        supportsDraftVideo: true,
+        supportsPhotoSlideshow: true,
+        supportsDirectVideo: false,
+        captionLimit: 2200,
+      };
+    }
+
+    return rawCap;
+  }, [rawCap, selected?.provider]);
 
   const modeOptions = useMemo(() => {
     const options: UploadMode[] = [];
-    if (cap?.supportsDraftVideo) options.push(UploadMode.draft);
-    if (cap?.supportsDirectVideo) options.push(UploadMode.direct);
+    if (effectiveCap.supportsDraftVideo) options.push(UploadMode.draft);
+    if (effectiveCap.supportsDirectVideo) options.push(UploadMode.direct);
     return options.length ? options : [UploadMode.draft];
-  }, [cap]);
+  }, [effectiveCap]);
 
   const postTypeOptions = useMemo(() => {
     const options: UploadPostType[] = [UploadPostType.video];
-    if (cap?.supportsPhotoSlideshow) options.push(UploadPostType.slideshow);
+    if (effectiveCap.supportsPhotoSlideshow) options.push(UploadPostType.slideshow);
     return options;
-  }, [cap]);
+  }, [effectiveCap]);
 
   const accountLabel = (accountId: string) => {
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return accountId;
-    return `${account.provider} · ${account.displayName || account.username || account.id}`;
+    return `${account.provider} · ${account.displayName || (account.username ? `@${account.username}` : `id:${account.id.slice(-6)}`)}`;
   };
-
-  const totalAssets = useMemo(
-    () => tray.reduce((acc, item) => acc + (item.postType === UploadPostType.video ? 1 : item.images?.length || 0), 0),
-    [tray]
-  );
-
-  if (accounts.length === 0) {
-    return (
-      <section className="panel p-6">
-        <h3 className="text-lg font-semibold">No Connected Accounts</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Connect at least one account before composing posts.
-        </p>
-        <Button asChild className="mt-4 rounded-xl">
-          <Link href="/accounts">Go to Accounts</Link>
-        </Button>
-      </section>
-    );
-  }
 
   const onAccountChange = (nextId: string) => {
     setConnectedAccountId(nextId);
-    const next = accounts.find((a) => a.id === nextId);
-    const nextCap = next?.capabilities?.[0];
-
-    const nextModeOptions: UploadMode[] = [];
-    if (nextCap?.supportsDraftVideo) nextModeOptions.push(UploadMode.draft);
-    if (nextCap?.supportsDirectVideo) nextModeOptions.push(UploadMode.direct);
-    if (!nextModeOptions.includes(mode)) {
-      setMode(nextModeOptions[0] || UploadMode.draft);
-    }
-
-    if (!nextCap?.supportsPhotoSlideshow && postType === UploadPostType.slideshow) {
-      setPostType(UploadPostType.video);
-      setImages([]);
-    }
   };
 
-  const onSelectImages = (files: File[]) => {
-    setImages(files);
-    setDragIndex(null);
-  };
-
-  const clearInputs = () => {
+  const clearSingleInputs = () => {
     setCaption('');
-    setScheduleAt('');
-    setScheduleTz('local');
     setVideo(null);
     setImages([]);
-    setDragIndex(null);
-
     const vidInput = document.getElementById('compose-video') as HTMLInputElement | null;
     if (vidInput) vidInput.value = '';
     const imageInput = document.getElementById('compose-images') as HTMLInputElement | null;
     if (imageInput) imageInput.value = '';
   };
 
-  const addToTray = () => {
+  const addSingleToTray = async () => {
     if (!connectedAccountId) {
       toast.error('Pick an account');
       return;
@@ -160,45 +170,144 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
       return;
     }
 
-    if (postType === UploadPostType.video && !video) {
-      toast.error('Select a video file');
-      return;
-    }
-
-    if (postType === UploadPostType.slideshow && (images.length < 2 || images.length > 35)) {
-      toast.error('Slideshows need 2-35 images');
-      return;
-    }
-
-    let scheduleAtIso: string | undefined;
-    if (scheduleAt) {
-      const dt = scheduleTz === 'local'
-        ? DateTime.fromISO(scheduleAt)
-        : DateTime.fromISO(scheduleAt, { zone: scheduleTz });
-      if (!dt.isValid) {
-        toast.error('Invalid schedule datetime');
-        return;
+    setStaging(true);
+    try {
+      if (postType === UploadPostType.video) {
+        if (!video) {
+          toast.error('Select a video file');
+          return;
+        }
+        const staged = await stageFiles([video]);
+        setTray((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            connectedAccountId,
+            mode,
+            postType,
+            caption,
+            videoPath: staged[0]?.filePath,
+            assetLabel: staged[0]?.fileName || video.name,
+          },
+        ]);
+      } else {
+        if (images.length < 2 || images.length > 35) {
+          toast.error('Slideshows need 2-35 images');
+          return;
+        }
+        const staged = await stageFiles(images);
+        setTray((prev) => [
+          ...prev,
+          {
+            id: uid(),
+            connectedAccountId,
+            mode,
+            postType,
+            caption,
+            imagePaths: staged.map((x) => x.filePath),
+            assetLabel: `${images.length} images`,
+          },
+        ]);
       }
-      scheduleAtIso = dt.toUTC().toISO() || undefined;
+
+      clearSingleInputs();
+      toast.success('Added to batch tray');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add item');
+    } finally {
+      setStaging(false);
+    }
+  };
+
+  const addBulkVideosToTray = async () => {
+    if (!bulkVideoFiles.length) {
+      toast.error('Choose one or more video files');
+      return;
     }
 
-    setTray((prev) => [
-      ...prev,
-      {
-        id: uid(),
-        connectedAccountId,
-        mode,
-        postType,
-        caption,
-        scheduleAt: scheduleAtIso,
-        scheduleTz,
-        video: video || undefined,
-        images: images.length ? images : undefined,
-      },
-    ]);
+    const lines = toLines(bulkVideoCaptions);
+    setStaging(true);
+    try {
+      const staged = await stageFiles(bulkVideoFiles);
+      setTray((prev) => [
+        ...prev,
+        ...staged.map((item, index) => ({
+          id: uid(),
+          connectedAccountId,
+          mode,
+          postType: UploadPostType.video,
+          caption: lines[index] || '',
+          videoPath: item.filePath,
+          assetLabel: item.fileName,
+        })),
+      ]);
+      setBulkVideoFiles([]);
+      setBulkVideoCaptions('');
+      const bulkInput = document.getElementById('bulk-videos') as HTMLInputElement | null;
+      if (bulkInput) bulkInput.value = '';
+      toast.success(`Added ${staged.length} videos`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Bulk add failed');
+    } finally {
+      setStaging(false);
+    }
+  };
 
-    clearInputs();
-    toast.success('Added to batch tray');
+  const addBulkSlideshowsToTray = async () => {
+    if (!bulkSlideFiles.length) {
+      toast.error('Select slideshow folders first');
+      return;
+    }
+
+    const grouped = new Map<string, File[]>();
+    bulkSlideFiles.forEach((file, index) => {
+      const key = getFolderName(file, index);
+      const current = grouped.get(key) || [];
+      current.push(file);
+      grouped.set(key, current);
+    });
+
+    const entries = Array.from(grouped.entries()).map(([folder, files]) => ({
+      folder,
+      files: [...files].sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+
+    const validEntries = entries.filter((entry) => entry.files.length >= 2 && entry.files.length <= 35);
+    if (!validEntries.length) {
+      toast.error('No valid slideshow folders found (need 2-35 images per folder)');
+      return;
+    }
+
+    const lines = toLines(bulkSlideCaptions);
+    setStaging(true);
+    try {
+      const created: DraftItem[] = [];
+
+      for (let i = 0; i < validEntries.length; i += 1) {
+        const entry = validEntries[i];
+        const staged = await stageFiles(entry.files);
+        created.push({
+          id: uid(),
+          connectedAccountId,
+          mode,
+          postType: UploadPostType.slideshow,
+          caption: lines[i] || '',
+          imagePaths: staged.map((x) => x.filePath),
+          assetLabel: `${entry.folder} (${entry.files.length} images)`,
+        });
+      }
+
+      setTray((prev) => [...prev, ...created]);
+      setBulkSlideFiles([]);
+      setBulkSlideCaptions('');
+      const folderInput = document.getElementById('bulk-slides') as HTMLInputElement | null;
+      if (folderInput) folderInput.value = '';
+      toast.success(`Added ${created.length} slideshows`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Bulk slideshow add failed');
+    } finally {
+      setStaging(false);
+    }
   };
 
   const sendAll = async () => {
@@ -223,24 +332,19 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
       const batchId = batchData.batch.id;
 
       for (const item of tray) {
-        const fd = new FormData();
-        fd.set('connectedAccountId', item.connectedAccountId);
-        fd.set('mode', item.mode);
-        fd.set('postType', item.postType);
-        fd.set('caption', item.caption);
-        if (item.scheduleAt) fd.set('scheduleAt', item.scheduleAt);
-        fd.set('batchId', batchId);
-        fd.set('sendNow', 'false');
-
-        if (item.postType === UploadPostType.video && item.video) {
-          fd.set('video', item.video);
-        } else if (item.postType === UploadPostType.slideshow && item.images) {
-          item.images.forEach((img) => fd.append('images', img));
-        }
-
         const res = await fetch('/api/uploads/jobs', {
           method: 'POST',
-          body: fd,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connectedAccountId: item.connectedAccountId,
+            mode: item.mode,
+            postType: item.postType,
+            caption: item.caption,
+            videoPath: item.videoPath,
+            imagePaths: item.imagePaths,
+            batchId,
+            sendNow: false,
+          }),
         });
 
         const data = await res.json();
@@ -251,6 +355,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
 
       await fetch('/api/dispatcher/run', { method: 'POST' });
       setTray([]);
+      localStorage.removeItem(TRAY_KEY);
       toast.success('Batch submitted and dispatch started');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Batch send failed');
@@ -259,13 +364,25 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     }
   };
 
+  if (accounts.length === 0) {
+    return (
+      <section className="panel p-6">
+        <h3 className="text-lg font-semibold">No Connected Accounts</h3>
+        <p className="mt-1 text-sm text-muted-foreground">Connect at least one account before composing posts.</p>
+        <Button asChild className="mt-4 rounded-xl">
+          <Link href="/accounts">Go to Accounts</Link>
+        </Button>
+      </section>
+    );
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <div className="space-y-4">
         <section className="panel p-4">
           <div className="mb-3 flex items-center gap-2">
             <WandSparkles className="h-4 w-4 text-indigo-600" />
-            <h3 className="text-base font-semibold text-slate-900">Compose Post</h3>
+            <h3 className="text-base font-semibold">Compose</h3>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -274,7 +391,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
               <select className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={connectedAccountId} onChange={(e) => onAccountChange(e.target.value)}>
                 {accounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.provider} · {account.displayName || account.username || account.id}
+                    {account.provider} · {account.displayName || (account.username ? `@${account.username}` : `id:${account.id.slice(-6)}`)}
                   </option>
                 ))}
               </select>
@@ -283,7 +400,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             <div className="space-y-2">
               <Label>Mode</Label>
               <select className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={mode} onChange={(e) => setMode(e.target.value as UploadMode)}>
-                {modeOptions.includes(UploadMode.draft) ? <option value={UploadMode.draft}>Draft (preferred)</option> : null}
+                {modeOptions.includes(UploadMode.draft) ? <option value={UploadMode.draft}>Draft</option> : null}
                 {modeOptions.includes(UploadMode.direct) ? <option value={UploadMode.direct}>Direct</option> : null}
               </select>
             </div>
@@ -299,28 +416,15 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Caption</Label>
-                <p className="text-xs text-slate-500">{caption.length}/{cap?.captionLimit || 2200}</p>
+                <p className="text-xs text-slate-500">{caption.length}/{effectiveCap.captionLimit || 2200}</p>
               </div>
               <textarea
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                maxLength={cap?.captionLimit || 2200}
-                placeholder="Caption + hashtags"
+                maxLength={effectiveCap.captionLimit || 2200}
+                placeholder="Caption"
                 className="min-h-[96px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
               />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex items-center gap-2">
-                <CalendarClock className="h-4 w-4 text-slate-500" />
-                <Label>Schedule (optional)</Label>
-              </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <Input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} className="rounded-xl" />
-                <select className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" value={scheduleTz} onChange={(e) => setScheduleTz(e.target.value)}>
-                  {scheduleTimezones.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-                </select>
-              </div>
             </div>
 
             {postType === UploadPostType.video ? (
@@ -329,73 +433,63 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
                   <PlayCircle className="h-4 w-4 text-slate-500" />
                   <Label>Video File</Label>
                 </div>
-                <Input id="compose-video" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => setVideo(e.target.files?.[0] || null)} className="rounded-xl" />
+                <Input id="compose-video" type="file" accept="video/*" onChange={(e) => setVideo(e.target.files?.[0] || null)} className="rounded-xl" />
               </div>
             ) : (
-              <div className="space-y-3 md:col-span-2">
+              <div className="space-y-2 md:col-span-2">
                 <div className="flex items-center gap-2">
                   <ImageIcon className="h-4 w-4 text-slate-500" />
                   <Label>Slideshow Images</Label>
                 </div>
-                <Input id="compose-images" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(e) => onSelectImages(Array.from(e.target.files || []))} className="rounded-xl" />
-                <p className="text-xs text-slate-500">Drag rows to reorder sequence or use Up/Down (2-35 images).</p>
-                <div className="space-y-2">
-                  {images.map((img, idx) => (
-                    <div
-                      key={`${img.name}-${idx}`}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      draggable
-                      onDragStart={() => setDragIndex(idx)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (dragIndex === null || dragIndex === idx) return;
-                        setImages((prev) => reorder(prev, dragIndex, idx));
-                        setDragIndex(null);
-                      }}
-                    >
-                      <span className="truncate">{idx + 1}. {img.name}</span>
-                      <div className="space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => setImages((prev) => idx > 0 ? reorder(prev, idx, idx - 1) : prev)}>Up</Button>
-                        <Button variant="outline" size="sm" onClick={() => setImages((prev) => idx < prev.length - 1 ? reorder(prev, idx, idx + 1) : prev)}>Down</Button>
-                        <Button variant="outline" size="sm" onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}>Remove</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <Input id="compose-images" type="file" accept="image/*" multiple onChange={(e) => setImages(Array.from(e.target.files || []))} className="rounded-xl" />
               </div>
             )}
 
-            <div className="md:col-span-2 flex items-center gap-2">
-              <Button className="rounded-xl" onClick={addToTray}>Add To Batch Tray</Button>
-              <Button variant="outline" className="rounded-xl" onClick={clearInputs}>Clear Form</Button>
+            <div className="md:col-span-2">
+              <Button className="rounded-xl" disabled={staging} onClick={() => void addSingleToTray()}>
+                {staging ? 'Staging...' : 'Add To Batch Tray'}
+              </Button>
             </div>
           </div>
         </section>
 
         <section className="panel p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Captions className="h-4 w-4 text-slate-500" />
-            <h3 className="text-sm font-semibold text-slate-900">Bulk Caption Tools</h3>
+          <h3 className="mb-3 text-sm font-semibold">Bulk Videos</h3>
+          <div className="space-y-2">
+            <Input id="bulk-videos" type="file" accept="video/*" multiple onChange={(e) => setBulkVideoFiles(Array.from(e.target.files || []))} className="rounded-xl" />
+            <textarea
+              value={bulkVideoCaptions}
+              onChange={(e) => setBulkVideoCaptions(e.target.value)}
+              placeholder="Paste captions here, one caption per line (line 1 = video 1)"
+              className="min-h-[120px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <Button variant="outline" className="rounded-xl" disabled={staging || bulkVideoFiles.length === 0} onClick={() => void addBulkVideosToTray()}>
+              Add {bulkVideoFiles.length || ''} Videos To Tray
+            </Button>
           </div>
-          <div className="grid gap-2 md:grid-cols-4">
-            <Input placeholder="Prepend text" value={prependText} onChange={(e) => setPrependText(e.target.value)} className="rounded-xl" />
-            <Input placeholder="Append text" value={appendText} onChange={(e) => setAppendText(e.target.value)} className="rounded-xl" />
-            <Input placeholder="Find" value={findText} onChange={(e) => setFindText(e.target.value)} className="rounded-xl" />
-            <Input placeholder="Replace" value={replaceText} onChange={(e) => setReplaceText(e.target.value)} className="rounded-xl" />
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="outline" className="rounded-xl" onClick={() => setTray((prev) => prev.map((item) => ({ ...item, caption: `${prependText}${item.caption}` })))} disabled={!prependText || !tray.length}>Apply Prepend</Button>
-            <Button variant="outline" className="rounded-xl" onClick={() => setTray((prev) => prev.map((item) => ({ ...item, caption: `${item.caption}${appendText}` })))} disabled={!appendText || !tray.length}>Apply Append</Button>
-            <Button
-              variant="outline"
+        </section>
+
+        <section className="panel p-4">
+          <h3 className="mb-3 text-sm font-semibold">Bulk Slideshows (Folders)</h3>
+          <div className="space-y-2">
+            <Input
+              id="bulk-slides"
+              type="file"
+              accept="image/*"
+              multiple
               className="rounded-xl"
-              onClick={() => {
-                if (!findText) return;
-                setTray((prev) => prev.map((item) => ({ ...item, caption: item.caption.split(findText).join(replaceText) })));
-              }}
-              disabled={!findText || !tray.length}
-            >
-              Apply Find/Replace
+              onChange={(e) => setBulkSlideFiles(Array.from(e.target.files || []))}
+              // @ts-expect-error webkitdirectory is non-standard but supported by Chromium browsers.
+              webkitdirectory=""
+            />
+            <textarea
+              value={bulkSlideCaptions}
+              onChange={(e) => setBulkSlideCaptions(e.target.value)}
+              placeholder="Paste captions here, one caption per folder/slideshow"
+              className="min-h-[120px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+            <Button variant="outline" className="rounded-xl" disabled={staging || bulkSlideFiles.length === 0} onClick={() => void addBulkSlideshowsToTray()}>
+              Add Slideshows To Tray
             </Button>
           </div>
         </section>
@@ -406,32 +500,21 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4 text-indigo-600" />
-              <h3 className="text-lg font-semibold text-slate-900">Batch Tray</h3>
+              <h3 className="text-lg font-semibold">Batch Tray</h3>
             </div>
             <span className="pill">{tray.length} posts</span>
           </div>
 
-          <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
-              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Posts</p>
-              <p className="text-lg font-semibold text-slate-900">{tray.length}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2">
-              <p className="text-xs uppercase tracking-[0.08em] text-slate-500">Assets</p>
-              <p className="text-lg font-semibold text-slate-900">{totalAssets}</p>
-            </div>
-          </div>
-
           <div className="flex gap-2">
-            <Button className="flex-1 rounded-xl" onClick={sendAll} disabled={sending || tray.length === 0}>
+            <Button className="flex-1 rounded-xl" onClick={() => void sendAll()} disabled={sending || tray.length === 0}>
               {sending ? 'Sending...' : 'Send All'}
             </Button>
-            <Button variant="outline" className="rounded-xl" onClick={() => setTray([])} disabled={!tray.length || sending}>
+            <Button variant="outline" className="rounded-xl" onClick={() => { setTray([]); localStorage.removeItem(TRAY_KEY); }} disabled={!tray.length || sending}>
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
 
-          {!tray.length ? <p className="mt-3 text-sm text-slate-500">No items added yet.</p> : null}
+          {!tray.length ? <p className="mt-3 text-sm text-slate-500">Tray is empty.</p> : null}
         </section>
 
         <section className="space-y-2">
@@ -442,14 +525,9 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
                 <span className="pill">{item.mode.toUpperCase()}</span>
               </div>
               <p className="text-xs text-slate-500">{accountLabel(item.connectedAccountId)}</p>
-              {item.scheduleAt ? (
-                <p className="mt-1 text-xs text-amber-700">
-                  Scheduled: {DateTime.fromISO(item.scheduleAt).setZone(item.scheduleTz === 'local' ? DateTime.local().zoneName : item.scheduleTz || 'local').toLocaleString(DateTime.DATETIME_MED)}
-                </p>
-              ) : null}
+              <p className="mt-1 text-xs text-slate-500">{item.assetLabel}</p>
               <p className="mt-1.5 line-clamp-3 text-sm text-slate-700">{item.caption || '(No caption)'}</p>
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-xs text-slate-500">{item.postType === UploadPostType.video ? item.video?.name : `${item.images?.length || 0} images`}</p>
+              <div className="mt-2 flex items-center justify-end">
                 <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setTray((prev) => prev.filter((x) => x.id !== item.id))}>Remove</Button>
               </div>
             </article>

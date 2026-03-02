@@ -54,6 +54,8 @@ function toLines(value: string) {
     .filter((line) => line.length > 0);
 }
 
+const naturalSort = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
 async function runWithConcurrency<T>(
   items: T[],
   worker: (item: T, index: number) => Promise<void>,
@@ -298,7 +300,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
 
     const entries = Array.from(grouped.entries()).map(([folder, files]) => ({
       folder,
-      files: [...files].sort((a, b) => a.name.localeCompare(b.name)),
+      files: [...files].sort((a, b) => naturalSort.compare(a.name, b.name)),
     }));
 
     const validEntries = entries.filter((entry) => entry.files.length >= 2 && entry.files.length <= 35);

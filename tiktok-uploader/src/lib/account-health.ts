@@ -8,25 +8,32 @@ export type AccountHealth = {
   message: string | null;
 };
 
-export function getAccountHealth(account: Pick<ConnectedAccount, 'tokenExpiresAt' | 'refreshExpiresAt'>): AccountHealth {
+export function getAccountHealth(account: Pick<ConnectedAccount, 'tokenExpiresAt' | 'refreshExpiresAt' | 'refreshTokenEncrypted'>): AccountHealth {
   const now = Date.now();
   const tokenMs = account.tokenExpiresAt ? account.tokenExpiresAt.getTime() : null;
   const refreshMs = account.refreshExpiresAt ? account.refreshExpiresAt.getTime() : null;
+  const hasRefreshToken = Boolean(account.refreshTokenEncrypted);
+  const accessExpired = tokenMs !== null && tokenMs <= now;
+  const refreshExpired = refreshMs !== null && refreshMs <= now;
 
   const needsReauth =
-    (tokenMs !== null && tokenMs <= now) ||
-    (refreshMs !== null && refreshMs <= now);
+    refreshExpired ||
+    (accessExpired && !hasRefreshToken);
 
   const expiresSoon =
     !needsReauth &&
-    tokenMs !== null &&
-    tokenMs <= now + 1000 * 60 * 60 * 24 * 3;
+    (
+      (hasRefreshToken && refreshMs !== null && refreshMs <= now + 1000 * 60 * 60 * 24 * 3) ||
+      (!hasRefreshToken && tokenMs !== null && tokenMs <= now + 1000 * 60 * 60 * 24)
+    );
 
   let message: string | null = null;
   if (needsReauth) {
     message = 'Authentication expired. Reconnect this account.';
   } else if (expiresSoon) {
-    message = 'Authentication token expires soon. Reconnect proactively.';
+    message = hasRefreshToken
+      ? 'Refresh token expires soon. Reconnect proactively.'
+      : 'Access token expires soon and no refresh token is available.';
   }
 
   return {

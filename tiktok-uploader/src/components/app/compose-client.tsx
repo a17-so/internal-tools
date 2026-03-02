@@ -31,6 +31,7 @@ type DraftItem = {
   videoPath?: string;
   imagePaths?: string[];
   assetLabel: string;
+  orderPreview?: string;
 };
 
 const TRAY_KEY = 'compose_tray_v2';
@@ -51,6 +52,24 @@ function toLines(value: string) {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  worker: (item: T, index: number) => Promise<void>,
+  concurrency = 4
+) {
+  const executing = new Set<Promise<void>>();
+
+  for (let i = 0; i < items.length; i += 1) {
+    const p = worker(items[i], i).finally(() => executing.delete(p));
+    executing.add(p);
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
 }
 
 async function stageFiles(files: File[]) {
@@ -121,6 +140,15 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     return rawCap;
   }, [rawCap, selected?.provider]);
 
+  const isScopeLimitedTikTok = useMemo(
+    () =>
+      selected?.provider === 'tiktok'
+      && !rawCap?.supportsDraftVideo
+      && !rawCap?.supportsDirectVideo
+      && !rawCap?.supportsPhotoSlideshow,
+    [rawCap, selected?.provider]
+  );
+
   const modeOptions = useMemo(() => {
     const options: UploadMode[] = [];
     if (effectiveCap.supportsDraftVideo) options.push(UploadMode.draft);
@@ -137,7 +165,8 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
   const accountLabel = (accountId: string) => {
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return accountId;
-    return `${account.provider} · ${account.displayName || (account.username ? `@${account.username}` : `id:${account.id.slice(-6)}`)}`;
+    const suffix = account.displayName || (account.username ? `@${account.username}` : 'username unavailable (scope-limited)');
+    return `${account.provider} · ${suffix}`;
   };
 
   const onAccountChange = (nextId: string) => {
@@ -281,21 +310,25 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
     const lines = toLines(bulkSlideCaptions);
     setStaging(true);
     try {
-      const created: DraftItem[] = [];
+      const flatFiles = validEntries.flatMap((entry) => entry.files);
+      const stagedFlat = await stageFiles(flatFiles);
+      let cursor = 0;
 
-      for (let i = 0; i < validEntries.length; i += 1) {
-        const entry = validEntries[i];
-        const staged = await stageFiles(entry.files);
-        created.push({
+      const created: DraftItem[] = validEntries.map((entry, index) => {
+        const slice = stagedFlat.slice(cursor, cursor + entry.files.length);
+        cursor += entry.files.length;
+
+        return {
           id: uid(),
           connectedAccountId,
           mode,
           postType: UploadPostType.slideshow,
-          caption: lines[i] || '',
-          imagePaths: staged.map((x) => x.filePath),
+          caption: lines[index] || '',
+          imagePaths: slice.map((x) => x.filePath),
           assetLabel: `${entry.folder} (${entry.files.length} images)`,
-        });
-      }
+          orderPreview: entry.files.map((f) => f.name).slice(0, 5).join(' -> '),
+        };
+      });
 
       setTray((prev) => [...prev, ...created]);
       setBulkSlideFiles([]);
@@ -331,7 +364,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
 
       const batchId = batchData.batch.id;
 
-      for (const item of tray) {
+      await runWithConcurrency(tray, async (item) => {
         const res = await fetch('/api/uploads/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -346,17 +379,16 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             sendNow: false,
           }),
         });
-
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || 'Failed to enqueue job');
         }
-      }
+      }, 4);
 
-      await fetch('/api/dispatcher/run', { method: 'POST' });
+      await fetch('/api/dispatcher/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'all_queued' }) });
       setTray([]);
       localStorage.removeItem(TRAY_KEY);
-      toast.success('Batch submitted and dispatch started');
+      toast.success('Queued. Open Queue to track publish/draft results.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Batch send failed');
     } finally {
@@ -385,13 +417,19 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
             <h3 className="text-base font-semibold">Compose</h3>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          {isScopeLimitedTikTok ? (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+              TikTok account is connected with limited scope. Queueing works, but publishing/drafts can fail until `video.upload` / `video.publish` scopes are approved.
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 lg:grid-cols-2">
             <div className="space-y-2">
               <Label>Account</Label>
               <select className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2" value={connectedAccountId} onChange={(e) => onAccountChange(e.target.value)}>
                 {accounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.provider} · {account.displayName || (account.username ? `@${account.username}` : `id:${account.id.slice(-6)}`)}
+                    {account.provider} · {account.displayName || (account.username ? `@${account.username}` : 'username unavailable (scope-limited)')}
                   </option>
                 ))}
               </select>
@@ -488,6 +526,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
               placeholder="Paste captions here, one caption per folder/slideshow"
               className="min-h-[120px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
             />
+            <p className="text-xs text-muted-foreground">Image order inside each slideshow is alphabetical by filename.</p>
             <Button variant="outline" className="rounded-xl" disabled={staging || bulkSlideFiles.length === 0} onClick={() => void addBulkSlideshowsToTray()}>
               Add Slideshows To Tray
             </Button>
@@ -526,6 +565,7 @@ export default function ComposeClient({ accounts }: { accounts: ComposeAccount[]
               </div>
               <p className="text-xs text-slate-500">{accountLabel(item.connectedAccountId)}</p>
               <p className="mt-1 text-xs text-slate-500">{item.assetLabel}</p>
+              {item.orderPreview ? <p className="mt-1 text-xs text-muted-foreground">Order: {item.orderPreview}{item.imagePaths && item.imagePaths.length > 5 ? ' ...' : ''}</p> : null}
               <p className="mt-1.5 line-clamp-3 text-sm text-slate-700">{item.caption || '(No caption)'}</p>
               <div className="mt-2 flex items-center justify-end">
                 <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setTray((prev) => prev.filter((x) => x.id !== item.id))}>Remove</Button>

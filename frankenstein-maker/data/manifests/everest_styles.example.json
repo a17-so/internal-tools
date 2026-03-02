@@ -1,0 +1,42 @@
+{
+  "timing": {
+    "hook_seconds_min": 3.0,
+    "hook_seconds_max": 5.0
+  },
+  "styles": {
+    "calm_reclaim": {
+      "clip_pools": [
+        "/absolute/path/to/calm_clip_01.mp4"
+      ],
+      "music": {
+        "path": "/absolute/path/to/calm_music.mp3"
+      },
+      "icon": {
+        "path": "/absolute/path/to/everest_icon.png"
+      },
+      "overlays": {
+        "top_bar": {
+          "hook": "still scrolling bro?",
+          "cta": "download everest and start microlearning"
+        }
+      }
+    },
+    "intense_smart": {
+      "clip_pools": [
+        "/absolute/path/to/intense_clip_01.mp4"
+      ],
+      "music": {
+        "path": "/absolute/path/to/intense_music.mp3"
+      },
+      "icon": {
+        "path": "/absolute/path/to/everest_icon.png"
+      },
+      "overlays": {
+        "top_bar": {
+          "hook": "smart people do not doomscroll",
+          "cta": "use everest to reclaim your attention"
+        }
+      }
+    }
+  }
+}

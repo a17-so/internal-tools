@@ -1,0 +1,10 @@
+.DS_Store
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+output/videos/
+output/reports/

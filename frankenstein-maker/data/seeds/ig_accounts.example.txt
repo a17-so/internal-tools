@@ -1,0 +1,3 @@
+# Replace with real seed accounts
+example_page_one
+example_page_two

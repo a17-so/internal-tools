@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frankenstein-maker"
+version = "0.1.0"
+description = "Hook capture and short-form composition pipeline for Everest"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "moviepy>=2.1.1",
+  "Pillow>=10.4.0",
+  "playwright>=1.52.0",
+  "numpy>=2.1.0",
+]
+
+[project.scripts]
+fm = "fm.cli:main"
+
+[tool.setuptools]
+packages = ["fm", "fm.utils", "fm.capture", "fm.hooks", "fm.render", "fm.export", "fm.validate"]

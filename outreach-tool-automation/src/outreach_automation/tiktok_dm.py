@@ -104,6 +104,7 @@ class TiktokDmSender:
             raise RuntimeError("playwright not installed") from exc
 
         async with async_playwright() as p:
+            page = None
             if attach_mode:
                 if not cdp_url:
                     raise RuntimeError("missing tiktok cdp url")
@@ -131,30 +132,35 @@ class TiktokDmSender:
                         if (await extra.title()).strip().lower() == "about:blank":
                             await extra.close()
                 close_context = True
-            await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
-            await _settle_creator_profile_page(page)
-            if await _needs_login(page):
-                raise RuntimeError("missing tiktok auth")
+            try:
+                await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
+                await _settle_creator_profile_page(page)
+                if await _needs_login(page):
+                    raise RuntimeError("missing tiktok auth")
 
-            opened_target_thread = await _open_profile_message_thread(page)
-            if not opened_target_thread:
-                raise RuntimeError("missing tiktok target thread")
-            await _settle_dm_thread_page(page)
+                opened_target_thread = await _open_profile_message_thread(page)
+                if not opened_target_thread:
+                    raise RuntimeError("missing tiktok target thread")
+                await _settle_dm_thread_page(page)
 
-            message_text = normalize_dm_text(dm_text)
-            if not message_text:
-                raise RuntimeError("Empty DM text after normalization")
+                message_text = normalize_dm_text(dm_text)
+                if not message_text:
+                    raise RuntimeError("Empty DM text after normalization")
 
-            input_locator = await _find_first(page, TIKTOK_DM_INPUTS)
-            await page.wait_for_timeout(random.randint(1000, 2200))
-            await _type_message(page, input_locator, message_text)
-            await page.wait_for_timeout(random.randint(500, 1000))
-            await _send_message(page)
+                input_locator = await _find_dm_input_with_recovery(page)
+                await page.wait_for_timeout(random.randint(1000, 2200))
+                await _type_message(page, input_locator, message_text)
+                await page.wait_for_timeout(random.randint(500, 1000))
+                await _send_message(page)
 
-            await page.wait_for_timeout(random.randint(2000, 5000))
-            await page.close()
-            if close_context:
-                await context.close()
+                await page.wait_for_timeout(random.randint(2000, 5000))
+            finally:
+                if page is not None:
+                    with contextlib.suppress(Exception):
+                        await page.close()
+                if close_context:
+                    with contextlib.suppress(Exception):
+                        await context.close()
 
 
 async def _find_first(page: Any, selectors: list[str]) -> Any:
@@ -203,6 +209,17 @@ async def _send_message(page: Any) -> None:
                 await button.first.click()
                 return
     await page.keyboard.press("Enter")
+
+
+async def _find_dm_input_with_recovery(page: Any) -> Any:
+    try:
+        return await _find_first(page, TIKTOK_DM_INPUTS)
+    except RuntimeError:
+        # TikTok occasionally gets stuck on the skeleton DM loader for this tab.
+        # One reload usually recovers without forcing a full re-run.
+        await page.reload(wait_until="domcontentloaded")
+        await _settle_dm_thread_page(page)
+        return await _find_first(page, TIKTOK_DM_INPUTS)
 
 
 async def _open_profile_message_thread(page: Any) -> bool:

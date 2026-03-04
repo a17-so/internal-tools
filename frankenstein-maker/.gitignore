@@ -8,3 +8,8 @@ __pycache__/
 *.egg-info/
 output/videos/
 output/reports/
+data/hooks/raw_downloads/
+data/hooks/trimmed_4s/
+data/hooks/logs/
+data/hooks/manual_urls.txt
+data/hooks/manual_urls.normalized.txt

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 
-from fm.capture.session import run_capture_session
+from fm.capture.manual import import_urls_to_captured, parse_urls_file
 from fm.capture.store import read_jsonl, write_jsonl
 from fm.config import (
     APPROVED_PATH,
@@ -17,7 +17,6 @@ from fm.config import (
     COOLDOWN_STORE_PATH,
     DATA_DIR,
     DEFAULT_COOLDOWN_DAYS,
-    DEFAULT_SESSION_TARGET,
     MANIFEST_DEFAULT,
     MANIFEST_EXAMPLE,
     OUTPUT_DIR,
@@ -46,7 +45,7 @@ def _cmd_init(_args: argparse.Namespace) -> None:
     ensure_dir(SEED_FILE_EXAMPLE.parent)
     if not SEED_FILE_EXAMPLE.exists():
         SEED_FILE_EXAMPLE.write_text(
-            "# Put one instagram handle per line\n"
+            "# Optional: instagram seed accounts, one per line\n"
             "example_page_one\n"
             "example_page_two\n",
             encoding="utf-8",
@@ -54,6 +53,16 @@ def _cmd_init(_args: argparse.Namespace) -> None:
 
     if not SEED_FILE_DEFAULT.exists():
         SEED_FILE_DEFAULT.write_text(SEED_FILE_EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    hook_urls_example = Path("data/hooks/manual_urls.example.txt")
+    if not hook_urls_example.exists():
+        hook_urls_example.parent.mkdir(parents=True, exist_ok=True)
+        hook_urls_example.write_text(
+            "# Paste one reel URL per line from your phone research\n"
+            "https://www.instagram.com/reel/EXAMPLE1/\n"
+            "https://www.instagram.com/reel/EXAMPLE2/\n",
+            encoding="utf-8",
+        )
 
     ensure_dir(MANIFEST_EXAMPLE.parent)
     example_manifest: Dict = {
@@ -104,15 +113,16 @@ def _cmd_init(_args: argparse.Namespace) -> None:
     print("Initialized project scaffolding and example files.")
 
 
-def _cmd_capture_start(args: argparse.Namespace) -> None:
-    seed_file = Path(args.seed_file).expanduser()
+def _cmd_capture_import(args: argparse.Namespace) -> None:
+    input_file = Path(args.input_file).expanduser()
     output = Path(args.output).expanduser()
+    urls = parse_urls_file(input_file)
+    if not urls:
+        print(f"No URLs found in {input_file}")
+        return
 
-    count = run_capture_session(seed_file=seed_file, output_path=output, target=args.session_target)
-    import asyncio
-
-    final_count = asyncio.run(count)
-    print(f"Capture session ended. Total captures: {final_count}")
+    added = import_urls_to_captured(output_path=output, urls=urls, seed_account=args.seed_account)
+    print(f"Imported {added} new URLs into {output}")
 
 
 def _cmd_capture_finalize(args: argparse.Namespace) -> None:
@@ -238,14 +248,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_init = sub.add_parser("init", help="Create folders and example files")
     p_init.set_defaults(func=_cmd_init)
 
-    p_capture = sub.add_parser("capture", help="Capture operations")
+    p_capture = sub.add_parser("capture", help="Manual capture operations")
     capture_sub = p_capture.add_subparsers(dest="capture_cmd", required=True)
 
-    p_capture_start = capture_sub.add_parser("start", help="Start capture session")
-    p_capture_start.add_argument("--seed-file", default=str(SEED_FILE_DEFAULT))
-    p_capture_start.add_argument("--session-target", type=int, default=DEFAULT_SESSION_TARGET)
-    p_capture_start.add_argument("--output", default=str(CAPTURED_PATH))
-    p_capture_start.set_defaults(func=_cmd_capture_start)
+    p_capture_import = capture_sub.add_parser("import", help="Import manually collected reel URLs")
+    p_capture_import.add_argument("--input-file", required=True, help="txt (one URL/line) or csv with url column")
+    p_capture_import.add_argument("--output", default=str(CAPTURED_PATH))
+    p_capture_import.add_argument("--seed-account", default="")
+    p_capture_import.set_defaults(func=_cmd_capture_import)
 
     p_capture_finalize = capture_sub.add_parser("finalize", help="Finalize captured hooks")
     p_capture_finalize.add_argument("--input", default=str(CAPTURED_PATH))

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
+import os
 import signal
 import socket
 import subprocess
@@ -53,98 +56,103 @@ def main() -> int:
 
     settings = load_settings(dotenv_path=args.dotenv_path)
     setup_logging(settings.log_level)
-
-    effective_batch = args.batch_size or args.max_leads or settings.batch_size
-    dry_run = False if args.live else args.dry_run or settings.dry_run
-    enabled_channels = _parse_channels(args.channels)
-
-    sheets_client = SheetsClient(
-        service_account_path=settings.google_service_account_json,
-        sheet_id=settings.google_sheets_id,
-        worksheet_name=settings.raw_leads_sheet_name,
-        url_column_name=settings.raw_leads_url_column,
-        tier_column_name=settings.raw_leads_tier_column,
-        status_column_name=settings.raw_leads_status_column,
-    )
-    firestore_client = FirestoreClient(
-        service_account_path=settings.google_service_account_json,
-        project_id=settings.firestore_project_id,
-    )
-    _run_startup_preflight(
-        settings=settings,
-        firestore_client=firestore_client,
-        enabled_channels=enabled_channels,
-        dry_run=dry_run,
-    )
-
-    holder = f"{socket.gethostname()}:{datetime.now(UTC).isoformat()}"
-    acquired = firestore_client.acquire_run_lock(holder=holder, ttl_seconds=settings.run_lock_ttl_seconds)
-    if not acquired:
-        print("Run lock already held, exiting")
-        return 2
+    pid_file = _pid_file_path()
+    _write_pid_file(pid_file)
 
     try:
-        scrape_client = _build_scrape_client(settings)
-        session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
-        orchestrator = Orchestrator(
-            sheets_client=sheets_client,
-            scrape_client=scrape_client,
+        effective_batch = args.batch_size or args.max_leads or settings.batch_size
+        dry_run = False if args.live else args.dry_run or settings.dry_run
+        enabled_channels = _parse_channels(args.channels)
+
+        sheets_client = SheetsClient(
+            service_account_path=settings.google_service_account_json,
+            sheet_id=settings.google_sheets_id,
+            worksheet_name=settings.raw_leads_sheet_name,
+            url_column_name=settings.raw_leads_url_column,
+            tier_column_name=settings.raw_leads_tier_column,
+            status_column_name=settings.raw_leads_status_column,
+        )
+        firestore_client = FirestoreClient(
+            service_account_path=settings.google_service_account_json,
+            project_id=settings.firestore_project_id,
+        )
+        _run_startup_preflight(
+            settings=settings,
             firestore_client=firestore_client,
-            account_router=AccountRouter(
-                firestore_client,
-                email_handle=settings.email_sender_handle,
-                instagram_handle=settings.instagram_sender_handle,
-                tiktok_handle=settings.tiktok_sender_handle,
-            ),
-            email_sender=EmailSender(settings),
-            ig_sender=InstagramDmSender(
-                session_manager,
-                min_seconds_between_sends=settings.ig_min_seconds_between_sends,
-                send_jitter_seconds=settings.ig_send_jitter_seconds,
-            ),
-            tiktok_sender=TiktokDmSender(
-                session_manager,
-                attach_mode=settings.tiktok_attach_mode,
-                cdp_url=settings.tiktok_cdp_url,
-                min_seconds_between_sends=settings.tiktok_min_seconds_between_sends,
-                send_jitter_seconds=settings.tiktok_send_jitter_seconds,
-            ),
-            sender_profile=settings.sender_profile,
-            scrape_app=settings.scrape_app,
-            enable_email="email" in enabled_channels,
-            enable_instagram="instagram" in enabled_channels,
-            enable_tiktok="tiktok" in enabled_channels,
-            dedupe_enabled=not args.ignore_dedupe,
+            enabled_channels=enabled_channels,
+            dry_run=dry_run,
         )
+
+        holder = f"{socket.gethostname()}:{datetime.now(UTC).isoformat()}"
+        acquired = firestore_client.acquire_run_lock(holder=holder, ttl_seconds=settings.run_lock_ttl_seconds)
+        if not acquired:
+            print("Run lock already held, exiting")
+            return 2
+
         try:
-            result = orchestrator.run(
-                batch_size=effective_batch,
-                dry_run=dry_run,
-                row_index=args.lead_row_index,
+            scrape_client = _build_scrape_client(settings)
+            session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
+            orchestrator = Orchestrator(
+                sheets_client=sheets_client,
+                scrape_client=scrape_client,
+                firestore_client=firestore_client,
+                account_router=AccountRouter(
+                    firestore_client,
+                    email_handle=settings.email_sender_handle,
+                    instagram_handle=settings.instagram_sender_handle,
+                    tiktok_handle=settings.tiktok_sender_handle,
+                ),
+                email_sender=EmailSender(settings),
+                ig_sender=InstagramDmSender(
+                    session_manager,
+                    min_seconds_between_sends=settings.ig_min_seconds_between_sends,
+                    send_jitter_seconds=settings.ig_send_jitter_seconds,
+                ),
+                tiktok_sender=TiktokDmSender(
+                    session_manager,
+                    attach_mode=settings.tiktok_attach_mode,
+                    cdp_url=settings.tiktok_cdp_url,
+                    min_seconds_between_sends=settings.tiktok_min_seconds_between_sends,
+                    send_jitter_seconds=settings.tiktok_send_jitter_seconds,
+                ),
+                sender_profile=settings.sender_profile,
+                scrape_app=settings.scrape_app,
+                enable_email="email" in enabled_channels,
+                enable_instagram="instagram" in enabled_channels,
+                enable_tiktok="tiktok" in enabled_channels,
+                dedupe_enabled=not args.ignore_dedupe,
             )
-        except KeyboardInterrupt:
-            print("Run interrupted by user (Ctrl+C).")
-            return 130
-        print(
-            f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
-            f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"
-        )
-        if result.failed_tiktok_links:
-            print("failed_tiktok_links:")
-            for url in result.failed_tiktok_links:
-                print(f"- {url}")
-        if args.verbose_summary and result.lead_summaries:
-            print("lead_summaries:")
-            for item in result.lead_summaries:
-                print(
-                    f"- row={item.row_index} url={item.url} final={item.final_status} "
-                    f"email={item.email_status}:{item.email_error or 'none'} "
-                    f"ig={item.ig_status}:{item.ig_error or 'none'} "
-                    f"tiktok={item.tiktok_status}:{item.tiktok_error or 'none'}"
+            try:
+                result = orchestrator.run(
+                    batch_size=effective_batch,
+                    dry_run=dry_run,
+                    row_index=args.lead_row_index,
                 )
-        return 0
+            except KeyboardInterrupt:
+                print("Run interrupted by user (Ctrl+C).")
+                return 130
+            print(
+                f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
+                f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"
+            )
+            if result.failed_tiktok_links:
+                print("failed_tiktok_links:")
+                for url in result.failed_tiktok_links:
+                    print(f"- {url}")
+            if args.verbose_summary and result.lead_summaries:
+                print("lead_summaries:")
+                for item in result.lead_summaries:
+                    print(
+                        f"- row={item.row_index} url={item.url} final={item.final_status} "
+                        f"email={item.email_status}:{item.email_error or 'none'} "
+                        f"ig={item.ig_status}:{item.ig_error or 'none'} "
+                        f"tiktok={item.tiktok_status}:{item.tiktok_error or 'none'}"
+                    )
+            return 0
+        finally:
+            firestore_client.release_run_lock(holder=holder)
     finally:
-        firestore_client.release_run_lock(holder=holder)
+        _remove_pid_file(pid_file)
 
 
 def _install_signal_handlers() -> None:
@@ -293,6 +301,26 @@ def _start_chrome_debug(*, port: int) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def _pid_file_path() -> Path:
+    project_root = Path(__file__).resolve().parents[2]
+    return project_root / ".runtime" / "run_once.pid"
+
+
+def _write_pid_file(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pid": os.getpid(),
+        "started_at": datetime.now(UTC).isoformat(),
+        "hostname": socket.gethostname(),
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _remove_pid_file(path: Path) -> None:
+    with contextlib.suppress(Exception):
+        path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

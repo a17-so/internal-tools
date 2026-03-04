@@ -110,6 +110,10 @@ Stop an active run:
 
 ```bash
 # press Ctrl+C in the same terminal
+# or from another terminal:
+python -m outreach_automation.stop_run
+# escalate if it hangs in browser/process teardown:
+python -m outreach_automation.stop_run --force
 ```
 
 Clear a stale run lock if a prior process crashed:

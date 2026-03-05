@@ -27,8 +27,15 @@ export default async function Home() {
             </Button>
           </div>
         ) : (
-          <div className="w-full flex justify-center">
-            <Uploader />
+          <div className="w-full flex flex-col items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline">
+                <Link href="/analytics">View Analytics</Link>
+              </Button>
+            </div>
+            <div className="w-full flex justify-center">
+              <Uploader />
+            </div>
           </div>
         )}
 

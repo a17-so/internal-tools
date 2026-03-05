@@ -13,3 +13,19 @@ data/hooks/trimmed_4s/
 data/hooks/logs/
 data/hooks/manual_urls.txt
 data/hooks/manual_urls.normalized.txt
+data/assets/
+
+# Media artifacts (never commit local creative files)
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.heic
+*.tiff

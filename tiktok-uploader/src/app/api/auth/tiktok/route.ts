@@ -5,7 +5,7 @@ export async function GET() {
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
     const redirectUri = `${appUrl}/api/auth/callback`;
-    const scopes = (process.env.TIKTOK_OAUTH_SCOPES || 'user.info.basic,video.upload')
+    const scopes = (process.env.TIKTOK_OAUTH_SCOPES || 'user.info.basic,user.info.profile,user.info.stats,video.list,video.upload')
       .split(',')
       .map((scope) => scope.trim())
       .filter(Boolean)

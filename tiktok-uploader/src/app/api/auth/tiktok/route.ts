@@ -3,8 +3,17 @@ import crypto from 'crypto';
 
 export async function GET() {
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`;
-    const scopes = 'user.info.basic,user.info.profile,video.upload,user.info.stats,video.list';
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+    const redirectUri = `${appUrl}/api/auth/callback`;
+    const scopes = (process.env.TIKTOK_OAUTH_SCOPES || 'user.info.basic,video.upload')
+      .split(',')
+      .map((scope) => scope.trim())
+      .filter(Boolean)
+      .join(',');
+
+    if (!clientKey) {
+        return NextResponse.redirect(`${appUrl}?error=MissingClientKey`);
+    }
 
     // Create a random string for state to prevent CSRF
     const state = Math.random().toString(36).substring(7);

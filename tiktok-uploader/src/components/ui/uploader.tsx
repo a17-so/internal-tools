@@ -43,16 +43,17 @@ export default function Uploader() {
                 throw new Error(error.error || 'Upload failed');
             }
 
-            const data = await res.json();
+            await res.json();
             toast.success('Sent to TikTok! Check your TikTok INBOX to publish the draft.', { duration: 8000 });
             setFile(null); // Reset form
             setTitle('');
             // Reset the physical file input value to clear the UI
             const fileInput = document.getElementById('video-upload') as HTMLInputElement;
             if (fileInput) fileInput.value = '';
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Upload Error:', err);
-            toast.error(err.message || 'An error occurred during upload.');
+            const message = err instanceof Error ? err.message : 'An error occurred during upload.';
+            toast.error(message);
         } finally {
             setIsUploading(false);
         }

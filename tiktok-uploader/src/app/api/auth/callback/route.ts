@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 export async function GET(request: Request) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
     const { searchParams } = new URL(request.url);
 
     // TikTok may redirect with an error instead of a code
@@ -10,7 +11,7 @@ export async function GET(request: Request) {
     if (error) {
         console.error('TikTok returned an error:', error, errorDescription);
         return NextResponse.redirect(
-            `${process.env.NEXT_PUBLIC_APP_URL}?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`
+            `${appUrl}?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`
         );
     }
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
 
     if (!code) {
         console.error('No code parameter received. Full URL:', request.url);
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}?error=NoCode`);
+        return NextResponse.redirect(`${appUrl}?error=NoCode`);
     }
 
     const cookieStore = await cookies();
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
 
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`;
+    const redirectUri = `${appUrl}/api/auth/callback`;
 
     try {
         const bodyParams: Record<string, string> = {
@@ -61,12 +62,12 @@ export async function GET(request: Request) {
         if (data.error || data.error_code || !data.access_token) {
             console.error('TikTok Auth Error:', JSON.stringify(data));
             return NextResponse.redirect(
-                `${process.env.NEXT_PUBLIC_APP_URL}?error=AuthFailed&detail=${encodeURIComponent(data.error_description || data.message || JSON.stringify(data))}`
+                `${appUrl}?error=AuthFailed&detail=${encodeURIComponent(data.error_description || data.message || JSON.stringify(data))}`
             );
         }
 
         // Success - store the access token in a cookie
-        const response = NextResponse.redirect(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+        const response = NextResponse.redirect(appUrl);
 
         response.cookies.set('tiktok_access_token', data.access_token, {
             httpOnly: true,
@@ -95,6 +96,6 @@ export async function GET(request: Request) {
         return response;
     } catch (err) {
         console.error('Callback handling failed:', err);
-        return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}?error=ServerError`);
+        return NextResponse.redirect(`${appUrl}?error=ServerError`);
     }
 }

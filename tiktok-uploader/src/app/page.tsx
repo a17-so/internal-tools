@@ -12,7 +12,7 @@ export default async function Home() {
     <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-zinc-50 dark:bg-zinc-950">
       <div className="z-10 w-full max-w-5xl items-center justify-center font-mono text-sm flex flex-col space-y-8">
         <h1 className="text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-          TikTok Draft Uploader
+          Daemon Uploader
         </h1>
 
         {!isAuthenticated ? (
@@ -31,6 +31,14 @@ export default async function Home() {
             <Uploader />
           </div>
         )}
+
+        <div className="pt-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          <span>By continuing, you agree to our </span>
+          <Link href="/terms" className="underline underline-offset-4 hover:text-zinc-900 dark:hover:text-zinc-100">Terms of Service</Link>
+          <span> and </span>
+          <Link href="/privacy" className="underline underline-offset-4 hover:text-zinc-900 dark:hover:text-zinc-100">Privacy Policy</Link>
+          <span>.</span>
+        </div>
       </div>
     </main>
   );

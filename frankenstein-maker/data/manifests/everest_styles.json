@@ -6,7 +6,11 @@
   "styles": {
     "calm_reclaim": {
       "clip_pools": [
-        "/absolute/path/to/calm_clip_01.mp4"
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/beach.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/creek.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/moutain.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/northern_lights.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/rain.MOV"
       ],
       "music": {
         "path": "/absolute/path/to/calm_music.mp3"
@@ -23,18 +27,22 @@
     },
     "intense_smart": {
       "clip_pools": [
-        "/absolute/path/to/intense_clip_01.mp4"
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/beach.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/creek.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/moutain.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/northern_lights.MOV",
+        "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/rain.MOV"
       ],
       "music": {
-        "path": "/absolute/path/to/intense_music.mp3"
+        "path": ""
       },
       "icon": {
-        "path": "/absolute/path/to/everest_icon.png"
+        "path": ""
       },
       "overlays": {
         "top_bar": {
-          "hook": "smart people do not doomscroll",
-          "cta": "use everest to reclaim your attention"
+          "hook": "",
+          "cta": ""
         }
       }
     }

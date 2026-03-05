@@ -74,16 +74,17 @@ def render_one(
     concat_two_clips(varied_hook, second_half_video, combined)
 
     top_cfg = manifest.get("overlays", {}).get("top_bar", {})
-    cta = str(top_cfg.get("cta", "Download Everest"))
-    hook_text = str(top_cfg.get("hook", "Still scrolling?"))
+    cta = str(top_cfg.get("cta", "")).strip()
+    hook_text = str(top_cfg.get("hook", "")).strip()
 
     icon_path = str(manifest.get("icon", {}).get("path", ""))
 
     with VideoFileClip(str(combined)) as base:
         overlays = [base]
-        top = top_bar_overlay(VIDEO_WIDTH, VIDEO_HEIGHT, hook_text=hook_text, cta_text=cta)
-        top = top.with_duration(base.duration).with_position((0, 0))
-        overlays.append(top)
+        if hook_text or cta:
+            top = top_bar_overlay(VIDEO_WIDTH, VIDEO_HEIGHT, hook_text=hook_text, cta_text=cta)
+            top = top.with_duration(base.duration).with_position((0, 0))
+            overlays.append(top)
 
         if icon_path:
             icon_file = Path(icon_path)

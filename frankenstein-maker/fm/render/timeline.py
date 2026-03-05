@@ -39,7 +39,7 @@ def rewrite_clip_variation(source: Path, out_path: Path, profile: Dict[str, floa
     ensure_parent(out_path)
 
     vf_parts = [
-        f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=cover",
+        f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase",
         f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT}",
         f"eq=brightness={profile['brightness']:.4f}:contrast={profile['contrast']:.4f}:saturation={profile['saturation']:.4f}",
         f"hue=h={profile['hue']:.3f}",

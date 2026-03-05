@@ -19,12 +19,16 @@ def validate_manifest_assets(data: Dict) -> Tuple[List[str], List[str]]:
             if not pp.exists():
                 warnings.append(f"Missing clip pool file: {pp}")
 
-        icon_path = Path(str(cfg.get("icon", {}).get("path", "")))
-        if str(icon_path) and not icon_path.exists():
-            warnings.append(f"Missing icon path: {icon_path}")
+        raw_icon = str(cfg.get("icon", {}).get("path", "")).strip()
+        if raw_icon:
+            icon_path = Path(raw_icon)
+            if not icon_path.exists():
+                warnings.append(f"Missing icon path: {icon_path}")
 
-        music_path = Path(str(cfg.get("music", {}).get("path", "")))
-        if str(music_path) and not music_path.exists():
-            warnings.append(f"Missing music path: {music_path}")
+        raw_music = str(cfg.get("music", {}).get("path", "")).strip()
+        if raw_music:
+            music_path = Path(raw_music)
+            if not music_path.exists():
+                warnings.append(f"Missing music path: {music_path}")
 
     return errors, warnings

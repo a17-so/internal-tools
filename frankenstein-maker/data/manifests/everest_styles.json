@@ -13,15 +13,15 @@
         "/Users/rootb/Code/a17/internal-tools/frankenstein-maker/data/assets/transitions/serene/rain.MOV"
       ],
       "music": {
-        "path": "/absolute/path/to/calm_music.mp3"
+        "path": ""
       },
       "icon": {
-        "path": "/absolute/path/to/everest_icon.png"
+        "path": ""
       },
       "overlays": {
         "top_bar": {
-          "hook": "still scrolling bro?",
-          "cta": "download everest and start microlearning"
+          "hook": "",
+          "cta": ""
         }
       }
     },

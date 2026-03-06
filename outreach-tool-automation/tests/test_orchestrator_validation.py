@@ -56,6 +56,34 @@ class FakeSheets:
         )
 
 
+class FailingAppendSheets(FakeSheets):
+    def append_outreach_tracking_row(
+        self,
+        *,
+        category: str,
+        creator_name: str | None,
+        ig_handle: str | None,
+        tiktok_handle: str | None,
+        email: str | None,
+        sender_email: str | None,
+        sender_ig: str | None,
+        sender_tiktok: str | None,
+        status: str = "Sent",
+    ) -> None:
+        _ = (
+            category,
+            creator_name,
+            ig_handle,
+            tiktok_handle,
+            email,
+            sender_email,
+            sender_ig,
+            sender_tiktok,
+            status,
+        )
+        raise RuntimeError("append failed")
+
+
 class FakeScraper:
     def __init__(self) -> None:
         self.last_category: str | None = None
@@ -377,3 +405,26 @@ def test_dedupe_skip_clears_and_marks_row() -> None:
     assert sheets._statuses[2] == "skipped_dedupe"
     assert sheets.cleared_rows == [2]
     assert scraper.last_category is None
+
+
+def test_tracking_append_failure_is_reported_but_run_still_processed() -> None:
+    sheets = FailingAppendSheets()
+    firestore = FakeFirestore()
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.processed == 1
+    assert result.failed == 0
+    assert result.tracking_append_failed_links == ["https://tiktok.com/@user"]

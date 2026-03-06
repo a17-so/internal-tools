@@ -132,6 +132,12 @@ Live:
 python -m outreach_automation.run_once --live --max-leads 30 --verbose-summary
 ```
 
+Live without writing run report artifact:
+
+```bash
+python -m outreach_automation.run_once --live --max-leads 30 --no-report
+```
+
 Channel-specific:
 
 ```bash
@@ -165,6 +171,12 @@ Reset daily counters:
 python -m outreach_automation.reset_counters
 ```
 
+Environment and dependency doctor:
+
+```bash
+python -m outreach_automation.doctor
+```
+
 ## Current Runtime Behavior
 
 - Per-lead channel order: `TikTok -> Instagram -> Email`
@@ -172,6 +184,7 @@ python -m outreach_automation.reset_counters
 - Lead becomes `Processed` when at least one channel sends successfully
 - End-of-run prints failed TikTok links
 - End-of-run prints tracking-append failures (if any)
+- End-of-run writes JSON report to `logs/run-reports/` unless `--no-report`
 - Email has blocklist + duplicate-recipient suppression
 - DM pacing uses jittered waits (non-fixed cadence)
 

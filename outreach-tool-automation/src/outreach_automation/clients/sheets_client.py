@@ -62,15 +62,6 @@ class SheetsClient:
         header = self._sheet.row_values(1)
         lower = [h.strip().lower() for h in header]
 
-        def idx(candidates: list[str], label: str) -> int:
-            for candidate in candidates:
-                normalized = candidate.strip().lower()
-                if not normalized:
-                    continue
-                if normalized in lower:
-                    return lower.index(normalized) + 1
-            raise ValueError(f"Missing required column for {label}. Tried: {candidates}")
-
         def idx_optional(candidates: list[str]) -> int | None:
             for candidate in candidates:
                 normalized = candidate.strip().lower()

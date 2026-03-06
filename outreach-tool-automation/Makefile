@@ -1,4 +1,4 @@
-.PHONY: format lint typecheck test check
+.PHONY: format lint typecheck test check doctor
 
 format:
 	black src tests
@@ -14,3 +14,6 @@ test:
 	pytest
 
 check: lint typecheck test
+
+doctor:
+	python -m outreach_automation.doctor

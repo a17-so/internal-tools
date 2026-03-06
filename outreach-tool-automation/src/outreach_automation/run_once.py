@@ -19,7 +19,7 @@ from outreach_automation.clients.local_scraper_client import LocalScrapeClient, 
 from outreach_automation.clients.sheets_client import SheetsClient
 from outreach_automation.logger import setup_logging
 from outreach_automation.models import Account, Platform
-from outreach_automation.orchestrator import Orchestrator
+from outreach_automation.orchestrator import LeadRunSummary, Orchestrator, OrchestratorResult
 from outreach_automation.senders.email_sender import EmailSender
 from outreach_automation.senders.ig_dm import InstagramDmSender
 from outreach_automation.senders.tiktok_dm import TiktokDmSender
@@ -51,6 +51,11 @@ def main() -> int:
         action="store_true",
         help="Print per-lead channel outcomes after run",
     )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Skip writing JSON run report under logs/run-reports",
+    )
     parser.add_argument("--dotenv-path", type=str, default=None)
     args = parser.parse_args()
 
@@ -60,6 +65,7 @@ def main() -> int:
     _write_pid_file(pid_file)
 
     try:
+        started_at = datetime.now(UTC)
         effective_batch = args.batch_size or args.max_leads or settings.batch_size
         dry_run = False if args.live else args.dry_run or settings.dry_run
         enabled_channels = _parse_channels(args.channels)
@@ -130,6 +136,37 @@ def main() -> int:
                     row_index=args.lead_row_index,
                 )
             except KeyboardInterrupt:
+                if not args.no_report:
+                    _write_run_report(
+                        started_at=started_at,
+                        ended_at=datetime.now(UTC),
+                        dry_run=dry_run,
+                        enabled_channels=enabled_channels,
+                        batch_size=effective_batch,
+                        row_index=args.lead_row_index,
+                        dedupe_enabled=not args.ignore_dedupe,
+                        result=OrchestratorResult(
+                            processed=0,
+                            failed=0,
+                            skipped=0,
+                            failed_tiktok_links=[],
+                            tracking_append_failed_links=[],
+                            lead_summaries=[
+                                LeadRunSummary(
+                                    row_index=args.lead_row_index or -1,
+                                    url="",
+                                    final_status="interrupted",
+                                    email_status="skipped",
+                                    email_error="interrupted",
+                                    ig_status="skipped",
+                                    ig_error="interrupted",
+                                    tiktok_status="skipped",
+                                    tiktok_error="interrupted",
+                                )
+                            ],
+                        ),
+                        extra={"interrupted": True},
+                    )
                 print("Run interrupted by user (Ctrl+C).")
                 return 130
             print(
@@ -153,6 +190,18 @@ def main() -> int:
                         f"ig={item.ig_status}:{item.ig_error or 'none'} "
                         f"tiktok={item.tiktok_status}:{item.tiktok_error or 'none'}"
                     )
+            if not args.no_report:
+                report_path = _write_run_report(
+                    started_at=started_at,
+                    ended_at=datetime.now(UTC),
+                    dry_run=dry_run,
+                    enabled_channels=enabled_channels,
+                    batch_size=effective_batch,
+                    row_index=args.lead_row_index,
+                    dedupe_enabled=not args.ignore_dedupe,
+                    result=result,
+                )
+                print(f"run_report={report_path}")
             return 0
         finally:
             firestore_client.release_run_lock(holder=holder)
@@ -326,6 +375,54 @@ def _write_pid_file(path: Path) -> None:
 def _remove_pid_file(path: Path) -> None:
     with contextlib.suppress(Exception):
         path.unlink(missing_ok=True)
+
+
+def _write_run_report(
+    *,
+    started_at: datetime,
+    ended_at: datetime,
+    dry_run: bool,
+    enabled_channels: set[str],
+    batch_size: int,
+    row_index: int | None,
+    dedupe_enabled: bool,
+    result: OrchestratorResult,
+    extra: dict[str, object] | None = None,
+) -> str:
+    report_dir = Path(__file__).resolve().parents[2] / "logs" / "run-reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    stamp = ended_at.strftime("%Y%m%d-%H%M%S")
+    report_path = report_dir / f"run-{stamp}.json"
+    payload: dict[str, object] = {
+        "started_at": started_at.isoformat(),
+        "ended_at": ended_at.isoformat(),
+        "duration_seconds": round((ended_at - started_at).total_seconds(), 2),
+        "dry_run": dry_run,
+        "channels": sorted(enabled_channels),
+        "batch_size": batch_size,
+        "row_index": row_index,
+        "dedupe_enabled": dedupe_enabled,
+        "processed": result.processed,
+        "failed": result.failed,
+        "skipped": result.skipped,
+        "failed_tiktok_links": result.failed_tiktok_links,
+        "tracking_append_failed_links": result.tracking_append_failed_links,
+        "lead_summaries": [
+            {
+                "row_index": item.row_index,
+                "url": item.url,
+                "final_status": item.final_status,
+                "email": {"status": item.email_status, "error": item.email_error},
+                "instagram": {"status": item.ig_status, "error": item.ig_error},
+                "tiktok": {"status": item.tiktok_status, "error": item.tiktok_error},
+            }
+            for item in result.lead_summaries
+        ],
+    }
+    if extra:
+        payload.update(extra)
+    report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return str(report_path)
 
 
 if __name__ == "__main__":

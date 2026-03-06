@@ -25,6 +25,19 @@ class SheetsClientProto(Protocol):
     def fetch_unprocessed(self, batch_size: int, row_index: int | None = None) -> list[LeadRow]: ...
     def update_status(self, row_index: int, status: str) -> None: ...
     def clear_creator_link(self, lead: LeadRow) -> None: ...
+    def append_outreach_tracking_row(
+        self,
+        *,
+        category: str,
+        creator_name: str | None,
+        ig_handle: str | None,
+        tiktok_handle: str | None,
+        email: str | None,
+        sender_email: str | None,
+        sender_ig: str | None,
+        sender_tiktok: str | None,
+        status: str = "Sent",
+    ) -> None: ...
 
 
 class ScraperClientProto(Protocol):
@@ -195,6 +208,8 @@ class Orchestrator:
         category = ""
         ig_handle = None
         email_to = None
+        creator_name = None
+        tiktok_handle = None
         job_error = None
         job_status = "completed"
 
@@ -271,6 +286,8 @@ class Orchestrator:
             )
             email_to = scrape.email_to
             ig_handle = scrape.ig_handle
+            creator_name = scrape.creator_name
+            tiktok_handle = scrape.tiktok_handle
 
             routed = self._router.route_selected(
                 enable_email=self._enable_email,
@@ -321,6 +338,21 @@ class Orchestrator:
                 self._firestore.mark_account_cooling(routed.tiktok.id)
 
             final_status = final_sheet_status(email_result, ig_result, tiktok_result)
+            if final_status == "Processed" and not dry_run:
+                try:
+                    self._sheets.append_outreach_tracking_row(
+                        category=category,
+                        creator_name=creator_name,
+                        ig_handle=scrape.ig_handle,
+                        tiktok_handle=tiktok_handle,
+                        email=scrape.email_to,
+                        sender_email=sender_email,
+                        sender_ig=sender_ig,
+                        sender_tiktok=sender_tiktok,
+                        status="Sent",
+                    )
+                except Exception:
+                    _LOG.exception("failed to append outreach tracking row", extra={"url": lead.creator_url})
             self._sheets.update_status(lead.row_index, final_status)
             self._sheets.clear_creator_link(lead)
 

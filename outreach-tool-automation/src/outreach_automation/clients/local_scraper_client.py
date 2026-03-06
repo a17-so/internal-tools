@@ -92,6 +92,8 @@ class LocalScrapeClient:
             email_subject=comms.subject.strip() or f"PAID PROMO OPPORTUNITY - {payload.app.upper()} App",
             email_body_text=comms.email_text.strip(),
             ig_handle=ig_handle or None,
+            creator_name=name,
+            tiktok_handle=username,
         )
 
     def _fetch_tiktok_profile(self, *, username: str) -> dict[str, Any]:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 import google.auth
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.utils import ValueInputOption
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from outreach_automation.models import LeadRow
@@ -149,6 +151,38 @@ class SheetsClient:
         if lead.tier_col_index is not None:
             self._set_cell_background_color(lead.row_index, lead.tier_col_index, red=1.0, green=1.0, blue=1.0)
 
+    def append_outreach_tracking_row(
+        self,
+        *,
+        category: str,
+        creator_name: str | None,
+        ig_handle: str | None,
+        tiktok_handle: str | None,
+        email: str | None,
+        sender_email: str | None,
+        sender_ig: str | None,
+        sender_tiktok: str | None,
+        status: str = "Sent",
+    ) -> None:
+        sheet_name = self._category_to_sheet_name(category)
+        row = [
+            (creator_name or "").strip(),
+            self._ig_link_formula(ig_handle),
+            self._tiktok_link_formula(tiktok_handle),
+            (email or "").strip(),
+            "",
+            "",
+            status,
+            (sender_email or "").strip(),
+            (sender_ig or "").strip(),
+            (sender_tiktok or "").strip(),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ]
+        self._sheet.spreadsheet.worksheet(sheet_name).append_row(
+            row,
+            value_input_option=ValueInputOption.user_entered,
+        )
+
     @staticmethod
     def _get_cell(row: list[str], col_index_one_based: int | None) -> str:
         if col_index_one_based is None:
@@ -162,6 +196,34 @@ class SheetsClient:
         if lead.col_index is not None:
             return lead.col_index
         return self._columns.creator_url
+
+    @staticmethod
+    def _category_to_sheet_name(category: str) -> str:
+        normalized = (category or "").strip().lower()
+        mapping = {
+            "macro": "Macros",
+            "micro": "Micros",
+            "submicro": "Submicros",
+            "ambassador": "Ambassadors",
+            "themepage": "Theme Pages",
+        }
+        if normalized not in mapping:
+            raise ValueError(f"Unsupported category for sheet append: {category}")
+        return mapping[normalized]
+
+    @staticmethod
+    def _ig_link_formula(ig_handle: str | None) -> str:
+        normalized = (ig_handle or "").strip().lstrip("@")
+        if not normalized:
+            return ""
+        return f'=HYPERLINK("https://www.instagram.com/{normalized}","@{normalized}")'
+
+    @staticmethod
+    def _tiktok_link_formula(tt_handle: str | None) -> str:
+        normalized = (tt_handle or "").strip().lstrip("@")
+        if not normalized:
+            return ""
+        return f'=HYPERLINK("https://www.tiktok.com/@{normalized}","@{normalized}")'
 
     def _set_cell_background_color(
         self,

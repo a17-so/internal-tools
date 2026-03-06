@@ -54,6 +54,8 @@ class ScrapeResponse:
     email_subject: str | None
     email_body_text: str | None
     ig_handle: str | None
+    creator_name: str | None = None
+    tiktok_handle: str | None = None
 
 
 @dataclass(slots=True)

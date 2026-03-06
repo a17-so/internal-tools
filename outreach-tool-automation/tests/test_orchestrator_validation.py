@@ -16,8 +16,7 @@ class FakeSheets:
     def __init__(self) -> None:
         self._statuses: dict[int, str] = {}
         self.cleared_rows: list[int] = []
-        self.error_rows: list[int] = []
-        self.cleared_error_rows: list[int] = []
+        self.tracking_rows: list[dict[str, str | None]] = []
 
     def fetch_unprocessed(self, batch_size: int, row_index: int | None = None) -> list[LeadRow]:
         _ = (batch_size, row_index)
@@ -29,11 +28,32 @@ class FakeSheets:
     def clear_creator_link(self, lead: LeadRow) -> None:
         self.cleared_rows.append(lead.row_index)
 
-    def mark_creator_link_error(self, lead: LeadRow) -> None:
-        self.error_rows.append(lead.row_index)
-
-    def clear_creator_link_error(self, lead: LeadRow) -> None:
-        self.cleared_error_rows.append(lead.row_index)
+    def append_outreach_tracking_row(
+        self,
+        *,
+        category: str,
+        creator_name: str | None,
+        ig_handle: str | None,
+        tiktok_handle: str | None,
+        email: str | None,
+        sender_email: str | None,
+        sender_ig: str | None,
+        sender_tiktok: str | None,
+        status: str = "Sent",
+    ) -> None:
+        self.tracking_rows.append(
+            {
+                "category": category,
+                "creator_name": creator_name,
+                "ig_handle": ig_handle,
+                "tiktok_handle": tiktok_handle,
+                "email": email,
+                "sender_email": sender_email,
+                "sender_ig": sender_ig,
+                "sender_tiktok": sender_tiktok,
+                "status": status,
+            }
+        )
 
 
 class FakeScraper:
@@ -221,9 +241,8 @@ def test_missing_tier_fails_validation() -> None:
     result = orchestrator.run(batch_size=1, dry_run=True)
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_missing_tier"
-    assert sheets.error_rows == []
-    assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == [2]
+    assert sheets.tracking_rows == []
     assert scraper.last_category is None
     assert len(firestore.jobs) == 1
     assert result.failed_tiktok_links == []
@@ -249,9 +268,9 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
     result = orchestrator.run(batch_size=1, dry_run=False)
     assert result.processed == 1
     assert sheets._statuses[2] == "Processed"
-    assert sheets.error_rows == []
-    assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == [2]
+    assert len(sheets.tracking_rows) == 1
+    assert sheets.tracking_rows[0]["sender_email"] == "ethan@a17.so"
     assert result.failed_tiktok_links == []
 
 
@@ -275,9 +294,8 @@ def test_full_failure_clears_link_and_tracks_tiktok_failure() -> None:
     result = orchestrator.run(batch_size=1, dry_run=False)
     assert result.failed == 1
     assert sheets._statuses[2].startswith("failed_")
-    assert sheets.error_rows == []
-    assert sheets.cleared_error_rows == []
     assert sheets.cleared_rows == [2]
+    assert sheets.tracking_rows == []
     assert result.failed_tiktok_links == ["https://tiktok.com/@user"]
 
 
@@ -304,8 +322,8 @@ def test_invalid_tier_fails_validation() -> None:
     result = orchestrator.run(batch_size=1, dry_run=True)
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_invalid_tier"
-    assert sheets.error_rows == []
     assert sheets.cleared_rows == [2]
+    assert sheets.tracking_rows == []
     assert scraper.last_category is None
     assert result.failed_tiktok_links == []
 

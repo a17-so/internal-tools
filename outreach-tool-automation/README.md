@@ -1,28 +1,37 @@
 # Outreach Tool Automation
 
-Local-first outreach backend that processes Raw Leads and sends email/IG/TikTok outreach.
+Local-first outreach automation that reads Raw Leads from Google Sheets, generates scripts with a local scraper, sends outreach across TikTok/Instagram/Email, and writes execution state to Firestore.
 
-## v1 Behavior
+This service is designed to run from one operator machine and does **not** require Cloud Run for scraping.
 
-- Source of truth for category: `creator_tier` column from `Raw Leads`
-- Supports two lead layouts:
-  - Standard columns (`creator_url`, optional `creator_tier`, optional `status`)
-  - Matrix mode (no explicit URL column): scans all TikTok URL columns and, when present, reads tier from the paired header `<date/name> Tier`
-- Missing/invalid tiers are rejected with deterministic sheet statuses:
-  - `failed_missing_tier`
-  - `failed_invalid_tier`
-- Sequential execution per lead: TikTok -> Instagram -> Email
-- No automatic retries for IG/TikTok sends
-- Dry-run mode available for full pipeline validation without sending
-- IG/TikTok live send requires pre-bootstrapped Playwright sessions
-- Scraper is local-only: in-process SearchAPI + local templates (no hosted `/scrape` dependency)
+## Scope
 
-## Layout
+- Source lead data: Google Sheet `Raw Leads`
+- Channels: TikTok DM, Instagram DM, Email
+- Persistence: Firestore (`jobs`, `accounts`, `locks`)
+- Scraping: local SearchAPI + local template scripts
+- Execution: single-run CLI (`run_once`) with lock protection
+
+## Current Behavior
+
+- Per-lead execution order: `TikTok -> Instagram -> Email`
+- `creator_tier` is required for processing
+- Lead URL cell is cleared after each attempted lead (success or failure)
+- Lead is considered `Processed` when at least one channel sends successfully
+- Failed TikTok links are printed at end of run
+- Optional verbose per-lead summary via `--verbose-summary`
+- Email safety:
+  - recipient blocklist (`EMAIL_RECIPIENT_BLOCKLIST`)
+  - duplicate-recipient suppression (skip email if that recipient was already emailed in a prior completed run)
+
+## Repository Layout
 
 ```text
 outreach-tool-automation/
 ├── src/outreach_automation/
 │   ├── run_once.py
+│   ├── stop_run.py
+│   ├── unlock_run_lock.py
 │   ├── orchestrator.py
 │   ├── sheets_client.py
 │   ├── local_scraper_client.py
@@ -31,158 +40,247 @@ outreach-tool-automation/
 │   ├── email_sender.py
 │   ├── ig_dm.py
 │   ├── tiktok_dm.py
-│   ├── tier_resolver.py
-│   └── status_mapper.py
+│   ├── templates/
+│   └── ...
 ├── tests/
-└── ops/
+├── ops/
+├── .env.example
+└── README.md
 ```
+
+## Prerequisites
+
+- Python `3.11+`
+- Google Cloud project with Firestore enabled
+- Access to target Google Sheet
+- SearchAPI key
+- Gmail OAuth client + refresh tokens for sender account(s)
+- Playwright installed via project deps
 
 ## Setup
 
 ```bash
+cd /Users/rootb/Code/a17/internal-tools/outreach-tool-automation
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-Create env file:
-
-```bash
+pip install -e "[dev]"
 cp .env.example .env
 ```
 
-Authentication options:
-- Service account JSON (set `GOOGLE_SERVICE_ACCOUNT_JSON`)
-- ADC keyless mode (leave `GOOGLE_SERVICE_ACCOUNT_JSON` blank and run `gcloud auth application-default login`)
-- Quota project for ADC is auto-exported from `GOOGLE_CLOUD_QUOTA_PROJECT` (falls back to `FIRESTORE_PROJECT_ID`)
-- If Raw Leads headers differ, set:
-  - `RAW_LEADS_URL_COLUMN`
-  - `RAW_LEADS_TIER_COLUMN`
-  - `RAW_LEADS_STATUS_COLUMN`
-- Optional sender pinning (recommended while you test with one operator account):
-  - `EMAIL_SENDER_HANDLE=ethan@a17.so`
-  - `INSTAGRAM_SENDER_HANDLE=@ethan.peps`
-  - `TIKTOK_SENDER_HANDLE=@regen.app`
-  - `EMAIL_RECIPIENT_BLOCKLIST=only@savagex.com`
+## Authentication (ADC)
 
-Scrape setup:
-- Set `SEARCHAPI_KEY`; local scraper uses `LOCAL_TEMPLATES_DIR` scripts.
-- Optional: set `OUTREACH_APPS_JSON` for sender-profile template overrides.
-- Startup preflight validates required template files and local session directories for active sender accounts.
-
-## Run
-
-Dry-run (recommended first):
+If not using a service account JSON, authenticate ADC with required scopes:
 
 ```bash
-python -m outreach_automation.run_once --dry-run
+gcloud auth application-default login \
+  --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/drive
+
+gcloud auth application-default set-quota-project outreach-tool-automation
 ```
 
-Single row dry-run:
+If ADC expires, rerun the same commands.
+
+## Required Environment Variables
+
+At minimum:
+
+- `GOOGLE_SHEETS_ID`
+- `FIRESTORE_PROJECT_ID`
+- `SEARCHAPI_KEY`
+- `GMAIL_CLIENT_ID`
+- `GMAIL_CLIENT_SECRET`
+- `GMAIL_ACCOUNT_1_EMAIL`
+- `GMAIL_ACCOUNT_1_REFRESH_TOKEN`
+
+Important runtime controls:
+
+- `SENDER_PROFILE` (for template sender identity)
+- `EMAIL_SENDER_HANDLE` / `INSTAGRAM_SENDER_HANDLE` / `TIKTOK_SENDER_HANDLE` (pin to one operator account)
+- `EMAIL_RECIPIENT_BLOCKLIST` (comma-separated hard-block list)
+- `TIKTOK_ATTACH_MODE=true`
+- `TIKTOK_ATTACH_AUTO_START=true`
+- `TIKTOK_CDP_URL=http://127.0.0.1:9222`
+
+Humanized DM pacing (anti-pattern hardening):
+
+- `IG_MIN_SECONDS_BETWEEN_SENDS`
+- `IG_SEND_JITTER_SECONDS`
+- `TIKTOK_MIN_SECONDS_BETWEEN_SENDS`
+- `TIKTOK_SEND_JITTER_SECONDS`
+
+## Firestore Data Model
+
+### `accounts`
+
+Expected fields per account:
+
+- `id`
+- `platform`: `email | instagram | tiktok`
+- `handle`
+- `status`: `active | cooling | flagged`
+- `daily_sent`
+- `daily_limit`
+- optional: `cooldown_until`, `last_reset`
+
+Seed from example:
 
 ```bash
-python -m outreach_automation.run_once --dry-run --lead-row-index 2
+cp ops/accounts.seed.example.json ops/accounts.seed.json
+python -m outreach_automation.seed_accounts --file ops/accounts.seed.json
 ```
 
-Live run:
+### `jobs`
+
+Each lead attempt writes one job record with:
+
+- lead URL + tier category
+- per-channel status/error
+- sender handles used
+- timestamps
+- dry-run marker
+
+### `locks`
+
+Run lock document:
+
+- `locks/orchestrator`
+
+## Raw Leads Sheet Contract
+
+Supported layouts:
+
+1. Standard row layout:
+- `creator_url`
+- `creator_tier`
+- optional `status`
+
+2. Matrix layout:
+- URL columns by day/person
+- paired tier columns named `<header> Tier`
+
+Processing requirements:
+
+- URL must be TikTok URL
+- Tier must be one of: `Macro`, `Micro`, `Submicro`, `Ambassador`, `Themepage`
+
+## Core Commands
+
+### Dry run
 
 ```bash
-python -m outreach_automation.run_once --live
+python -m outreach_automation.run_once --dry-run --max-leads 10 --verbose-summary
 ```
 
-Run exactly 30 leads (your current testing flow):
+### Live run
 
 ```bash
-python -m outreach_automation.run_once --live --max-leads 30
+python -m outreach_automation.run_once --live --max-leads 30 --verbose-summary
 ```
 
-Run selected channels only (useful for testing):
+### Live run with selected channels
 
 ```bash
-python -m outreach_automation.run_once --live --channels instagram
-python -m outreach_automation.run_once --live --channels email,tiktok
-# force rerun same lead URL for testing
-python -m outreach_automation.run_once --live --channels instagram --lead-row-index 15 --ignore-dedupe
-# print per-lead channel status/error summary
-python -m outreach_automation.run_once --live --max-leads 10 --verbose-summary
+python -m outreach_automation.run_once --live --channels tiktok --max-leads 10 --ignore-dedupe
+python -m outreach_automation.run_once --live --channels instagram,email --max-leads 10
 ```
 
-Stop an active run:
+### Force rerun already-contacted URLs (testing only)
 
 ```bash
-# press Ctrl+C in the same terminal
-# or from another terminal:
+python -m outreach_automation.run_once --live --ignore-dedupe --lead-row-index 42 --channels tiktok --verbose-summary
+```
+
+## Stop / Recovery Commands
+
+### Stop active run safely (from another terminal)
+
+```bash
 python -m outreach_automation.stop_run
-# escalate if it hangs in browser/process teardown:
+```
+
+If process is stuck in teardown:
+
+```bash
 python -m outreach_automation.stop_run --force
 ```
 
-Clear a stale run lock if a prior process crashed:
+### Clear stale run lock
 
 ```bash
 python -m outreach_automation.unlock_run_lock
 ```
 
-Current success policy:
-- A lead is marked `Processed` if any channel (`email`, `instagram`, or `tiktok`) sends successfully.
-- All enabled channels are still attempted per lead.
-- Email channel is auto-suppressed when recipient was already emailed in a prior completed run.
-
-Bootstrap IG/TikTok login sessions (one-time 2FA per active account):
-
-```bash
-python -m outreach_automation.login_bootstrap --platform all
-# or limit to one active account
-python -m outreach_automation.login_bootstrap --platform all --account-handle @regenhealth.app --account-handle @regenapp
-```
-
-TikTok attach mode (recommended when login attempts are blocked):
-
-```bash
-# 1) Enable attach mode in .env
-# TIKTOK_ATTACH_MODE=true
-# TIKTOK_ATTACH_AUTO_START=true
-# TIKTOK_CDP_URL=http://127.0.0.1:9222
-# TIKTOK_MIN_SECONDS_BETWEEN_SENDS=90
-
-# 2) Run tiktok-only send test
-python -m outreach_automation.run_once --live --channels tiktok --lead-row-index 15 --ignore-dedupe
-```
-
-Notes for attach mode:
-- With `TIKTOK_ATTACH_AUTO_START=true`, `run_once` auto-launches debug Chrome if CDP is down.
-- Manual fallback (optional): `./ops/start_chrome_debug.sh 9222`
-- Keep TikTok logged in on that Chrome instance.
-- Do not run multiple outreach processes against the same attached Chrome at once.
-- The automation will open/close only the tab it creates and will not close your attached Chrome browser.
-- Live preflight fails fast if `TIKTOK_ATTACH_MODE=true` but `TIKTOK_CDP_URL` is unreachable.
-- DM send pacing uses randomized delays (base + jitter), not fixed intervals:
-  - `IG_MIN_SECONDS_BETWEEN_SENDS` + `IG_SEND_JITTER_SECONDS`
-  - `TIKTOK_MIN_SECONDS_BETWEEN_SENDS` + `TIKTOK_SEND_JITTER_SECONDS`
-
-Seed Firestore accounts:
-
-```bash
-cp ops/accounts.seed.example.json ops/accounts.seed.json
-# edit handles/emails in ops/accounts.seed.json
-python -m outreach_automation.seed_accounts --file ops/accounts.seed.json
-```
-
-Reset daily account counters:
+### Reset daily counters
 
 ```bash
 python -m outreach_automation.reset_counters
 ```
 
-## Quality
+## TikTok Attach Mode
+
+Attach mode is recommended for reliability when login automation is blocked.
+
+Behavior:
+
+- automation connects to local Chrome debugging endpoint
+- opens a per-lead tab
+- closes tab in `finally` even on failure
+- retries once if DM thread is stuck loading before input appears
+
+If debugger is down and auto-start is enabled, `run_once` launches debug Chrome automatically.
+
+## Safety Controls
+
+- Run lock prevents overlapping runs
+- Sender-handle pinning prevents accidental routing to wrong account
+- Email duplicate recipient suppression prevents repeated sends to same email across leads
+- Recipient blocklist prevents known-bad targets
+- Randomized send spacing avoids fixed-interval bot-like cadence
+
+## Troubleshooting
+
+### `insufficient authentication scopes` / Sheets 403
+Re-auth ADC with Sheets + Drive scopes (see Authentication section).
+
+### `Reauthentication is needed`
+ADC token expired or invalidated. Re-run `gcloud auth application-default login`.
+
+### `Run lock already held`
+Another run is active or stale lock exists. Use `stop_run` and/or `unlock_run_lock`.
+
+### No IG/TikTok tabs open
+Common causes:
+
+- lead skipped by dedupe
+- tier missing (`failed_missing_tier`)
+- account unavailable (`pending_tomorrow` with `no_*_account`)
+
+Run with `--verbose-summary` to inspect exact per-lead reasons.
+
+### TikTok DM thread loads forever
+Patched with one reload retry and guaranteed tab cleanup. If persistent, run tiktok-only with verbose summary and inspect `tiktok_*` error codes.
+
+## Development
+
+Quality gates:
 
 ```bash
 make check
 make test
 ```
 
-## Notes
+`make check` runs:
 
-- This project only modifies files inside `outreach-tool-automation`.
-- Dashboard implementation is intentionally out of scope for v1.
-- To temporarily stop live email sends, set `EMAIL_SEND_ENABLED=false` in `.env`.
+- Ruff
+- MyPy (strict)
+- Pytest
+
+## Operational Notes
+
+- Keep this automation isolated to `outreach-tool-automation` changes only.
+- Do not share `.env` or OAuth secrets.
+- Rotate credentials if exposed.
+- For sharing with another operator:
+  - share repo
+  - share non-secret setup steps from this README
+  - have them generate their own local `.env` and ADC auth

@@ -149,18 +149,6 @@ class SheetsClient:
         if lead.tier_col_index is not None:
             self._set_cell_background_color(lead.row_index, lead.tier_col_index, red=1.0, green=1.0, blue=1.0)
 
-    def mark_creator_link_error(self, lead: LeadRow) -> None:
-        col = self._resolve_lead_url_col(lead)
-        if col is None:
-            return
-        self._set_cell_background_color(lead.row_index, col, red=1.0, green=0.8, blue=0.8)
-
-    def clear_creator_link_error(self, lead: LeadRow) -> None:
-        col = self._resolve_lead_url_col(lead)
-        if col is None:
-            return
-        self._set_cell_background_color(lead.row_index, col, red=1.0, green=1.0, blue=1.0)
-
     @staticmethod
     def _get_cell(row: list[str], col_index_one_based: int | None) -> str:
         if col_index_one_based is None:
@@ -169,11 +157,6 @@ class SheetsClient:
         if idx >= len(row):
             return ""
         return row[idx]
-
-    def append_note(self, row_index: int, note: str) -> None:
-        _ = (row_index, note)
-        # Hook for future expansion if notes/comments column gets added.
-        return None
 
     def _resolve_lead_url_col(self, lead: LeadRow) -> int | None:
         if lead.col_index is not None:

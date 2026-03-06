@@ -1,22 +1,14 @@
 
-
 def get_templates(app_name="REGEN", app_config=None):
     """Generate templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
-    
-    # Extract app-specific information from config
+
     app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://apps.apple.com/us/app/regen-transform-now/id6756548399")
-    
-    # Common sections
+
     INTRO = (
         f"{app_name.upper()} is a peptide transformation app that uses AI to help you with your peptide cycle.\n\n"
-    )
-
-    IMAGE_LINK = (
-        "here are some images of the product:\n"
-        "https://drive.google.com/drive/u/0/folders/1JWJ4bfA1a55G6Ifp4Trw7WZCXENPo7pu\n\n"
     )
 
     DELIVERABLES_BULLETS = (
@@ -33,13 +25,8 @@ def get_templates(app_name="REGEN", app_config=None):
         "https://www.notion.so/REGEN-Clipping-Program-2c739b5e840f800e826bc1cc0569aea3\n\n"
     )
 
-    # Variant specific texts
-    # Keeping original variant text intent but fitting into new flow
     MACRO_TEXT = "we're inviting a few, bigtime self-improvement creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
     MICRO_TEXT = "we're inviting a few, niche self-improvement creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
-    AMBASSADOR_TEXT = "we're looking for creators with great energy to make brand new tiktok accounts and post 15 videos per week. I think you'd be a great fit for it! would you be interested?\n\n"
-    
-    # For themepages, user requested: "for the themepages there should be no bullets" matches the link
     THEMEPAGE_TEXT = f"we run {app_name.upper()} and love your theme page. we'd love to get featured posts with you.\n\n"
 
     def build_body(variant_text, includes_deliverables=False, is_themepage=False):
@@ -49,22 +36,13 @@ def get_templates(app_name="REGEN", app_config=None):
                 body += DELIVERABLES_LINK
             else:
                 body += DELIVERABLES_BULLETS
-        
+
         body += "let me know if you're interested.\n\n"
-        
-        if is_themepage:
-             # Theme pages had a slightly different footer in original, but standardizing to the requested format for now or keeping close to original?
-             # User prompt image signoff: "- Abhay Chebium from the REGEN App (link)"
-             # Original code signoff: "- {app_display_name} from the {app_name.upper()} App ({app_url})\n"
-             pass
 
         signoff = f"- {app_display_name} from the {app_name.upper()} App"
-        if includes_deliverables: # Only email gets the link in signature? 
-            # Prompt: "The link should only be there in the email script, not in the DM script" (referring to deliverables link AND app link?)
-            # Prompt: "The link should only be there in the email script... Same thing for theme pages... the link should only be there in the email script, not in the DM script."
-            # The prompt says: "app link... on the DM it should have no link of the app."
+        if includes_deliverables:
             signoff += f" ({app_url})"
-        
+
         return body + signoff + "\n"
 
     return {
@@ -80,7 +58,7 @@ def get_templates(app_name="REGEN", app_config=None):
         },
         "submicro": {
             "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
-            "email_md": build_body(MICRO_TEXT, includes_deliverables=True, is_themepage=False), # Submicro uses micro text usually
+            "email_md": build_body(MICRO_TEXT, includes_deliverables=True, is_themepage=False),
             "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "ambassador": {
@@ -89,7 +67,7 @@ def get_templates(app_name="REGEN", app_config=None):
             "dm_md": build_body(MICRO_TEXT, includes_deliverables=False, is_themepage=False),
         },
         "themepage": {
-            "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App", # Subject changed to match others or keep old? Prompt says "base template for regen outreach scripts", implies for all.
+            "subject": f"PAID PROMO OPPORTUNITY - {app_name.upper()} App",
             "email_md": build_body(THEMEPAGE_TEXT, includes_deliverables=True, is_themepage=True),
             "dm_md": build_body(THEMEPAGE_TEXT, includes_deliverables=False, is_themepage=True),
         },
@@ -100,8 +78,7 @@ def get_followup_templates(app_name="REGEN", app_config=None):
     """Generate followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
-    
-    # Extract app-specific information from config
+
     app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
@@ -191,8 +168,7 @@ def get_second_followup_templates(app_name="REGEN", app_config=None):
     """Generate second followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
-    
-    # Extract app-specific information from config
+
     app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
@@ -285,8 +261,7 @@ def get_third_followup_templates(app_name="REGEN", app_config=None):
     """Generate third followup templates dynamically based on app configuration."""
     if app_config is None:
         app_config = {}
-    
-    # Extract app-specific information from config
+
     app_display_name = app_config.get("from_name", "Abhay Chebium")
     app_url = app_config.get("link_url", "https://a17.so")
     
@@ -378,11 +353,8 @@ def get_third_followup_templates(app_name="REGEN", app_config=None):
         },
     }
 
-
-# Legacy compatibility - create static templates for backward compatibility
 TEMPLATES = get_templates()
 FOLLOWUP_TEMPLATES = get_followup_templates()
 SECOND_FOLLOWUP_TEMPLATES = get_second_followup_templates()
 THIRD_FOLLOWUP_TEMPLATES = get_third_followup_templates()
-
 

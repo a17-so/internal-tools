@@ -171,11 +171,6 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
     raise RuntimeError("No matching selector found")
 
 
-async def _click_first(page: Any, selectors: list[str]) -> None:
-    loc = await _find_first(page, selectors)
-    await loc.click()
-
-
 async def _type_message(page: Any, input_locator: Any, text: str) -> None:
     await input_locator.click()
     with contextlib.suppress(Exception):

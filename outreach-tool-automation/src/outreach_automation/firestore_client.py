@@ -52,6 +52,24 @@ class FirestoreClient:
                 return True
         return False
 
+    def was_processed_email(self, email_to: str) -> bool:
+        normalized = (email_to or "").strip().lower()
+        if not normalized:
+            return False
+        query = (
+            self._db.collection("jobs")
+            .where(filter=FieldFilter("email_to", "==", normalized))
+            .limit(20)
+            .stream()
+        )
+        for doc in query:
+            data = doc.to_dict() or {}
+            if data.get("status") == "completed" and not bool(data.get("dry_run")):
+                email_status = data.get("email_status") or {}
+                if email_status.get("status") == "sent":
+                    return True
+        return False
+
     def acquire_run_lock(self, holder: str, ttl_seconds: int) -> bool:
         lock_ref = self._db.collection("locks").document("orchestrator")
         tx = self._db.transaction()

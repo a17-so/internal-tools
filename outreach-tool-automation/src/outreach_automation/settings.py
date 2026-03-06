@@ -38,6 +38,7 @@ class Settings:
     tiktok_sender_handle: str | None
     dry_run: bool
     email_send_enabled: bool
+    email_recipient_blocklist: tuple[str, ...]
     gmail_client_id: str | None
     gmail_client_secret: str | None
     gmail_accounts: tuple[GmailAccountConfig, ...]
@@ -67,6 +68,13 @@ def _gmail_accounts() -> tuple[GmailAccountConfig, ...]:
         if email and token:
             accounts.append(GmailAccountConfig(email=email, refresh_token=token))
     return tuple(accounts)
+
+
+def _email_blocklist() -> tuple[str, ...]:
+    raw = os.getenv("EMAIL_RECIPIENT_BLOCKLIST", "")
+    values = [item.strip().lower() for item in raw.split(",")]
+    out = tuple(item for item in values if item)
+    return out
 
 
 def load_settings(*, dotenv_path: str | None = None) -> Settings:
@@ -117,6 +125,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         tiktok_sender_handle=os.getenv("TIKTOK_SENDER_HANDLE", "").strip() or None,
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
         email_send_enabled=os.getenv("EMAIL_SEND_ENABLED", "true").lower() == "true",
+        email_recipient_blocklist=_email_blocklist(),
         gmail_client_id=os.getenv("GMAIL_CLIENT_ID"),
         gmail_client_secret=os.getenv("GMAIL_CLIENT_SECRET"),
         gmail_accounts=_gmail_accounts(),

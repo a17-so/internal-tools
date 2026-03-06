@@ -6,6 +6,8 @@ _ALLOWED_SKIP_CODES = {
     "channel_disabled",
     "email_disabled",
     "missing_email_fields",
+    "email_already_contacted",
+    "blocked_email_recipient",
     "missing_ig_handle",
     "missing_tiktok_handle",
     "ig_dm_unavailable",

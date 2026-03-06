@@ -35,6 +35,7 @@ class ScraperClientProto(Protocol):
 
 class FirestoreClientProto(Protocol):
     def was_processed_url(self, lead_url: str) -> bool: ...
+    def was_processed_email(self, email_to: str) -> bool: ...
     def mark_account_cooling(self, account_id: str, cooldown_minutes: int = 60) -> None: ...
     def mark_dead_job(self, job_id: str, reason: str) -> None: ...
     def write_job(self, job_id: str, record: JobRecord) -> None: ...
@@ -303,13 +304,16 @@ class Orchestrator:
                 ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if self._enable_email:
-                email_result = self._email_sender.send(
-                    to_email=scrape.email_to,
-                    subject=scrape.email_subject,
-                    body=scrape.email_body_text,
-                    account=routed.email,
-                    dry_run=dry_run,
-                )
+                if scrape.email_to and self._firestore.was_processed_email(scrape.email_to):
+                    email_result = ChannelResult(status="skipped", error_code="email_already_contacted")
+                else:
+                    email_result = self._email_sender.send(
+                        to_email=scrape.email_to,
+                        subject=scrape.email_subject,
+                        body=scrape.email_body_text,
+                        account=routed.email,
+                        dry_run=dry_run,
+                    )
             else:
                 email_result = ChannelResult(status="skipped", error_code="channel_disabled")
 

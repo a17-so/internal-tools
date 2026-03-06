@@ -63,6 +63,7 @@ Authentication options:
   - `EMAIL_SENDER_HANDLE=ethan@a17.so`
   - `INSTAGRAM_SENDER_HANDLE=@ethan.peps`
   - `TIKTOK_SENDER_HANDLE=@regen.app`
+  - `EMAIL_RECIPIENT_BLOCKLIST=only@savagex.com`
 
 Scrape setup:
 - Set `SEARCHAPI_KEY`; local scraper uses `LOCAL_TEMPLATES_DIR` scripts.
@@ -125,6 +126,7 @@ python -m outreach_automation.unlock_run_lock
 Current success policy:
 - A lead is marked `Processed` if any channel (`email`, `instagram`, or `tiktok`) sends successfully.
 - All enabled channels are still attempted per lead.
+- Email channel is auto-suppressed when recipient was already emailed in a prior completed run.
 
 Bootstrap IG/TikTok login sessions (one-time 2FA per active account):
 

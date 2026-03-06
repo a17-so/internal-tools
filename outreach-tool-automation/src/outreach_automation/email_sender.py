@@ -36,6 +36,9 @@ class EmailSender:
             return ChannelResult(status="skipped", error_code="email_disabled")
         if not to_email or not subject or not body:
             return ChannelResult(status="skipped", error_code="missing_email_fields")
+        normalized_to = to_email.strip().lower()
+        if normalized_to in self._settings.email_recipient_blocklist:
+            return ChannelResult(status="skipped", error_code="blocked_email_recipient")
         if account is None:
             return ChannelResult(status="pending_tomorrow", error_code="no_email_account")
         if dry_run:
@@ -64,7 +67,7 @@ class EmailSender:
 
         service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         message = MIMEText(body)
-        message["to"] = to_email
+        message["to"] = normalized_to
         message["from"] = account.handle
         message["subject"] = subject
 

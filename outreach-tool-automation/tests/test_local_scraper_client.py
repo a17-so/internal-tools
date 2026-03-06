@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 
-from outreach_automation.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
+from outreach_automation.clients.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
 from outreach_automation.models import ScrapePayload
 
 
@@ -56,7 +56,7 @@ def test_local_scraper_extracts_bio_ig_and_email(tmp_path: Path, monkeypatch: An
             }
         )
 
-    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
 
     client = LocalScrapeClient(
         LocalScrapeSettings(
@@ -100,7 +100,7 @@ def test_local_scraper_same_username_fallback(tmp_path: Path, monkeypatch: Any) 
             }
         )
 
-    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
 
     client = LocalScrapeClient(
         LocalScrapeSettings(
@@ -145,8 +145,8 @@ def test_local_scraper_retries_transient_searchapi_error(tmp_path: Path, monkeyp
             }
         )
 
-    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
-    monkeypatch.setattr("outreach_automation.local_scraper_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.time.sleep", lambda _: None)
 
     client = LocalScrapeClient(
         LocalScrapeSettings(
@@ -202,7 +202,7 @@ def test_local_scraper_extracts_email_and_ig_from_link_page(tmp_path: Path, monk
             '<a href="https://instagram.com/withlink.ig">ig</a>'
         )
 
-    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
 
     client = LocalScrapeClient(
         LocalScrapeSettings(
@@ -243,7 +243,7 @@ def test_local_scraper_ignores_brand_tag_mentions_for_ig(tmp_path: Path, monkeyp
             }
         )
 
-    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
 
     client = LocalScrapeClient(
         LocalScrapeSettings(

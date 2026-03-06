@@ -24,6 +24,8 @@ htmlcov/
 .env
 logs/
 *.log
+.runtime/
+*.pid
 playwright/.auth/
 sessions/
 ops/accounts.seed.json

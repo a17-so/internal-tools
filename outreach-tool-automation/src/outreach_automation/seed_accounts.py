@@ -51,7 +51,7 @@ def _load_seed(path: Path) -> list[dict[str, Any]]:
 
 
 def _build_client(service_account_path: str | None, project_id: str) -> Any:
-    from outreach_automation.firestore_client import FirestoreClient
+    from outreach_automation.clients.firestore_client import FirestoreClient
 
     return FirestoreClient(service_account_path=service_account_path, project_id=project_id)
 

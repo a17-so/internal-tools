@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from outreach_automation.sheets_client import SheetColumns, SheetsClient
+from outreach_automation.clients.sheets_client import SheetColumns, SheetsClient
 
 
 class _FakeSheet:

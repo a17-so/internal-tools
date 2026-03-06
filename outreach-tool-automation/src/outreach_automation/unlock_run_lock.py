@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from outreach_automation.firestore_client import FirestoreClient
+from outreach_automation.clients.firestore_client import FirestoreClient
 from outreach_automation.settings import load_settings
 
 

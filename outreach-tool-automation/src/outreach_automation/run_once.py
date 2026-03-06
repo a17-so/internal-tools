@@ -14,17 +14,17 @@ from types import FrameType
 from urllib.parse import urlparse
 
 from outreach_automation.account_router import AccountRouter
-from outreach_automation.email_sender import EmailSender
-from outreach_automation.firestore_client import FirestoreClient
-from outreach_automation.ig_dm import InstagramDmSender
-from outreach_automation.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
+from outreach_automation.clients.firestore_client import FirestoreClient
+from outreach_automation.clients.local_scraper_client import LocalScrapeClient, LocalScrapeSettings
+from outreach_automation.clients.sheets_client import SheetsClient
 from outreach_automation.logger import setup_logging
 from outreach_automation.models import Account, Platform
 from outreach_automation.orchestrator import Orchestrator
+from outreach_automation.senders.email_sender import EmailSender
+from outreach_automation.senders.ig_dm import InstagramDmSender
+from outreach_automation.senders.tiktok_dm import TiktokDmSender
 from outreach_automation.session_manager import SessionManager
 from outreach_automation.settings import Settings, load_settings
-from outreach_automation.sheets_client import SheetsClient
-from outreach_automation.tiktok_dm import TiktokDmSender
 
 
 def main() -> int:

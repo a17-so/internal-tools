@@ -34,8 +34,7 @@ def generate_random_videos(count: int = 6) -> None:
         logger.error("No features found in hooks.json")
         sys.exit(1)
 
-    count = min(count, len(features_list))
-    selected = random.sample(features_list, count)
+    selected = random.choices(features_list, k=count)
 
     logger.info("Found %d features — selected %d for generation.", len(features_list), count)
     for cat, feat in selected:

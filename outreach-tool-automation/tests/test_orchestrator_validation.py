@@ -75,6 +75,7 @@ class FakeFirestore:
     def __init__(self) -> None:
         self.jobs: list[tuple[str, Any]] = []
         self.processed_email: set[str] = set()
+        self.processed_urls: set[str] = set()
 
     def write_job(self, job_id: str, record: Any) -> None:
         self.jobs.append((job_id, record))
@@ -86,8 +87,7 @@ class FakeFirestore:
         _ = (account_id, cooldown_minutes)
 
     def was_processed_url(self, lead_url: str) -> bool:
-        _ = lead_url
-        return False
+        return lead_url in self.processed_urls
 
     def was_processed_email(self, email_to: str) -> bool:
         return email_to.lower() in self.processed_email
@@ -352,3 +352,28 @@ def test_email_skips_when_address_already_contacted() -> None:
     record = firestore.jobs[0][1]
     assert record.email_status.status == "skipped"
     assert record.email_status.error_code == "email_already_contacted"
+
+
+def test_dedupe_skip_clears_and_marks_row() -> None:
+    sheets = FakeSheets()
+    firestore = FakeFirestore()
+    firestore.processed_urls.add("https://tiktok.com/@user")
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.skipped == 1
+    assert sheets._statuses[2] == "skipped_dedupe"
+    assert sheets.cleared_rows == [2]
+    assert scraper.last_category is None

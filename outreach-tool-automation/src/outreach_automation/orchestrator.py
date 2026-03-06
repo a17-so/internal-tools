@@ -103,6 +103,7 @@ class OrchestratorResult:
     failed: int
     skipped: int
     failed_tiktok_links: list[str]
+    tracking_append_failed_links: list[str]
     lead_summaries: list[LeadRunSummary]
 
 
@@ -157,10 +158,14 @@ class Orchestrator:
         failed = 0
         skipped = 0
         failed_tiktok_links: list[str] = []
+        tracking_append_failed_links: list[str] = []
         lead_summaries: list[LeadRunSummary] = []
 
         for lead in leads:
-            result, failed_tiktok_link, summary = self._process_lead(lead=lead, dry_run=dry_run)
+            result, failed_tiktok_link, tracking_append_failed_link, summary = self._process_lead(
+                lead=lead,
+                dry_run=dry_run,
+            )
             if result == "processed":
                 processed += 1
             elif result == "skipped":
@@ -169,6 +174,8 @@ class Orchestrator:
                 failed += 1
             if failed_tiktok_link:
                 failed_tiktok_links.append(failed_tiktok_link)
+            if tracking_append_failed_link:
+                tracking_append_failed_links.append(tracking_append_failed_link)
             if summary is not None:
                 lead_summaries.append(summary)
 
@@ -177,13 +184,21 @@ class Orchestrator:
             failed=failed,
             skipped=skipped,
             failed_tiktok_links=failed_tiktok_links,
+            tracking_append_failed_links=tracking_append_failed_links,
             lead_summaries=lead_summaries,
         )
 
-    def _process_lead(self, lead: LeadRow, dry_run: bool) -> tuple[str, str | None, LeadRunSummary | None]:
+    def _process_lead(
+        self,
+        lead: LeadRow,
+        dry_run: bool,
+    ) -> tuple[str, str | None, str | None, LeadRunSummary | None]:
         if self._dedupe_enabled and self._firestore.was_processed_url(lead.creator_url):
+            self._sheets.update_status(lead.row_index, "skipped_dedupe")
+            self._sheets.clear_creator_link(lead)
             return (
                 "skipped",
+                None,
                 None,
                 LeadRunSummary(
                     row_index=lead.row_index,
@@ -212,6 +227,7 @@ class Orchestrator:
         tiktok_handle = None
         job_error = None
         job_status = "completed"
+        tracking_append_failed_link: str | None = None
 
         try:
             tier = resolve_tier(lead.creator_tier)
@@ -222,6 +238,7 @@ class Orchestrator:
             self._sheets.clear_creator_link(lead)
             return (
                 "failed",
+                None,
                 None,
                 LeadRunSummary(
                     row_index=lead.row_index,
@@ -242,6 +259,7 @@ class Orchestrator:
             return (
                 "failed",
                 None,
+                None,
                 LeadRunSummary(
                     row_index=lead.row_index,
                     url=lead.creator_url,
@@ -261,6 +279,7 @@ class Orchestrator:
             self._sheets.clear_creator_link(lead)
             return (
                 "failed",
+                None,
                 None,
                 LeadRunSummary(
                     row_index=lead.row_index,
@@ -353,6 +372,7 @@ class Orchestrator:
                     )
                 except Exception:
                     _LOG.exception("failed to append outreach tracking row", extra={"url": lead.creator_url})
+                    tracking_append_failed_link = lead.creator_url
             self._sheets.update_status(lead.row_index, final_status)
             self._sheets.clear_creator_link(lead)
 
@@ -407,7 +427,7 @@ class Orchestrator:
             tiktok_status=tiktok_result.status,
             tiktok_error=tiktok_result.error_code,
         )
-        return return_value, failed_tiktok_link, summary
+        return return_value, failed_tiktok_link, tracking_append_failed_link, summary
 
     def _write_validation_job(self, lead: LeadRow, status: str, dry_run: bool) -> None:
         now = datetime.now(UTC)

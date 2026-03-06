@@ -40,3 +40,23 @@ def test_route_all() -> None:
     assert routed.email is not None
     assert routed.instagram is None
     assert routed.tiktok is not None
+
+
+def test_strict_sender_pinning_does_not_fallback() -> None:
+    router = AccountRouter(
+        FakeFirestore(),
+        instagram_handle="@missing",
+        strict_sender_pinning=True,
+    )
+    assert router.route(Platform.INSTAGRAM) is None
+
+
+def test_non_strict_sender_pinning_allows_fallback() -> None:
+    router = AccountRouter(
+        FakeFirestore(),
+        tiktok_handle="@missing",
+        strict_sender_pinning=False,
+    )
+    routed = router.route(Platform.TIKTOK)
+    assert routed is not None
+    assert routed.handle == "@sender"

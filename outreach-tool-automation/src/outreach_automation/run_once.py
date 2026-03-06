@@ -101,6 +101,7 @@ def main() -> int:
                     email_handle=settings.email_sender_handle,
                     instagram_handle=settings.instagram_sender_handle,
                     tiktok_handle=settings.tiktok_sender_handle,
+                    strict_sender_pinning=settings.strict_sender_pinning,
                 ),
                 email_sender=EmailSender(settings),
                 ig_sender=InstagramDmSender(
@@ -138,6 +139,10 @@ def main() -> int:
             if result.failed_tiktok_links:
                 print("failed_tiktok_links:")
                 for url in result.failed_tiktok_links:
+                    print(f"- {url}")
+            if result.tracking_append_failed_links:
+                print("tracking_append_failed_links:")
+                for url in result.tracking_append_failed_links:
                     print(f"- {url}")
             if args.verbose_summary and result.lead_summaries:
                 print("lead_summaries:")

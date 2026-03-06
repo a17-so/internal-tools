@@ -84,6 +84,7 @@ Important behavior controls:
 - `EMAIL_SENDER_HANDLE`
 - `INSTAGRAM_SENDER_HANDLE`
 - `TIKTOK_SENDER_HANDLE`
+- `STRICT_SENDER_PINNING=true` (recommended)
 - `EMAIL_RECIPIENT_BLOCKLIST`
 - `TIKTOK_ATTACH_MODE=true`
 - `TIKTOK_ATTACH_AUTO_START=true`
@@ -170,6 +171,7 @@ python -m outreach_automation.reset_counters
 - URL cell is cleared after each attempted lead
 - Lead becomes `Processed` when at least one channel sends successfully
 - End-of-run prints failed TikTok links
+- End-of-run prints tracking-append failures (if any)
 - Email has blocklist + duplicate-recipient suppression
 - DM pacing uses jittered waits (non-fixed cadence)
 

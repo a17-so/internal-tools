@@ -33,6 +33,7 @@ class Settings:
     batch_size: int
     run_lock_ttl_seconds: int
     sender_profile: str
+    strict_sender_pinning: bool
     email_sender_handle: str | None
     instagram_sender_handle: str | None
     tiktok_sender_handle: str | None
@@ -120,6 +121,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         batch_size=int(os.getenv("BATCH_SIZE", "100")),
         run_lock_ttl_seconds=int(os.getenv("RUN_LOCK_TTL_SECONDS", "1800")),
         sender_profile=os.getenv("SENDER_PROFILE", "default"),
+        strict_sender_pinning=os.getenv("STRICT_SENDER_PINNING", "true").lower() == "true",
         email_sender_handle=os.getenv("EMAIL_SENDER_HANDLE", "").strip() or None,
         instagram_sender_handle=os.getenv("INSTAGRAM_SENDER_HANDLE", "").strip() or None,
         tiktok_sender_handle=os.getenv("TIKTOK_SENDER_HANDLE", "").strip() or None,

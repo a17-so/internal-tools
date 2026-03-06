@@ -26,11 +26,13 @@ class AccountRouter:
         email_handle: str | None = None,
         instagram_handle: str | None = None,
         tiktok_handle: str | None = None,
+        strict_sender_pinning: bool = True,
     ) -> None:
         self._firestore = firestore_client
         self._email_handle = email_handle
         self._instagram_handle = instagram_handle
         self._tiktok_handle = tiktok_handle
+        self._strict_sender_pinning = strict_sender_pinning
 
     def route(self, platform: Platform) -> Account | None:
         preferred: str | None = None
@@ -44,6 +46,8 @@ class AccountRouter:
             account = self._firestore.next_account_for_handle(platform, preferred)
             if account is not None:
                 return account
+            if self._strict_sender_pinning:
+                return None
         return self._firestore.next_account(platform)
 
     def route_all(self) -> RoutedAccounts:

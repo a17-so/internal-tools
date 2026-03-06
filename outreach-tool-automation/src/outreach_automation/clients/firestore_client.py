@@ -177,12 +177,37 @@ class FirestoreClient:
         return bool(_incr(tx))
 
     def _active_account_docs(self, platform: Platform) -> list[Any]:
-        return list(
+        active_docs = list(
             self._db.collection("accounts")
             .where(filter=FieldFilter("platform", "==", platform.value))
             .where(filter=FieldFilter("status", "==", AccountStatus.ACTIVE.value))
             .stream()
         )
+        cooling_docs = list(
+            self._db.collection("accounts")
+            .where(filter=FieldFilter("platform", "==", platform.value))
+            .where(filter=FieldFilter("status", "==", AccountStatus.COOLING.value))
+            .stream()
+        )
+        now = datetime.now(UTC)
+        recovered_docs: list[Any] = []
+        for doc in cooling_docs:
+            data = doc.to_dict() or {}
+            cooldown_until = data.get("cooldown_until")
+            if not isinstance(cooldown_until, datetime):
+                continue
+            if cooldown_until > now:
+                continue
+            ref = self._db.collection("accounts").document(doc.id)
+            ref.set(
+                {
+                    "status": AccountStatus.ACTIVE.value,
+                    "cooldown_until": firestore.DELETE_FIELD,
+                },
+                merge=True,
+            )
+            recovered_docs.append(ref.get())
+        return active_docs + recovered_docs
 
     @staticmethod
     def _doc_to_account(doc_id: str, data: dict[str, Any]) -> Account:

@@ -248,7 +248,6 @@ def _extract_ig_handle_from_profile(
     for pattern in (
         r"(?:^|[\s,;|])(?:ig|insta|instagram)\s*[:\-]\s*@?([A-Za-z0-9_.]{1,30})\b",
         r"(?:^|[\s,;|])(?:ig|insta|instagram)\s+@([A-Za-z0-9_.]{1,30})\b",
-        r"@([A-Za-z0-9_.]{1,30})\b",
     ):
         match = re.search(pattern, bio, re.I)
         if not match:
@@ -256,6 +255,10 @@ def _extract_ig_handle_from_profile(
         handle = (match.group(1) or "").strip().lstrip("@")
         if _is_valid_handle(handle):
             return handle
+
+    from_bio_url = _extract_ig_from_text(bio)
+    if from_bio_url:
+        return from_bio_url
 
     bio_link = str(profile.get("bio_link", "") or "")
     from_link = _extract_ig_from_text(bio_link)

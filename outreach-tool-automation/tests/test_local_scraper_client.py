@@ -223,3 +223,43 @@ def test_local_scraper_extracts_email_and_ig_from_link_page(tmp_path: Path, monk
     )
     assert result.email_to == "lead@example.com"
     assert result.ig_handle == "withlink.ig"
+
+
+def test_local_scraper_ignores_brand_tag_mentions_for_ig(tmp_path: Path, monkeypatch: Any) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    _make_template_script(scripts_dir / "regen.py")
+
+    def fake_get(*args: Any, **kwargs: Any) -> _FakeResponse:
+        _ = (args, kwargs)
+        return _FakeResponse(
+            {
+                "profile": {
+                    "username": "creatorbrand",
+                    "name": "Creator Brand",
+                    "bio": "Athlete @gymshark @rawgear contact in link",
+                    "bio_link": "",
+                }
+            }
+        )
+
+    monkeypatch.setattr("outreach_automation.local_scraper_client.requests.get", fake_get)
+
+    client = LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key="dummy",
+            request_timeout_seconds=10,
+            same_username_fallback=False,
+            templates_dir=scripts_dir,
+            outreach_apps_json=None,
+        )
+    )
+    result = client.scrape(
+        ScrapePayload(
+            app="regen",
+            creator_url="https://www.tiktok.com/@creatorbrand",
+            category="Submicro",
+            sender_profile="ethan",
+        )
+    )
+    assert result.ig_handle is None

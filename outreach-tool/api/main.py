@@ -11,10 +11,10 @@ import time
 from datetime import datetime
 
 # Import from new modules
-from utils import _log, _normalize_category, _normalize_creator_tier, _clean_url, _get_followup_number_from_status, _get_next_status_from_current, _markdown_to_text
+from utils import _log, _normalize_category, _normalize_creator_tier, _clean_url, _markdown_to_text
 from config import CATEGORY_TO_SHEET, _load_outreach_apps_config, _get_app_config, _validate_app_config, _resolve_sender_profile
 from google_services import _sheets_client, _gmail_client
-from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_to_sheet, _update_creator_contact_info
+from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_url_to_subsheet, _append_to_sheet, _update_creator_contact_info
 from email_operations import _send_email
 from template_generation import _get_display_name, _get_templates_for_app, _build_email_and_dm
 
@@ -509,105 +509,170 @@ def scrape_endpoint():
             "tier_column_header": result.get("tier_column_header"),
             "url": url
         })
-    
+
+    # YT CREATORS: Scrape YouTube channel for IG/TT/email via SearchAPI, generate
+    # DM + email scripts, log to "YT Creators" sheet, and return outreach scripts.
+    if cat_key_normalized == "yt_creator":
+        if not spreadsheet_id:
+            return jsonify({"error": "No spreadsheet configured"}), 500
+
+        sender_name = app_cfg.get("from_name") or (sender_profile_key.capitalize() if sender_profile_key else "Unknown")
+
+        # 1) Log the raw URL to the YT Creators subsheet first
+        _log("yt_creator.append", url=url, sender=sender_name)
+        result = _append_url_to_subsheet(
+            spreadsheet_id,
+            "YT Creators",
+            url,
+            sender_name,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+
+        if not result.get("ok"):
+            return jsonify({
+                "error": result.get("error", "Failed to add YT Creator lead"),
+                "message": result.get("message", ""),
+                "duplicate_row": result.get("duplicate_row"),
+            }), 409 if result.get("error") == "Duplicate URL" else 500
+
+        _log("yt_creator.logged", row=result.get("row_added"))
+
+        # 2) Scrape the YouTube channel for contact info
+        yt_profile = {}
+        yt_scrape_error = None
+        try:
+            yt_profile = scrape_profile_sync(url, timeout_seconds=30.0)
+        except Exception as e:
+            yt_scrape_error = str(e)
+            _log("yt_creator.scrape_error", error=yt_scrape_error)
+
+        # Build a profile dict compatible with template rendering
+        yt_handle = yt_profile.get("yt_handle") or ""
+        ig_handle_yt = yt_profile.get("ig") or ""
+        tt_handle_yt = yt_profile.get("tt") or ""
+        email_yt = yt_profile.get("email") or ""
+        name_yt = yt_profile.get("name") or yt_handle or "there"
+
+        profile_for_template = {
+            "ig": ig_handle_yt,
+            "tt": tt_handle_yt,
+            "name": name_yt,
+            "email": email_yt,
+            "igProfileUrl": f"https://www.instagram.com/{ig_handle_yt}" if ig_handle_yt else "",
+            "ttProfileUrl": f"https://www.tiktok.com/@{tt_handle_yt}" if tt_handle_yt else "",
+            "ytProfileUrl": yt_profile.get("ytProfileUrl") or url,
+            "igAvgViews": 0,
+            "ttAvgViews": 0,
+        }
+
+        # 3) Build outreach scripts using yt_creator templates
+        comms = _build_email_and_dm(
+            "yt_creator",
+            profile_for_template,
+            link_url=app_cfg.get("link_url"),
+            app_key=app_cfg.get("app_key"),
+            is_followup=False,
+            followup_number=1,
+            app_config=app_cfg,
+        )
+
+        dm_text = comms.get("dm_md") or ""
+        plain_text_yt = ""
+        try:
+            plain_text_yt = _markdown_to_text(comms.get("email_md") or "") or ""
+        except Exception:
+            plain_text_yt = comms.get("email_md") or ""
+
+        # Prepare mailto URL if email found
+        mailto_yt = None
+        if email_yt:
+            from urllib.parse import quote as _quote
+            subj_enc = _quote(comms.get("subject") or "")
+            body_enc = _quote(plain_text_yt)
+            mailto_yt = f"mailto:{email_yt}?subject={subj_enc}&body={body_enc}"
+
+        _log("yt_creator.success", row=result.get("row_added"),
+             has_ig=bool(ig_handle_yt), has_tt=bool(tt_handle_yt), has_email=bool(email_yt))
+        return jsonify({
+            "ok": True,
+            "message": "YT Creator lead added successfully",
+            "sheet_name": "YT Creators",
+            "row_added": result.get("row_added"),
+            "url": url,
+            # Contact info scraped from YouTube channel
+            "yt_handle": yt_handle or None,
+            "ig_handle": ig_handle_yt or None,
+            "tt_handle": tt_handle_yt or None,
+            "email_to": email_yt or None,
+            # Outreach scripts
+            "dm_text": dm_text,
+            "email_subject": comms.get("subject"),
+            "email_body_text": plain_text_yt,
+            "mailto_url": mailto_yt,
+            "scrape_error": yt_scrape_error or None,
+        })
+
+    # AI INFLUENCERS: Run full scrape/outreach pipeline (same as macro/micro/submicro)
+    # but using the 'ai_influencer' template key. The URL is a TikTok or IG link.
+    if cat_key_normalized == "ai_influencer":
+        # Fall through to the standard scrape/outreach pipeline below
+        # (cat_key_normalized is already set; sheet_name will be "AI Influencers")
+        pass
+
+
     # OTHER CATEGORIES: Use existing row-based approach with scraping
-    is_followup = False
     existing_data = {"exists": False}
-    followup_number = 1
-    
+
     if spreadsheet_id and (ig_handle_from_url or tt_handle_from_url):
-        # Check across all sheets (existing behavior)
+        # Check across all sheets
         existing_data = _check_creator_exists_across_all_sheets(
             spreadsheet_id,
             ig_handle_from_url,
             tt_handle_from_url,
             delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
         )
-        
-        # Check if this is a followup by the SAME sender
-        # Only treat as followup if:
-        # 1. Lead exists in sheet, AND
-        # 2. Current sender email matches the stored sender email
-        current_sender_email = app_cfg.get("gmail_sender") or ""
-        existing_sender_email = existing_data.get("sent_from_email") or ""
-        
-        is_followup = (
-            existing_data.get("exists", False) and 
-            current_sender_email and 
-            existing_sender_email and
-            current_sender_email.lower() == existing_sender_email.lower()
-        )
-        
-        # If lead exists but different sender, it's a new outreach for this sender
-        if existing_data.get("exists", False) and not is_followup:
-            _log("scrape.different_sender_detected", 
-                 current_sender=current_sender_email,
-                 existing_sender=existing_sender_email,
-                 treating_as_new_outreach=True)
-        
-        if is_followup:
-            followup_number = _get_followup_number_from_status(existing_data.get("status"))
-        
-        _log(
-            "scrape.pre_check",
-            category=cat_key_normalized,
-            is_followup=is_followup,
-            followup_number=followup_number,
-            row_index=existing_data.get("row_index"),
-            status=existing_data.get("status"),
-            sheet_name=existing_data.get("sheet_name"),
-            current_sender=current_sender_email,
-            existing_sender=existing_sender_email,
-        )
+
+        if existing_data.get("exists", False):
+            _log(
+                "scrape.already_contacted",
+                ig=ig_handle_from_url,
+                tt=tt_handle_from_url,
+                found_in_sheet=existing_data.get("sheet_name"),
+                row_index=existing_data.get("row_index"),
+                status=existing_data.get("status"),
+            )
+            return jsonify({
+                "error": "Creator already contacted",
+                "message": f"This creator has already been reached out to (found in '{existing_data.get('sheet_name')}' sheet)",
+                "ig_handle": ig_handle_from_url,
+                "tt_handle": tt_handle_from_url,
+                "sheet_name": existing_data.get("sheet_name"),
+                "row_index": existing_data.get("row_index"),
+                "status": existing_data.get("status"),
+            }), 409
 
     
-    # 2) Scrape only if user not found in any sheet
+    # 2) Scrape the profile
     profile = {}
-    if not is_followup:
-        try:
-            t_scrape = time.perf_counter()
-            # Prefer persistent browser path to avoid per-request Chromium launch
-            if scrape_profile_sync is not None:
-                profile = scrape_profile_sync(url, timeout_seconds=45.0)
-            else:
-                raise Exception("Scraper not available")
-            _log("scrape.done", duration_ms=int((time.perf_counter()-t_scrape)*1000))
-        except Exception as e:
-            _log("scrape.error", error=str(e))
-            return jsonify({"error": f"scrape failed: {e}"}), 500
-    else:
-        # For followups, we need minimal profile data for templates
-        # Use handles from URL and create minimal profile
-        # Get email from existing sheet
-        existing_email = ""
-        if existing_data.get("row_index") and existing_data.get("sheet_name"):
-            existing_email = _get_email_from_existing_row(
-                spreadsheet_id,
-                existing_data.get("sheet_name"),
-                existing_data.get("row_index"),
-                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-            )
-        
-        profile = {
-            "ig": ig_handle_from_url,
-            "tt": tt_handle_from_url,
-            "name": ig_handle_from_url or tt_handle_from_url or "there",
-            "email": existing_email,
-            "igProfileUrl": f"https://www.instagram.com/{ig_handle_from_url}" if ig_handle_from_url else "",
-            "ttProfileUrl": f"https://www.tiktok.com/@{tt_handle_from_url}" if tt_handle_from_url else "",
-            "igAvgViews": 0,
-            "ttAvgViews": 0,
-        }
-        _log("scrape.skipped_followup", reason="User already exists in sheet", email_found=bool(existing_email))
+    try:
+        t_scrape = time.perf_counter()
+        if scrape_profile_sync is not None:
+            profile = scrape_profile_sync(url, timeout_seconds=45.0)
+        else:
+            raise Exception("Scraper not available")
+        _log("scrape.done", duration_ms=int((time.perf_counter()-t_scrape)*1000))
+    except Exception as e:
+        _log("scrape.error", error=str(e))
+        return jsonify({"error": f"scrape failed: {e}"}), 500
 
-    # 3) Build comms (email + DM) - use followup templates if creator already exists
+    # 3) Build comms (email + DM)
     comms = _build_email_and_dm(
         category,
         profile,
         link_url=app_cfg.get("link_url"),
         app_key=app_cfg.get("app_key"),
-        is_followup=is_followup,
-        followup_number=followup_number,
+        is_followup=False,
+        followup_number=1,
         app_config=app_cfg,
     )
     _log(
@@ -615,7 +680,6 @@ def scrape_endpoint():
         subject=comms.get("subject"),
         dm_len=len(comms.get("dm_md") or ""),
         has_email=bool(profile.get("email")),
-        is_followup=is_followup,
     )
 
     # 4) Prepare client-side email compose data (no backend sending)
@@ -625,13 +689,7 @@ def scrape_endpoint():
     recipient_email = recipient_email_raw if has_valid_recipient else ""
     plain_text = ""
     mailto_url: Optional[str] = None
-    
-    # For follow-ups, include In-Reply-To header if we have the original message ID
-    email_thread_id = None
-    if is_followup and existing_data.get("email_message_id"):
-        email_thread_id = existing_data.get("email_message_id")
-        _log("email.thread.detected", message_id=email_thread_id)
-    
+
     if has_valid_recipient and not is_theme_pages:
         # Build mailto URL and plain-text body; let device handle sending
         try:
@@ -644,7 +702,7 @@ def scrape_endpoint():
         body_enc = quote(plain_text)
         mailto_url = f"mailto:{recipient_email}?subject={subj_enc}&body={body_enc}"
         email_send_result = {"ok": False, "error": "Skipped (compose on device)", "mailto_url": mailto_url, "to": recipient_email}
-        _log("email.compose.prepared", to=recipient_email, has_mailto=bool(mailto_url), is_followup=is_followup)
+        _log("email.compose.prepared", to=recipient_email, has_mailto=bool(mailto_url))
 
     # 5) Write to Google Sheets or update existing row
     sheet_status = {"ok": False, "error": "No spreadsheet id configured"}
@@ -657,14 +715,11 @@ def scrape_endpoint():
         email_addr = "" if is_theme_pages else (profile.get("email") or "")
         
         # Status rules:
-        # - For follow-ups: Use progressive status based on current status
         # - Theme Pages: leave blank (tracking DM only)
         # - If email sent OK: "Sent"
         # - If no valid recipient email: "No Email"
         # - Else (prepared compose but not sent on device): leave blank
-        if is_followup and (has_valid_recipient or is_theme_pages):
-            status_val = _get_next_status_from_current(existing_data.get("status"))
-        elif is_theme_pages:
+        if is_theme_pages:
             status_val = ""
         elif email_send_result.get("ok"):
             status_val = "Sent"
@@ -689,14 +744,8 @@ def scrape_endpoint():
         sent_from_tiktok = app_cfg.get("tiktok_account") or ""
         sent_from_ig = app_cfg.get("instagram_account") or ""
         
-        # Handle initial outreach date
-        # For new outreaches: set current date
-        # For followups: preserve existing date from sheet
-        if is_followup and existing_data.get("initial_outreach_date"):
-            initial_outreach_date = existing_data.get("initial_outreach_date")
-        else:
-            # Set current date for new outreaches
-            initial_outreach_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Set current date for new outreaches
+        initial_outreach_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Column order: Name, Instagram @, TikTok @, Email, Average Views (Instagram), Average Views (TikTok), Status, Sent from Email, Sent from IG @, Sent from TT @, Initial Outreach Date
         row = [
@@ -713,28 +762,15 @@ def scrape_endpoint():
             initial_outreach_date,   # K: Initial Outreach Date
         ]
         
-        if is_followup:
-            # Update existing row - use the sheet where the user was found
-            actual_sheet_name = existing_data.get("sheet_name") or sheet_name
-            _log("sheets.update.row_preview", sheet=actual_sheet_name, row_index=existing_data.get("row_index"), status=status_val)
-            sheet_status = _update_sheet_row(
-                spreadsheet_id,
-                actual_sheet_name,
-                existing_data.get("row_index"),
-                row,
-                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-            )
-            _log("sheets.update.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=actual_sheet_name)
-        else:
-            # Append new row
-            _log("sheets.append.row_preview", sheet=sheet_name, row_sample=row[:3], avg_ig_views=avg_ig_views, avg_tt_views=avg_tt_views)
-            sheet_status = _append_to_sheet(
-                spreadsheet_id,
-                sheet_name,
-                row,
-                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-            )
-            _log("sheets.append.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=sheet_name)
+        # Append new row
+        _log("sheets.append.row_preview", sheet=sheet_name, row_sample=row[:3], avg_ig_views=avg_ig_views, avg_tt_views=avg_tt_views)
+        sheet_status = _append_to_sheet(
+            spreadsheet_id,
+            sheet_name,
+            row,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+        _log("sheets.append.result", ok=sheet_status.get("ok"), error=sheet_status.get("error"), sheet_name=sheet_name)
     else:
         _log("sheets.append.skipped_no_spreadsheet")
 
@@ -771,8 +807,6 @@ def scrape_endpoint():
         "email_to": (recipient_email if (has_valid_recipient and not is_theme_pages) else None),
         "email_subject": comms.get("subject"),
         "email_body_text": plain_text,  # Always include body text, even if no email found
-        "is_followup": is_followup,
-        "email_thread_id": email_thread_id,
         "sent_from_email": app_cfg.get("gmail_sender"),
         "sent_from_tiktok": app_cfg.get("tiktok_account"),
         "sent_from_ig": app_cfg.get("instagram_account"),
@@ -785,7 +819,6 @@ def scrape_endpoint():
             "igLink": ig_app_url or "IG not there",
             "mailto_url": mailto_url,
             "email_from_hint": (app_cfg.get("gmail_sender") or app_cfg.get("delegated_user") or None),
-            "existing_status": existing_data.get("status") if is_followup else None,
             "dm": {
                 "ig_handle": ig_handle,
                 "text": dm_text,
@@ -891,10 +924,8 @@ def scrape_themepage_endpoint():
     
     # Check if theme page already exists
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
-    is_followup = False
     existing_data = {"exists": False}
-    followup_number = 1
-    
+
     if spreadsheet_id and (ig_handle or tt_handle):
         existing_data = _check_creator_exists_across_all_sheets(
             spreadsheet_id,
@@ -902,41 +933,25 @@ def scrape_themepage_endpoint():
             tt_handle,
             delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
         )
-        
-        # Check if this is a followup by the SAME sender
-        # Only treat as followup if:
-        # 1. Lead exists in sheet, AND
-        # 2. Current sender email matches the stored sender email
-        current_sender_email = app_cfg.get("gmail_sender") or ""
-        existing_sender_email = existing_data.get("sent_from_email") or ""
-        
-        is_followup = (
-            existing_data.get("exists", False) and 
-            current_sender_email and 
-            existing_sender_email and
-            current_sender_email.lower() == existing_sender_email.lower()
-        )
-        
-        # If lead exists but different sender, it's a new outreach for this sender
-        if existing_data.get("exists", False) and not is_followup:
-            _log("scrape_themepage.different_sender_detected", 
-                 current_sender=current_sender_email,
-                 existing_sender=existing_sender_email,
-                 treating_as_new_outreach=True)
-        
-        if is_followup:
-            followup_number = _get_followup_number_from_status(existing_data.get("status"))
-        
-        _log(
-            "scrape_themepage.duplicate_check",
-            is_followup=is_followup,
-            followup_number=followup_number,
-            row_index=existing_data.get("row_index"),
-            status=existing_data.get("status"),
-            sheet_name=existing_data.get("sheet_name"),
-            current_sender=current_sender_email,
-            existing_sender=existing_sender_email,
-        )
+
+        if existing_data.get("exists", False):
+            _log(
+                "scrape_themepage.already_contacted",
+                ig=ig_handle,
+                tt=tt_handle,
+                found_in_sheet=existing_data.get("sheet_name"),
+                row_index=existing_data.get("row_index"),
+                status=existing_data.get("status"),
+            )
+            return jsonify({
+                "error": "Creator already contacted",
+                "message": f"This creator has already been reached out to (found in '{existing_data.get('sheet_name')}' sheet)",
+                "ig_handle": ig_handle,
+                "tt_handle": tt_handle,
+                "sheet_name": existing_data.get("sheet_name"),
+                "row_index": existing_data.get("row_index"),
+                "status": existing_data.get("status"),
+            }), 409
     
     # Create minimal profile object (no scraping)
     profile = {
@@ -951,7 +966,7 @@ def scrape_themepage_endpoint():
         "platform": platform,
     }
     
-    _log("scrape_themepage.profile_created", ig=ig_handle, tt=tt_handle, platform=platform, is_followup=is_followup)
+    _log("scrape_themepage.profile_created", ig=ig_handle, tt=tt_handle, platform=platform)
     
     # Build DM script using theme page templates
     comms = _build_email_and_dm(
@@ -959,12 +974,12 @@ def scrape_themepage_endpoint():
         profile,
         link_url=app_cfg.get("link_url"),
         app_key=app_cfg.get("app_key"),
-        is_followup=is_followup,
-        followup_number=followup_number,
+        is_followup=False,
+        followup_number=1,
     )
     
     dm_text = comms.get("dm_md") or ""
-    _log("scrape_themepage.dm_generated", dm_len=len(dm_text), is_followup=is_followup)
+    _log("scrape_themepage.dm_generated", dm_len=len(dm_text))
     
     # Add to spreadsheet
     sheet_status = {"ok": False, "error": "No spreadsheet configured"}
@@ -982,18 +997,10 @@ def scrape_themepage_endpoint():
         sent_from_tiktok = app_cfg.get("tiktok_account") or ""
         sent_from_ig = app_cfg.get("instagram_account") or ""
         
-        # Handle initial outreach date
-        if is_followup and existing_data.get("initial_outreach_date"):
-            initial_outreach_date = existing_data.get("initial_outreach_date")
-        else:
-            initial_outreach_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Status for theme pages (leave blank initially, or use progressive status for followups)
-        if is_followup:
-            status_val = _get_next_status_from_current(existing_data.get("status"))
-        else:
-            status_val = ""
-        
+        # Status for theme pages (leave blank)
+        status_val = ""
+        initial_outreach_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Column order: Name, Instagram @, TikTok @, Email (blank), Average Views (IG), Average Views (TT), Status, Sent from Email, Sent from IG @, Sent from TT @, Initial Outreach Date
         row = [
             name,                    # A: Name
@@ -1009,27 +1016,15 @@ def scrape_themepage_endpoint():
             initial_outreach_date,   # K: Initial Outreach Date
         ]
         
-        if is_followup:
-            # Update existing row
-            actual_sheet_name = existing_data.get("sheet_name") or sheet_name
-            _log("scrape_themepage.update_row", sheet=actual_sheet_name, row_index=existing_data.get("row_index"), status=status_val)
-            sheet_status = _update_sheet_row(
-                spreadsheet_id,
-                actual_sheet_name,
-                existing_data.get("row_index"),
-                row,
-                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-            )
-        else:
-            # Append new row
-            _log("scrape_themepage.append_row", sheet=sheet_name, name=name)
-            sheet_status = _append_to_sheet(
-                spreadsheet_id,
-                sheet_name,
-                row,
-                delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-            )
-        
+        # Append new row
+        _log("scrape_themepage.append_row", sheet=sheet_name, name=name)
+        sheet_status = _append_to_sheet(
+            spreadsheet_id,
+            sheet_name,
+            row,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+
         _log("scrape_themepage.sheet_result", ok=sheet_status.get("ok"), error=sheet_status.get("error"))
     
     # Prepare response
@@ -1046,16 +1041,14 @@ def scrape_themepage_endpoint():
         "dm_text": dm_text,
         "ig_app_url": ig_app_url,
         "added_to_sheet": sheet_status.get("ok", False),
-        "is_followup": is_followup,
         "platform": platform,
     }
-    
+
     _log(
         "scrape_themepage.response",
         handle=normalized_handle,
         dm_len=len(dm_text),
         added_to_sheet=sheet_status.get("ok", False),
-        is_followup=is_followup,
     )
     
     return jsonify(resp)

@@ -45,6 +45,10 @@ def _normalize_category(category: str) -> str:
         return "themepage"
     if cat_lower in {"rawlead", "rawleads", "raw-lead", "raw-leads", "raw lead", "raw leads"}:
         return "rawlead"
+    if cat_lower in {"yt_creator", "ytcreator", "yt creator", "yt-creator", "youtube", "youtube creator"}:
+        return "yt_creator"
+    if cat_lower in {"ai_influencer", "aiinfluencer", "ai influencer", "ai-influencer", "ai influencers", "ai_influencers"}:
+        return "ai_influencer"
     return cat_lower
 
 
@@ -75,8 +79,8 @@ def _clean_url(url: str) -> str:
     
     try:
         parsed = urlparse(url)
-        # For TikTok and Instagram, remove query params and fragments
-        if "tiktok.com" in parsed.netloc.lower() or "instagram.com" in parsed.netloc.lower():
+        # For TikTok, Instagram, and YouTube, remove query params and fragments
+        if "tiktok.com" in parsed.netloc.lower() or "instagram.com" in parsed.netloc.lower() or "youtube.com" in parsed.netloc.lower():
             # Reconstruct URL without query and fragment
             clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
             # Remove trailing slash if present

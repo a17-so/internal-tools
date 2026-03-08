@@ -140,7 +140,10 @@ def _check_creator_exists_across_all_sheets(spreadsheet_id: str, ig_handle: str,
         return {"exists": False, "error": "No spreadsheet ID provided"}
     
     # Check all subtabs
-    all_sheets = ["Macros", "Micros", "Submicros", "Ambassadors", "Theme Pages", "Raw Leads"]
+    all_sheets = [
+        "Macros", "Micros", "Submicros", "Ambassadors",
+        "Theme Pages", "Raw Leads", "YT Creators", "AI Influencers",
+    ]
     
     for sheet_name in all_sheets:
         result = _check_creator_exists(spreadsheet_id, sheet_name, ig_handle, tt_handle, delegated_user)
@@ -377,6 +380,118 @@ def _append_url_to_raw_leads_column(
         }
     except Exception as e:
         _log("rawleads.matrix.error", error=str(e))
+        return {"ok": False, "error": str(e)}
+
+
+def _append_url_to_subsheet(
+    spreadsheet_id: str,
+    sheet_name: str,
+    url: str,
+    sender_name: str,
+    delegated_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Append a URL row to a simple list-style sheet (e.g. YT Creators, AI Influencers).
+
+    Sheet layout (auto-created headers on first write):
+        A: Date Added  |  B: URL  |  C: Added By
+
+    Duplicate check: rejects if the exact URL already appears in column B.
+    """
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("subsheet.append.no_client", sheet_name=sheet_name)
+        return {"ok": False, "error": "Sheets client not configured"}
+
+    now_pst = datetime.now(ZoneInfo("America/Los_Angeles"))
+    date_str = now_pst.strftime("%Y-%m-%d %H:%M")
+    first_name = sender_name.split()[0] if sender_name else "Unknown"
+
+    try:
+        # Read existing column B to detect duplicates and find length
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!B:B"
+        ).execute()
+        col_b_values = result.get("values", [])
+
+        # Ensure header row exists
+        if not col_b_values or (col_b_values[0] and col_b_values[0][0] != "URL"):
+            pending_headers = [
+                {"range": f"{sheet_name}!A1", "values": [["Date Added"]]},
+                {"range": f"{sheet_name}!B1", "values": [["URL"]]},
+                {"range": f"{sheet_name}!C1", "values": [["Added By"]]},
+            ]
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"valueInputOption": "USER_ENTERED", "data": pending_headers},
+            ).execute()
+            # Bold the header row
+            sheet_id = _get_sheet_id(service, spreadsheet_id, sheet_name)
+            if sheet_id is not None:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        "requests": [{
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 0,
+                                    "endRowIndex": 1,
+                                    "startColumnIndex": 0,
+                                    "endColumnIndex": 3,
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "textFormat": {"bold": True}
+                                    }
+                                },
+                                "fields": "userEnteredFormat.textFormat.bold",
+                            }
+                        }]
+                    },
+                ).execute()
+            if not col_b_values:
+                col_b_values = [["URL"]]
+
+        # Duplicate check across all rows after header
+        for idx, row in enumerate(col_b_values[1:], start=2):
+            cell_value = (row[0] if row else "").strip()
+            if cell_value == url:
+                _log("subsheet.append.duplicate", sheet_name=sheet_name, url=url, row=idx)
+                return {
+                    "ok": False,
+                    "error": "Duplicate URL",
+                    "message": f"URL already exists in '{sheet_name}' at row {idx}",
+                    "duplicate_row": idx,
+                }
+
+        next_row = len(col_b_values) + 1
+        writes = [
+            {"range": f"{sheet_name}!A{next_row}", "values": [[date_str]]},
+            {"range": f"{sheet_name}!B{next_row}", "values": [[url]]},
+            {"range": f"{sheet_name}!C{next_row}", "values": [[first_name]]},
+        ]
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"valueInputOption": "USER_ENTERED", "data": writes},
+        ).execute()
+
+        _log(
+            "subsheet.append.success",
+            sheet_name=sheet_name,
+            row=next_row,
+            sender=first_name,
+        )
+        return {
+            "ok": True,
+            "sheet_name": sheet_name,
+            "row_added": next_row,
+            "stored_sender": first_name,
+            "url": url,
+        }
+
+    except Exception as e:
+        _log("subsheet.append.error", sheet_name=sheet_name, error=str(e))
         return {"ok": False, "error": str(e)}
 
 

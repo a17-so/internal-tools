@@ -98,6 +98,44 @@ def get_templates(app_name="lifemaxx", app_config=None):
                 f"hey {{name}}, we run {app_name.title()} and love your theme page. what are your rates for posts/stories? - {app_display_name} from the {app_name.title()} App"
             ),
         },
+        "yt_creator": {
+            "subject": f"PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                "paid promo?\n\n"
+                f"{app_name.title()} is a gamified self improvement app where you can unlock character cards and become the \"Main Character\" in 88 days.\n\n"
+                "we're inviting a few, talented YT creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
+                "let me know if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                "paid promo?\n\n"
+                f"{app_name.title()} is a gamified self improvement app where you can unlock character cards and become the \"Main Character\" in 88 days.\n\n"
+                "we're inviting a few, talented YT creators who have a cultlike following to try it out & pay you to promote the app.\n\n"
+                "let me know if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
+            ),
+        },
+        "ai_influencer": {
+            "subject": f"PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                "paid promo?\n\n"
+                f"{app_name.title()} is a gamified self improvement app where you can unlock character cards and become the \"Main Character\" in 88 days.\n\n"
+                "we'd love to pay you to promote our app as part of our AI Influencer Program.\n\n"
+                "let me know if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                "paid promo?\n\n"
+                f"{app_name.title()} is a gamified self improvement app where you can unlock character cards and become the \"Main Character\" in 88 days.\n\n"
+                "we'd love to pay you to promote our app as part of our AI Influencer Program.\n\n"
+                "let me know if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
+            ),
+        },
     }
 
 
@@ -185,6 +223,34 @@ def get_followup_templates(app_name="lifemaxx", app_config=None):
             ),
             "dm_md": (
                 f"hey {{name}}, following up on the collab! what are your rates? - {app_display_name} from the {app_name.title()} App"
+            ),
+        },
+        "yt_creator": {
+            "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                f"just following up on the {app_name.title()} paid promo for YT creators!\n\n"
+                "we've got more creators onboard and would love to have you join. still interested?\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                f"following up on the {app_name.title()} YT creator promo! still down to work with you if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
+            ),
+        },
+        "ai_influencer": {
+            "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                f"just following up on the {app_name.title()} AI Influencer Program!\n\n"
+                "we're still looking to work with AI influencers like you. let me know if you're interested!\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                f"following up on the {app_name.title()} AI Influencer Program! still down to work with you if you're interested.\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
             ),
         },
     }
@@ -279,6 +345,38 @@ def get_second_followup_templates(app_name="lifemaxx", app_config=None):
             ),
             "dm_md": (
                 f"hey {{name}}, hope you're doing well! just wanted to follow up one more time about the collab. no pressure if you're not interested! - {app_display_name} from the {app_name.title()} App"
+            ),
+        },
+        "yt_creator": {
+            "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about the {app_name.title()} YT creator promo.\n\n"
+                "no pressure if you're not interested, just wanted to make sure you saw this!\n\n"
+                "let me know either way :)\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about the {app_name.title()} promo.\n\n"
+                "no pressure if you're not interested!\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
+            ),
+        },
+        "ai_influencer": {
+            "subject": f"Re: PAID PROMO OPPORTUNITY - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about the {app_name.title()} AI Influencer Program.\n\n"
+                "no pressure if you're not interested, just wanted to make sure you saw this!\n\n"
+                "let me know either way :)\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                "hey {name},\n\n"
+                f"hope you're doing well! just wanted to follow up one more time about the {app_name.title()} AI Influencer Program.\n\n"
+                "no pressure if you're not interested!\n\n"
+                f"- {app_display_name} from the {app_name.title()} App\n"
             ),
         },
     }
@@ -377,6 +475,32 @@ def get_third_followup_templates(app_name="lifemaxx", app_config=None):
             ),
             "dm_md": (
                 f"hey {{name}}, this is my final follow-up about the collab. if you're interested, great! if not, no worries - I'll stop reaching out. thanks for your time! - {app_display_name} from the {app_name.title()} App"
+            ),
+        },
+        "yt_creator": {
+            "subject": f"Re: Final follow-up - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                "this is my final follow-up about the YT creator promo.\n\n"
+                "if you're interested, great! if not, no worries at all - I'll stop reaching out.\n\n"
+                "thanks for your time!\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                f"hey {{name}}, this is my final follow-up about the promo. if you're interested, great! if not, no worries - I'll stop reaching out. thanks for your time! - {app_display_name} from the {app_name.title()} App"
+            ),
+        },
+        "ai_influencer": {
+            "subject": f"Re: Final follow-up - {app_name.title()} App",
+            "email_md": (
+                "hey {name},\n\n"
+                "this is my final follow-up about the AI Influencer Program.\n\n"
+                "if you're interested, great! if not, no worries at all - I'll stop reaching out.\n\n"
+                "thanks for your time!\n\n"
+                f"- {app_display_name} from the {app_name.title()} App ({app_url})\n"
+            ),
+            "dm_md": (
+                f"hey {{name}}, this is my final follow-up about the AI Influencer Program. if you're interested, great! if not, no worries - I'll stop reaching out. thanks for your time! - {app_display_name} from the {app_name.title()} App"
             ),
         },
     }

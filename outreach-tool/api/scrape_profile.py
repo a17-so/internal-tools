@@ -43,10 +43,23 @@ def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
             # (If user wants IG support later, we'll need an API for that too)
             _log("scrape.instagram_not_supported_without_browser")
             data = {"error": "Instagram scraping not supported in lightweight mode"}
-            
+
+        elif "youtube.com" in host or "youtu.be" in host:
+            # YouTube: Use SearchAPI.io youtube_channel engine
+            # Handle formats: /@handle, /channel/ID, /c/name, /user/name
+            path = (parsed.path or "").strip()
+            yt_handle_match = re.search(r"/@([A-Za-z0-9_.-]+)", path)
+            if yt_handle_match:
+                channel_id = "@" + yt_handle_match.group(1)
+                _log("scrape.trying_searchapi_youtube", channel_id=channel_id)
+                data = scrape_youtube_with_searchapi(channel_id)
+            else:
+                _log("scrape.no_yt_handle_in_url", path=path)
+                data = {"error": "Could not extract @handle from YouTube URL. Use format: youtube.com/@handle"}
+
         else:
             data = {"error": "Unsupported URL", "url": url}
-            
+
     except Exception as e:
         _log("scrape.error", error=str(e))
         data = {"error": f"Scraping failed: {str(e)}"}
@@ -60,8 +73,10 @@ def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
         "email": data.get("email") or "",
         "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
         "tt": data.get("username") if data.get("platform") == "tiktok" else "",
+        "yt_handle": data.get("yt_handle") or "",
         "igProfileUrl": f"https://www.instagram.com/{data.get('ig_handle') or data.get('username')}" if (data.get("ig_handle") or (data.get("platform") == "instagram" and data.get("username"))) else "",
-        "ttProfileUrl": f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else "",
+        "ttProfileUrl": f"https://www.tiktok.com/@{data.get('tt_handle')}" if data.get("tt_handle") else (f"https://www.tiktok.com/@{data.get('username')}" if data.get("platform") == "tiktok" and data.get("username") else ""),
+        "ytProfileUrl": data.get("ytProfileUrl") or "",
     }
     
     # Add average views if present
@@ -216,6 +231,157 @@ def scrape_tiktok_with_searchapi(username: str) -> dict:
         return {"error": f"API request failed: {str(e)}"}
     except Exception as e:
         _log("searchapi.unexpected_error", username=clean_username, error=str(e))
+        return {"error": f"Unexpected error: {str(e)}"}
+
+
+def scrape_youtube_with_searchapi(channel_id: str) -> dict:
+    """Scrape YouTube channel info using SearchAPI.io youtube_channel engine.
+
+    Args:
+        channel_id: YouTube channel handle, e.g. '@KyanStone'
+
+    Returns:
+        dict with profile data or error information, including ig_handle, tt_handle, and email
+        extracted from the channel's about description and links.
+    """
+    if requests is None:
+        _log("searchapi.youtube.requests_not_available")
+        return {"error": "requests library not available"}
+
+    api_key = os.environ.get("SEARCHAPI_KEY", "")
+    if not api_key:
+        _log("searchapi.youtube.no_api_key")
+        return {"error": "SEARCHAPI_KEY not configured"}
+
+    # Normalise: ensure we have just @handle form
+    clean_channel_id = channel_id.strip()
+    if not clean_channel_id:
+        return {"error": "Invalid channel_id"}
+    if not clean_channel_id.startswith("@"):
+        clean_channel_id = "@" + clean_channel_id
+
+    try:
+        _log("searchapi.youtube.request_start", channel_id=clean_channel_id)
+
+        url = "https://www.searchapi.io/api/v1/search"
+        params = {
+            "engine": "youtube_channel",
+            "channel_id": clean_channel_id,
+            "api_key": api_key,
+        }
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code in [401, 403]:
+            _log("searchapi.youtube.auth_error", status=response.status_code)
+            return {"error": "Invalid SEARCHAPI_KEY"}
+
+        response.raise_for_status()
+        result = response.json()
+        _log("searchapi.youtube.request_success", channel_id=clean_channel_id,
+             status=result.get("search_metadata", {}).get("status"))
+
+        about = result.get("about") or {}
+        channel = result.get("channel") or {}
+
+        # Channel name from top-level or about
+        channel_name = channel.get("name") or about.get("name") or clean_channel_id.lstrip("@")
+
+        # Description / bio
+        description = about.get("description") or ""
+
+        # Extract email from description
+        email = ""
+        email_match = EMAIL_RE.search(description)
+        if email_match:
+            extracted = email_match.group(0).replace("(at)", "@").replace(" ", "")
+            if extracted.lower() not in IGNORE_EMAILS:
+                email = extracted
+
+        # Extract IG / TikTok handles from description
+        ig_handle = ""
+        tt_handle = ""
+
+        ig_patterns = [
+            r"(?:ig|insta|instagram)[\s:]+@?([A-Za-z0-9_.]+)",
+            r"instagram\.com/([A-Za-z0-9_.]+)",
+        ]
+        for pattern in ig_patterns:
+            ig_match = re.search(pattern, description, re.I)
+            if ig_match:
+                candidate = ig_match.group(1).strip().lstrip("@")
+                if candidate.lower() not in {"media", "instagram", "com", "www"}:
+                    ig_handle = candidate
+                    break
+
+        tt_patterns = [
+            r"(?:tiktok|tt)[\s:]+@?([A-Za-z0-9_.]+)",
+            r"tiktok\.com/@([A-Za-z0-9_.]+)",
+        ]
+        for pattern in tt_patterns:
+            tt_match = re.search(pattern, description, re.I)
+            if tt_match:
+                tt_handle = tt_match.group(1).strip().lstrip("@")
+                break
+
+        # Also check about.links for IG / TikTok / email URLs
+        links = about.get("links") or []
+        for link_item in links:
+            link_url = link_item.get("link") or link_item.get("url") or ""
+            if not link_url:
+                continue
+
+            # Instagram
+            if not ig_handle and "instagram.com" in link_url.lower():
+                ig_m = re.search(
+                    r"instagram\.com/(?!p/|reel/|stories/|explore/|direct/|accounts/)([A-Za-z0-9_.]+)",
+                    link_url,
+                    re.I,
+                )
+                if ig_m:
+                    candidate = ig_m.group(1).strip().lstrip("@")
+                    if candidate.lower() not in {"media"}:
+                        ig_handle = candidate
+
+            # TikTok
+            if not tt_handle and "tiktok.com" in link_url.lower():
+                tt_m = re.search(r"tiktok\.com/@([A-Za-z0-9_.]+)", link_url, re.I)
+                if tt_m:
+                    tt_handle = tt_m.group(1).strip().lstrip("@")
+
+            # Email from links (linktree etc.)
+            if not email:
+                email_m = EMAIL_RE.search(link_url)
+                if email_m:
+                    extracted = email_m.group(0).replace("(at)", "@").replace(" ", "")
+                    if extracted.lower() not in IGNORE_EMAILS:
+                        email = extracted
+
+        yt_handle_clean = clean_channel_id.lstrip("@")
+        yt_profile_url = f"https://www.youtube.com/@{yt_handle_clean}"
+
+        data = {
+            "platform": "youtube",
+            "name": channel_name,
+            "yt_handle": yt_handle_clean,
+            "ytProfileUrl": yt_profile_url,
+            "email": email,
+            "ig_handle": ig_handle,
+            "tt_handle": tt_handle,
+            "subscribers": about.get("subscribers") or channel.get("subscribers") or 0,
+            "description": description,
+        }
+
+        _log("searchapi.youtube.parse_success", channel_id=clean_channel_id,
+             has_email=bool(email), has_ig=bool(ig_handle), has_tt=bool(tt_handle))
+        return data
+
+    except requests.exceptions.Timeout:
+        _log("searchapi.youtube.timeout", channel_id=clean_channel_id)
+        return {"error": "API request timeout"}
+    except requests.exceptions.RequestException as e:
+        _log("searchapi.youtube.request_error", channel_id=clean_channel_id, error=str(e))
+        return {"error": f"API request failed: {str(e)}"}
+    except Exception as e:
+        _log("searchapi.youtube.unexpected_error", channel_id=clean_channel_id, error=str(e))
         return {"error": f"Unexpected error: {str(e)}"}
 
 

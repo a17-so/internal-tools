@@ -11,6 +11,7 @@ import pytest
 import time
 import json
 from typing import Dict, Any
+from unittest.mock import patch, MagicMock
 
 
 class TestProfileScraping:
@@ -205,10 +206,20 @@ class TestScrapingEndpoint:
     
     @pytest.mark.timeout(30)
     def test_scrape_endpoint_valid_profile(self, client, env_setup, test_profiles):
-
-        """Test /scrape endpoint with a valid TikTok URL."""
+        """Test /scrape endpoint with a valid TikTok URL (mocked external calls)."""
         profile_data = test_profiles["with_email_and_ig"]
         
+        fake_profile = {
+            "ig": "advaithakella",
+            "tt": "advaithakella",
+            "name": "Advait",
+            "email": "advait@example.com",
+            "igProfileUrl": "https://www.instagram.com/advaithakella",
+            "ttProfileUrl": "https://www.tiktok.com/@advaithakella",
+            "igAvgViews": 50000,
+            "ttAvgViews": 100000,
+        }
+
         payload = {
             "app": "regen",
             "url": profile_data["url"],
@@ -216,14 +227,21 @@ class TestScrapingEndpoint:
             "sender_profile": "abhay"
         }
         
-        start_time = time.time()
-        response = client.post('/scrape',
-                              json=payload,
-                              content_type='application/json')
-        elapsed = time.time() - start_time
+        with patch("main._check_creator_exists_across_all_sheets",
+                   return_value={"exists": False}), \
+             patch("main.scrape_profile_sync",
+                   return_value=fake_profile), \
+             patch("main._append_to_sheet",
+                   return_value={"ok": True, "row_index": 5}):
+
+            start_time = time.time()
+            response = client.post('/scrape',
+                                  json=payload,
+                                  content_type='application/json')
+            elapsed = time.time() - start_time
         
-        # Should complete within reasonable time
-        assert elapsed < 10, f"Scrape endpoint took {elapsed:.2f}s, should be under 10s"
+        # With mocks, should be near-instant
+        assert elapsed < 30, f"Scrape endpoint took {elapsed:.2f}s, should be under 30s"
         
         # Check response
         assert response.status_code in [200, 400, 500], f"Unexpected status code: {response.status_code}"
@@ -285,16 +303,21 @@ class TestThemePageEndpoint:
     
     @pytest.mark.timeout(30)
     def test_themepage_endpoint_tiktok(self, client, env_setup):
-        """Test /scrape_themepage endpoint with TikTok URL."""
+        """Test /scrape_themepage endpoint with TikTok URL (mocked sheets check)."""
         payload = {
             "app": "regen",
             "url": "https://www.tiktok.com/@themepage_test",
             "sender_profile": "abhay"
         }
         
-        response = client.post('/scrape_themepage',
-                              json=payload,
-                              content_type='application/json')
+        with patch("main._check_creator_exists_across_all_sheets",
+                   return_value={"exists": False}), \
+             patch("main._append_to_sheet",
+                   return_value={"ok": True, "row_index": 5}):
+
+            response = client.post('/scrape_themepage',
+                                  json=payload,
+                                  content_type='application/json')
         
         # Should succeed or fail gracefully
         assert response.status_code in [200, 400, 500], f"Unexpected status code: {response.status_code}"

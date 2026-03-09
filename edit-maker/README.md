@@ -47,7 +47,7 @@ python main.py batch facial_features short_philtrum -n 3
 
 ```bash
 python main.py batch facial_features short_philtrum -n 5 \
-  --export-csv ../tiktok-uploader/posts.csv \
+  --export-csv ../draft-uploader/posts.csv \
   --account-id <CONNECTED_ACCOUNT_ID> \
   --hashtags "#pretti #makeup #fyp"
 ```
@@ -57,7 +57,7 @@ python main.py batch facial_features short_philtrum -n 5 \
 ```bash
 python main.py export-uploader-csv \
   --account-id <CONNECTED_ACCOUNT_ID> \
-  --output-csv ../tiktok-uploader/posts.csv \
+  --output-csv ../draft-uploader/posts.csv \
   --root-dir output \
   --hashtags "#pretti #makeup #fyp"
 ```
@@ -84,7 +84,7 @@ python main.py -v generate facial_features short_philtrum
 ### Upload exported CSV with uploader CLI
 
 ```bash
-cd ../tiktok-uploader
+cd ../draft-uploader
 uploader upload:batch --csv ./posts.csv --root ../edit-maker/output --send-now
 ```
 

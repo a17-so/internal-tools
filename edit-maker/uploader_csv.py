@@ -1,4 +1,4 @@
-"""CSV export helpers for tiktok-uploader CLI batch ingestion."""
+"""CSV export helpers for draft-uploader CLI batch ingestion."""
 
 from __future__ import annotations
 

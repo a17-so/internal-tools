@@ -1,6 +1,6 @@
-import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { requireCurrentUser } from '@/lib/auth';
 
 type TikTokUser = {
   open_id?: string;
@@ -35,19 +35,38 @@ async function requestTikTok(path: string, accessToken: string) {
   return response.json();
 }
 
-export default async function AnalyticsPage() {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get('tiktok_access_token')?.value;
+export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ accountId?: string }> }) {
+  const params = await searchParams;
+  const context = await requireCurrentUser();
 
-  if (!accessToken) {
+  if (!context) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-6 py-12">
         <h1 className="text-3xl font-semibold">Analytics</h1>
-        <p className="text-sm text-zinc-600">You need to log in with TikTok first.</p>
+        <p className="text-sm text-zinc-600">You need to log in first.</p>
         <Link href="/" className="text-sm underline underline-offset-4">Back to home</Link>
       </main>
     );
   }
+
+  const visibleAccounts = context.user.role === 'admin'
+    ? context.store.tiktokAccounts
+    : context.store.tiktokAccounts.filter((account) => account.userId === context.user.id);
+  const selected = params.accountId
+    ? visibleAccounts.find((account) => account.id === params.accountId)
+    : visibleAccounts[0];
+
+  if (!selected) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-6 py-12">
+        <h1 className="text-3xl font-semibold">Analytics</h1>
+        <p className="text-sm text-zinc-600">Connect at least one TikTok account first.</p>
+        <Link href="/" className="text-sm underline underline-offset-4">Back to home</Link>
+      </main>
+    );
+  }
+
+  const accessToken = selected.accessToken;
 
   const userData = await requestTikTok(
     '/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,bio_description,profile_deep_link,is_verified,follower_count,following_count,likes_count,video_count',
@@ -71,6 +90,7 @@ export default async function AnalyticsPage() {
         <h1 className="text-3xl font-semibold">TikTok Analytics</h1>
         <Link href="/" className="text-sm underline underline-offset-4">Back to uploader</Link>
       </div>
+      <p className="text-sm text-zinc-600">Account: {selected.displayName} ({selected.openId})</p>
 
       <Card>
         <CardHeader>

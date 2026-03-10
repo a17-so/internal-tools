@@ -1,0 +1,32 @@
+{
+  "users": [
+    {
+      "id": "c3b51455-3a3a-4b2f-9ac1-d41b33e6aebb",
+      "username": "A17",
+      "role": "admin",
+      "passwordSalt": "1989ded652cde9a8d3958334ab84c5ee",
+      "passwordHash": "3786d65e79437205bb233507dc2f7273ec5052d73e1313bf040b3711f4569eab5dd9a8d9e7e0190213011dd2eb04c7722c5646e69f12233a2e17a4462becd319",
+      "createdAt": "2026-03-10T00:23:53.521Z"
+    },
+    {
+      "id": "e5f78c38-d793-4fb5-835d-6dac64516839",
+      "username": "abhaychebium",
+      "role": "user",
+      "passwordSalt": "70323d89754a9060f569d3564ed5daae",
+      "passwordHash": "54ff8f6efe71de682151adef3f71d2e954c385dcd951f0d4edf1b45148d3bc36153c38f707669e222348dd25f2271c2b54bbba3c7b9f9063b9f8fe7d60bf37ac",
+      "createdAt": "2026-03-10T00:26:58.087Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "6bec728e6775ab4eea87545ca1e2898311835b62f5ad20c2c75c9b0da0ed0640",
+      "userId": "e5f78c38-d793-4fb5-835d-6dac64516839",
+      "createdAt": "2026-03-10T00:26:58.088Z",
+      "expiresAt": "2026-04-09T00:26:58.088Z"
+    }
+  ],
+  "tiktokAccounts": [],
+  "stagedUploads": [],
+  "uploadJobs": [],
+  "uploadBatches": []
+}

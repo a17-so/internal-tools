@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { requireCurrentUser } from '@/lib/auth';
 
 export async function GET() {
+    const context = await requireCurrentUser();
     const clientKey = process.env.TIKTOK_CLIENT_KEY;
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
     const redirectUri = `${appUrl}/api/auth/callback`;
@@ -10,6 +12,10 @@ export async function GET() {
       .map((scope) => scope.trim())
       .filter(Boolean)
       .join(',');
+
+    if (!context) {
+        return NextResponse.redirect(`${appUrl}?error=Unauthorized`);
+    }
 
     if (!clientKey) {
         return NextResponse.redirect(`${appUrl}?error=MissingClientKey`);
@@ -37,6 +43,12 @@ export async function GET() {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         maxAge: 60 * 10, // 10 minutes
+        path: '/',
+    });
+    response.cookies.set('tiktok_auth_user_id', context.user.id, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 10,
         path: '/',
     });
 

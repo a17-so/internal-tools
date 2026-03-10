@@ -1,4 +1,4 @@
-# Frankenstein Maker
+# Frankenstein Tool
 
 Frankenstein Maker is a local pipeline for:
 - importing manually collected hook URLs (from phone research)

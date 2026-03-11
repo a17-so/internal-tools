@@ -126,6 +126,7 @@ def main() -> int:
                     session_manager,
                     attach_mode=settings.tiktok_attach_mode,
                     cdp_url=settings.tiktok_cdp_url,
+                    cdp_url_resolver=_build_tiktok_cdp_url_resolver(settings),
                     min_seconds_between_sends=settings.tiktok_min_seconds_between_sends,
                     send_jitter_seconds=settings.tiktok_send_jitter_seconds,
                 ),
@@ -291,14 +292,22 @@ def _run_startup_preflight(
         )
     if "tiktok" in enabled_channels:
         if settings.tiktok_attach_mode:
-            if not settings.tiktok_sender_handle:
-                raise ValueError(
-                    "TIKTOK_ATTACH_MODE=true is single-account mode. Set TIKTOK_SENDER_HANDLE to pin one account."
+            if settings.tiktok_cycling_mode == "attach_single_browser":
+                if not settings.tiktok_sender_handle:
+                    raise ValueError(
+                        "TIKTOK_ATTACH_MODE=true with attach_single_browser requires TIKTOK_SENDER_HANDLE."
+                    )
+                _ensure_tiktok_attach_available(
+                    cdp_url=settings.tiktok_cdp_url,
+                    auto_start=settings.tiktok_attach_auto_start,
                 )
-            _ensure_tiktok_attach_available(
-                cdp_url=settings.tiktok_cdp_url,
-                auto_start=settings.tiktok_attach_auto_start,
-            )
+            elif settings.tiktok_cycling_mode == "attach_per_account_browser":
+                accounts = firestore_client.list_active_accounts(Platform.TIKTOK)
+                _ensure_tiktok_attach_account_urls(accounts=accounts, settings=settings)
+            else:
+                raise ValueError(
+                    f"Unsupported attach-mode TikTok cycling mode: {settings.tiktok_cycling_mode}"
+                )
         else:
             _ensure_account_sessions_exist(
                 accounts=firestore_client.list_active_accounts(Platform.TIKTOK),
@@ -363,18 +372,22 @@ def _parse_channels(raw: str) -> set[str]:
 
 
 def _validate_tiktok_mode(settings: Settings) -> None:
-    allowed = {"per_account_session", "attach_single_browser"}
-    if settings.tiktok_cycling_mode not in allowed:
+    mode = getattr(settings, "tiktok_cycling_mode", "per_account_session")
+    allowed = {"per_account_session", "attach_single_browser", "attach_per_account_browser"}
+    if mode not in allowed:
         raise ValueError(
-            f"Unsupported TIKTOK_CYCLING_MODE={settings.tiktok_cycling_mode}. Allowed: {sorted(allowed)}"
+            f"Unsupported TIKTOK_CYCLING_MODE={mode}. Allowed: {sorted(allowed)}"
         )
-    if settings.tiktok_attach_mode and settings.tiktok_cycling_mode != "attach_single_browser":
+    if settings.tiktok_attach_mode and mode == "per_account_session":
         raise ValueError(
-            "TIKTOK_ATTACH_MODE=true requires TIKTOK_CYCLING_MODE=attach_single_browser"
+            "TIKTOK_ATTACH_MODE=true cannot use TIKTOK_CYCLING_MODE=per_account_session"
         )
-    if not settings.tiktok_attach_mode and settings.tiktok_cycling_mode == "attach_single_browser":
+    if (not settings.tiktok_attach_mode) and mode in {
+        "attach_single_browser",
+        "attach_per_account_browser",
+    }:
         raise ValueError(
-            "TIKTOK_CYCLING_MODE=attach_single_browser requires TIKTOK_ATTACH_MODE=true"
+            "TIKTOK_CYCLING_MODE=attach_* requires TIKTOK_ATTACH_MODE=true"
         )
 
 
@@ -398,25 +411,61 @@ def _build_account_readiness_checker(
             return True, None
         # TikTok
         if settings.tiktok_attach_mode:
-            if not settings.tiktok_sender_handle:
-                return False, "attach_requires_pinned_handle"
-            if handle_norm != settings.tiktok_sender_handle.strip().lower():
-                return False, "attach_single_account_mismatch"
-            if settings.tiktok_cdp_url:
-                parsed = urlparse(settings.tiktok_cdp_url)
+            mode = getattr(settings, "tiktok_cycling_mode", "attach_single_browser")
+            if mode == "attach_single_browser":
+                if not settings.tiktok_sender_handle:
+                    return False, "attach_requires_pinned_handle"
+                if handle_norm != settings.tiktok_sender_handle.strip().lower():
+                    return False, "attach_single_account_mismatch"
+                if settings.tiktok_cdp_url:
+                    parsed = urlparse(settings.tiktok_cdp_url)
+                    host = parsed.hostname
+                    port = parsed.port
+                    if host and port and _is_cdp_reachable(host, port):
+                        return True, None
+                if settings.tiktok_attach_auto_start:
+                    return True, None
+                return False, "cdp_unreachable"
+            if mode == "attach_per_account_browser":
+                account_cdp_url = _tiktok_cdp_url_for_handle(settings=settings, handle=account.handle)
+                if not account_cdp_url:
+                    return False, "missing_account_cdp_url"
+                parsed = urlparse(account_cdp_url)
                 host = parsed.hostname
                 port = parsed.port
-                if host and port and _is_cdp_reachable(host, port):
+                if not host or not port:
+                    return False, "invalid_account_cdp_url"
+                if _is_cdp_reachable(host, port):
                     return True, None
-            if settings.tiktok_attach_auto_start:
-                return True, None
-            return False, "cdp_unreachable"
+                if settings.tiktok_attach_auto_start:
+                    return True, None
+                return False, "cdp_unreachable"
+            return False, "unsupported_tiktok_mode"
         profile_dir = session_manager.profile_dir_for(platform, account.handle)
         if not profile_dir.exists():
             return False, "missing_session"
         return True, None
 
     return _check
+
+
+def _tiktok_cdp_url_for_handle(*, settings: Settings, handle: str) -> str | None:
+    normalized = handle.strip().lower()
+    if normalized and not normalized.startswith("@"):
+        normalized = f"@{normalized}"
+    cdp_map = getattr(settings, "tiktok_attach_account_cdp_urls", {})
+    return cdp_map.get(normalized)
+
+
+def _build_tiktok_cdp_url_resolver(settings: Settings) -> Callable[[str], str | None] | None:
+    if not settings.tiktok_attach_mode:
+        return None
+    mode = getattr(settings, "tiktok_cycling_mode", "attach_single_browser")
+    if mode == "attach_single_browser":
+        return lambda _handle: settings.tiktok_cdp_url
+    if mode == "attach_per_account_browser":
+        return lambda handle: _tiktok_cdp_url_for_handle(settings=settings, handle=handle)
+    return None
 
 
 def _ensure_tiktok_attach_available(*, cdp_url: str | None, auto_start: bool) -> None:
@@ -444,6 +493,34 @@ def _ensure_tiktok_attach_available(*, cdp_url: str | None, auto_start: bool) ->
     )
 
 
+def _ensure_tiktok_attach_account_urls(*, accounts: list[Account], settings: Settings) -> None:
+    missing: list[str] = []
+    invalid: list[str] = []
+    for account in accounts:
+        cdp_url = _tiktok_cdp_url_for_handle(settings=settings, handle=account.handle)
+        if not cdp_url:
+            missing.append(account.handle)
+            continue
+        parsed = urlparse(cdp_url)
+        host = parsed.hostname
+        port = parsed.port
+        if not host or not port:
+            invalid.append(f"{account.handle}={cdp_url}")
+            continue
+        if not _is_cdp_reachable(host, port):
+            if settings.tiktok_attach_auto_start:
+                _start_chrome_debug(port=port, profile_dir=str(settings.tiktok_profile_dir / account.handle.lstrip("@")))
+            if not _is_cdp_reachable(host, port):
+                invalid.append(f"{account.handle}={cdp_url} (unreachable)")
+    if missing:
+        raise ValueError(
+            "Missing TIKTOK_ATTACH_ACCOUNT_CDP_URLS for active TikTok accounts: "
+            + ", ".join(sorted(missing))
+        )
+    if invalid:
+        raise ValueError("Invalid or unreachable per-account TikTok CDP endpoints: " + ", ".join(sorted(invalid)))
+
+
 def _is_cdp_reachable(host: str, port: int) -> bool:
     try:
         with socket.create_connection((host, port), timeout=2):
@@ -452,17 +529,15 @@ def _is_cdp_reachable(host: str, port: int) -> bool:
         return False
 
 
-def _start_chrome_debug(*, port: int) -> None:
+def _start_chrome_debug(*, port: int, profile_dir: str | None = None) -> None:
     project_root = Path(__file__).resolve().parents[2]
     script = project_root / "ops" / "start_chrome_debug.sh"
     if not script.exists():
         return
-    subprocess.run(
-        [str(script), str(port)],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    args = [str(script), str(port)]
+    if profile_dir:
+        args.append(profile_dir)
+    subprocess.run(args, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _pid_file_path() -> Path:

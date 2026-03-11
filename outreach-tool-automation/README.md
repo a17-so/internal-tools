@@ -65,8 +65,9 @@ Recommended routing defaults:
 - Leave TikTok unpinned if cycling:
   - `TIKTOK_SENDER_HANDLE=`
 - TikTok cycling mode:
-  - `TIKTOK_ATTACH_MODE=false`
-  - `TIKTOK_CYCLING_MODE=per_account_session`
+  - `TIKTOK_ATTACH_MODE=true`
+  - `TIKTOK_CYCLING_MODE=attach_per_account_browser`
+  - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223`
 
 ### 3) Seed Firestore accounts
 
@@ -86,6 +87,13 @@ Helper script:
 ```bash
 ./ops/open_platform_profile.sh tiktok @regenapp
 ./ops/open_platform_profile.sh instagram @ethan.peps
+```
+
+For per-account TikTok attach mode, start one debug Chrome per account:
+
+```bash
+./ops/start_tiktok_account_debug.sh @regen.app 9222
+./ops/start_tiktok_account_debug.sh @regenapp 9223
 ```
 
 This opens normal Chrome with user-data-dir under:
@@ -176,8 +184,9 @@ python -m outreach_automation.reset_counters
 - Strict pinning:
   - If `STRICT_SENDER_PINNING=true` and channel handle is pinned, no fallback to other handles for that channel.
 - TikTok modes:
-  - `per_account_session` (default/recommended for cycling)
+  - `per_account_session` (`TIKTOK_ATTACH_MODE=false`)
   - `attach_single_browser` + `TIKTOK_ATTACH_MODE=true` (single-account/manual attach mode)
+  - `attach_per_account_browser` + `TIKTOK_ATTACH_MODE=true` (true cycling with one debug Chrome per account)
 
 ## Lead + Status Behavior
 
@@ -256,6 +265,8 @@ TikTok login shows `Maximum number of attempts reached`:
 
 - stop automated login attempts
 - use manual Chrome helper `./ops/open_platform_profile.sh tiktok @handle`
+- for attach-per-account mode, run dedicated debuggers:
+  - `./ops/start_tiktok_account_debug.sh @handle 9222`
 - wait cooldown window before retrying login
 
 No IG/TikTok tab appears during run:

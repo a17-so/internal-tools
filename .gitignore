@@ -170,3 +170,15 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Media Files
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.webm
+*.mkv
+*.avi
+*.m4v
+*.ts
+*.flv

@@ -51,6 +51,7 @@ class Settings:
     tiktok_cycling_mode: str
     tiktok_attach_auto_start: bool
     tiktok_cdp_url: str | None
+    tiktok_attach_account_cdp_urls: dict[str, str]
     tiktok_min_seconds_between_sends: int
     tiktok_send_jitter_seconds: float
 
@@ -76,6 +77,30 @@ def _email_blocklist() -> tuple[str, ...]:
     raw = os.getenv("EMAIL_RECIPIENT_BLOCKLIST", "")
     values = [item.strip().lower() for item in raw.split(",")]
     out = tuple(item for item in values if item)
+    return out
+
+
+def _parse_tiktok_attach_account_cdp_urls() -> dict[str, str]:
+    raw = os.getenv("TIKTOK_ATTACH_ACCOUNT_CDP_URLS", "").strip()
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for part in raw.split(","):
+        piece = part.strip()
+        if not piece:
+            continue
+        if "=" not in piece:
+            continue
+        handle_raw, url_raw = piece.split("=", 1)
+        handle = handle_raw.strip().lower()
+        if not handle:
+            continue
+        if not handle.startswith("@"):
+            handle = f"@{handle}"
+        url = url_raw.strip()
+        if not url:
+            continue
+        out[handle] = url
     return out
 
 
@@ -141,6 +166,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         or "per_account_session",
         tiktok_attach_auto_start=os.getenv("TIKTOK_ATTACH_AUTO_START", "true").lower() == "true",
         tiktok_cdp_url=os.getenv("TIKTOK_CDP_URL", "").strip() or None,
+        tiktok_attach_account_cdp_urls=_parse_tiktok_attach_account_cdp_urls(),
         tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "3")),
         tiktok_send_jitter_seconds=float(os.getenv("TIKTOK_SEND_JITTER_SECONDS", "2.0")),
     )

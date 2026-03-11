@@ -33,6 +33,11 @@ def test_validate_tiktok_mode_accepts_attach_combo() -> None:
     _validate_tiktok_mode(settings)  # type: ignore[arg-type]
 
 
+def test_validate_tiktok_mode_accepts_attach_per_account_combo() -> None:
+    settings = SimpleNamespace(tiktok_cycling_mode="attach_per_account_browser", tiktok_attach_mode=True)
+    _validate_tiktok_mode(settings)  # type: ignore[arg-type]
+
+
 def test_readiness_email_requires_refresh_token(tmp_path: Path) -> None:
     settings = SimpleNamespace(
         gmail_accounts=(SimpleNamespace(email="ethan@a17.so"),),
@@ -76,6 +81,7 @@ def test_readiness_tiktok_attach_requires_pinned_handle_and_cdp(monkeypatch: Any
     settings = SimpleNamespace(
         gmail_accounts=(),
         tiktok_attach_mode=True,
+        tiktok_cycling_mode="attach_single_browser",
         tiktok_sender_handle="@regen.app",
         tiktok_attach_auto_start=False,
         tiktok_cdp_url="http://127.0.0.1:9222",

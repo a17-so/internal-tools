@@ -5,6 +5,7 @@ import contextlib
 import random
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -23,12 +24,14 @@ class TiktokDmSender:
         *,
         attach_mode: bool = False,
         cdp_url: str | None = None,
+        cdp_url_resolver: Callable[[str], str | None] | None = None,
         min_seconds_between_sends: int = 3,
         send_jitter_seconds: float = 2.0,
     ) -> None:
         self._session_manager = session_manager
         self._attach_mode = attach_mode
         self._cdp_url = cdp_url
+        self._cdp_url_resolver = cdp_url_resolver
         self._min_seconds_between_sends = max(0, min_seconds_between_sends)
         self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
@@ -43,8 +46,11 @@ class TiktokDmSender:
         self._enforce_send_spacing(account.handle)
 
         profile_dir: Path | None = None
+        selected_cdp_url = self._cdp_url
         if self._attach_mode:
-            if not self._cdp_url:
+            if self._cdp_url_resolver is not None:
+                selected_cdp_url = self._cdp_url_resolver(account.handle)
+            if not selected_cdp_url:
                 return ChannelResult(status="failed", error_code="missing_tiktok_cdp_url")
         else:
             profile_dir = self._session_manager.profile_dir_for(Platform.TIKTOK, account.handle)
@@ -58,7 +64,7 @@ class TiktokDmSender:
                     dm_text=dm_text,
                     profile_dir=profile_dir,
                     attach_mode=self._attach_mode,
-                    cdp_url=self._cdp_url,
+                    cdp_url=selected_cdp_url,
                 )
             )
             return ChannelResult(status="sent")
@@ -258,9 +264,10 @@ async def _settle_dm_thread_page(page: Any) -> None:
 
 
 async def _needs_login(page: Any) -> bool:
-    login_button = page.locator("button:has-text('Log in')")
-    count = int(await login_button.count())
-    return count > 0
+    if "/login" in (page.url or "").lower():
+        return True
+    login_cta = page.locator("button:has-text('Log in'):visible, a:has-text('Log in'):visible")
+    return int(await login_cta.count()) > 0
 
 
 def _extract_handle(url: str) -> str | None:

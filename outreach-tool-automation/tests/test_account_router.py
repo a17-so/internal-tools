@@ -37,18 +37,6 @@ class FakeFirestore:
         }
         self.claims: list[tuple[str, int]] = []
 
-    def next_account(self, platform: Platform) -> Account | None:  # pragma: no cover - proto compatibility
-        accounts = self._accounts.get(platform, [])
-        return accounts[0] if accounts else None
-
-    def next_account_for_handle(
-        self, platform: Platform, handle: str
-    ) -> Account | None:  # pragma: no cover - proto compatibility
-        for account in self._accounts.get(platform, []):
-            if account.handle.lower() == handle.lower():
-                return account
-        return None
-
     def list_eligible_accounts(self, platform: Platform) -> list[Account]:
         return list(self._accounts.get(platform, []))
 

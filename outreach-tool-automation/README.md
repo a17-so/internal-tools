@@ -1,51 +1,29 @@
 # Outreach Tool Automation
 
-Lean local-first outreach runner for `regen`.
-It pulls leads from Google Sheets, builds outreach content from local templates + SearchAPI, sends via TikTok/Instagram/Email, and records outcomes in Firestore.
+Local-first outreach automation for REGEN.
 
-## What Is Included (Essential Only)
+It reads Raw Leads from Google Sheets, generates scripts from local templates + SearchAPI, sends via TikTok/Instagram/Email, writes status back to Sheets, and records jobs/accounts/locks in Firestore.
 
-- Runtime core: orchestrator, routing, senders, clients
-- One template set: `regen`
-- Manual operator commands (`run_once`, `stop_run`, lock reset, counter reset)
-- Minimal ops scripts needed for local Chrome debug + Gmail token generation
-- Tests for core logic
+## Scope
 
-Removed: LaunchDaemon packaging and unused app templates.
+- This repo intentionally runs a local scraper path (no dependency on hosted `outreach-tool` API for automation runs).
+- Production-like behavior is controlled by `.env` + Firestore account pool.
+- Current supported automation tiers: `Macro`, `Micro`, `Submicro`, `Ambassador`, `Themepage`.
+- `YT Creator` and `AI Influencer` are intentionally auto-skipped for now as `skipped_unsupported_tier`.
 
-## Project Layout
+## Architecture
 
-```text
-outreach-tool-automation/
-├── src/outreach_automation/
-│   ├── run_once.py
-│   ├── stop_run.py
-│   ├── unlock_run_lock.py
-│   ├── reset_counters.py
-│   ├── seed_accounts.py
-│   ├── orchestrator.py
-│   ├── account_router.py
-│   ├── clients/
-│   │   ├── firestore_client.py
-│   │   ├── sheets_client.py
-│   │   └── local_scraper_client.py
-│   ├── senders/
-│   │   ├── tiktok_dm.py
-│   │   ├── ig_dm.py
-│   │   └── email_sender.py
-│   ├── templates/
-│   │   └── regen.py
-│   └── ...
-├── ops/
-│   ├── start_chrome_debug.sh
-│   ├── get_gmail_refresh_token.py
-│   └── accounts.seed.example.json
-├── tests/
-├── .env.example
-└── README.md
-```
+- Lead source: `Raw Leads` sheet (row format or matrix format)
+- Scraper: `src/outreach_automation/clients/local_scraper_client.py`
+- Orchestration: `src/outreach_automation/orchestrator.py`
+- Routing: `src/outreach_automation/account_router.py`
+- Senders:
+  - TikTok: `src/outreach_automation/senders/tiktok_dm.py`
+  - Instagram: `src/outreach_automation/senders/ig_dm.py`
+  - Email: `src/outreach_automation/senders/email_sender.py`
+- Persistence: Firestore collections `accounts`, `jobs`, `locks`
 
-## Setup
+## Quick Start (New Device)
 
 ```bash
 cd /Users/rootb/Code/a17/internal-tools/outreach-tool-automation
@@ -55,7 +33,7 @@ pip install -e "[dev]"
 cp .env.example .env
 ```
 
-## Google Auth (ADC)
+### 1) Configure ADC (Google auth)
 
 ```bash
 gcloud auth application-default login \
@@ -64,11 +42,11 @@ gcloud auth application-default login \
 gcloud auth application-default set-quota-project outreach-tool-automation
 ```
 
-If ADC expires, rerun both commands.
+If a command fails with reauthentication/scopes errors, rerun both commands above.
 
-## Required `.env`
+### 2) Fill `.env`
 
-Minimum:
+Required minimum:
 
 - `GOOGLE_SHEETS_ID`
 - `FIRESTORE_PROJECT_ID`
@@ -78,48 +56,69 @@ Minimum:
 - `GMAIL_ACCOUNT_1_EMAIL`
 - `GMAIL_ACCOUNT_1_REFRESH_TOKEN`
 
-Important behavior controls:
+Recommended routing defaults:
 
-- `SENDER_PROFILE`
-- `EMAIL_SENDER_HANDLE`
-- `INSTAGRAM_SENDER_HANDLE`
-- `TIKTOK_SENDER_HANDLE`
-- `STRICT_SENDER_PINNING=true` (recommended)
-- `EMAIL_RECIPIENT_BLOCKLIST`
-- `TIKTOK_CYCLING_MODE=per_account_session` (recommended)
-- `TIKTOK_ATTACH_MODE=false` (set `true` only for single-account/manual mode)
-- `TIKTOK_ATTACH_AUTO_START=true`
-- `TIKTOK_CDP_URL=http://127.0.0.1:9222`
+- `STRICT_SENDER_PINNING=true`
+- Pin channels you want fixed sender on:
+  - `EMAIL_SENDER_HANDLE=...`
+  - `INSTAGRAM_SENDER_HANDLE=...`
+- Leave TikTok unpinned if cycling:
+  - `TIKTOK_SENDER_HANDLE=`
+- TikTok cycling mode:
+  - `TIKTOK_ATTACH_MODE=false`
+  - `TIKTOK_CYCLING_MODE=per_account_session`
 
-## Firestore Collections
-
-- `accounts`: sender accounts + daily limits + status
-- `jobs`: per-lead execution records
-- `locks`: run lock (`locks/orchestrator`)
-
-Seed accounts:
+### 3) Seed Firestore accounts
 
 ```bash
 cp ops/accounts.seed.example.json ops/accounts.seed.json
+# edit ops/accounts.seed.json for your real handles/status/limits
 python -m outreach_automation.seed_accounts --file ops/accounts.seed.json
 ```
 
-## Raw Leads Contract
+### 4) Authenticate browser sessions (important)
 
-Supports either:
+Do not rely on automated TikTok login attempts when TikTok is rate-limiting login.
+Use manual Chrome profile login and persist that profile dir.
 
-1. Row format: `creator_url`, `creator_tier`, optional `status`
-2. Matrix format: URL columns plus paired `<header> Tier` columns
+Helper script:
 
-Allowed tiers:
+```bash
+./ops/open_platform_profile.sh tiktok @regenapp
+./ops/open_platform_profile.sh instagram @ethan.peps
+```
 
-- `Macro`
-- `Micro`
-- `Submicro`
-- `Ambassador`
-- `Themepage`
+This opens normal Chrome with user-data-dir under:
 
-## Run Commands
+- `sessions/tiktok/<handle>`
+- `sessions/instagram/<handle>`
+
+Log in + 2FA manually, then close that Chrome window. Credentials are stored in that profile dir.
+
+Alternative bootstrap command (Playwright persistent profile):
+
+```bash
+python -m outreach_automation.login_bootstrap --platform tiktok --account-handle @regenapp
+python -m outreach_automation.login_bootstrap --platform instagram --account-handle @ethan.peps
+```
+
+Use manual Chrome helper when TikTok shows login attempt limits.
+
+### 5) Doctor check
+
+```bash
+python -m outreach_automation.doctor
+```
+
+Look for:
+
+- `ok: true`
+- account counts for each platform
+- readiness matrix entries with `"ready": true`
+
+## Operational Commands
+
+### Run
 
 Dry run:
 
@@ -127,26 +126,20 @@ Dry run:
 python -m outreach_automation.run_once --dry-run --max-leads 10 --verbose-summary
 ```
 
-Live:
+Live run:
 
 ```bash
 python -m outreach_automation.run_once --live --max-leads 30 --verbose-summary
 ```
 
-Live without writing run report artifact:
-
-```bash
-python -m outreach_automation.run_once --live --max-leads 30 --no-report
-```
-
 Channel-specific:
 
 ```bash
-python -m outreach_automation.run_once --live --channels tiktok --max-leads 10 --ignore-dedupe
-python -m outreach_automation.run_once --live --channels instagram,email --max-leads 10
+python -m outreach_automation.run_once --live --channels tiktok --max-leads 5 --ignore-dedupe --verbose-summary
+python -m outreach_automation.run_once --live --channels instagram,email --max-leads 10 --verbose-summary
 ```
 
-## Stop / Recovery
+### Stop / Recovery
 
 Stop active run:
 
@@ -154,13 +147,13 @@ Stop active run:
 python -m outreach_automation.stop_run
 ```
 
-Force stop stuck process:
+Force stop:
 
 ```bash
 python -m outreach_automation.stop_run --force
 ```
 
-Clear stale lock:
+Unlock stale lock:
 
 ```bash
 python -m outreach_automation.unlock_run_lock
@@ -172,51 +165,107 @@ Reset daily counters:
 python -m outreach_automation.reset_counters
 ```
 
-Environment and dependency doctor:
+## Routing Behavior
 
-```bash
-python -m outreach_automation.doctor
-```
+- Routing algorithm: least-used eligible account.
+- Eligibility:
+  - Firestore `status=active`
+  - `daily_sent < daily_limit`
+  - readiness checks pass for that platform
+- Strict pinning:
+  - If `STRICT_SENDER_PINNING=true` and channel handle is pinned, no fallback to other handles for that channel.
+- TikTok modes:
+  - `per_account_session` (default/recommended for cycling)
+  - `attach_single_browser` + `TIKTOK_ATTACH_MODE=true` (single-account/manual attach mode)
 
-`doctor` includes a per-account readiness matrix (`platform`, `handle`, `ready`, `reason`) so you can verify cycling readiness before live runs.
+## Lead + Status Behavior
 
-## Current Runtime Behavior
+Per lead:
 
-- Per-lead channel order: `TikTok -> Instagram -> Email`
-- Account routing: least-used eligible account with strict caps
-- Eligibility gate: `status=active`, under daily cap, and platform readiness must pass
-- URL cell is cleared after each attempted lead
-- Lead becomes `Processed` when at least one channel sends successfully
-- End-of-run prints failed TikTok links
-- End-of-run prints tracking-append failures (if any)
-- End-of-run prints account usage selected and skip reason counts
-- End-of-run writes JSON report to `logs/run-reports/` unless `--no-report`
-- Email has blocklist + duplicate-recipient suppression
-- DM pacing uses jittered waits (non-fixed cadence)
+1. Tier validation
+2. Scrape
+3. Route accounts
+4. Send order: TikTok -> Instagram -> Email
+5. Write Firestore job
+6. Update sheet status + clear URL cell
 
-TikTok runtime modes:
-- `TIKTOK_CYCLING_MODE=per_account_session` (default, true multi-account cycling)
-- `TIKTOK_CYCLING_MODE=attach_single_browser` + `TIKTOK_ATTACH_MODE=true` (single-account/manual mode)
+Status mapping:
+
+- `Processed` if at least one channel sent, or all outcomes are success-equivalent skips.
+- `pending_tomorrow` for account-availability constraints.
+- Failure statuses map to `failed_<code>`.
+- Deferred unsupported tiers map to `skipped_unsupported_tier`.
+
+## Firestore Collections
+
+- `accounts`: sender handles, status, daily counters, limits
+- `jobs`: per-lead job records (channel outcomes + selected sender handles)
+- `locks`: single run lock (`locks/orchestrator`)
+
+## Raw Leads Contract
+
+Supported formats:
+
+1. Row format with headers: `creator_url`, `creator_tier`, optional `status`
+2. Matrix format with URL columns and paired `<header> Tier` columns
+
+Current automation tier support:
+
+- `Macro`
+- `Micro`
+- `Submicro`
+- `Ambassador`
+- `Themepage`
+
+Temporarily deferred (auto-skipped):
+
+- `YT Creator`
+- `AI Influencer`
+
+## Reports and Logs
+
+`run_once` prints:
+
+- processed/failed/skipped counts
+- per-lead summary when `--verbose-summary`
+- `failed_tiktok_links`
+- `tracking_append_failed_links`
+- account usage selected/skips
+
+JSON report path:
+
+- `logs/run-reports/run-<timestamp>.json`
 
 ## Troubleshooting
 
 `403 insufficient authentication scopes`:
-- Re-run ADC login with Sheets + Drive scopes.
+
+- rerun ADC login with explicit scopes and set quota project.
+
+`Reauthentication is needed`:
+
+- rerun `gcloud auth application-default login`.
 
 `Run lock already held`:
-- Use `stop_run`, then `unlock_run_lock` if needed.
 
-No IG/TikTok tabs open:
-- Lead may be deduped/skipped or no active account available.
-- Re-run with `--verbose-summary`.
+- `python -m outreach_automation.stop_run`
+- if stale: `python -m outreach_automation.unlock_run_lock`
 
-TikTok attach mode not connecting:
-- Ensure debugger is reachable at `TIKTOK_CDP_URL` or leave auto-start enabled.
+TikTok login shows `Maximum number of attempts reached`:
 
-## Dev Quality Check
+- stop automated login attempts
+- use manual Chrome helper `./ops/open_platform_profile.sh tiktok @handle`
+- wait cooldown window before retrying login
+
+No IG/TikTok tab appears during run:
+
+- likely dedupe/skip/no eligible account/readiness fail
+- rerun with `--verbose-summary` and inspect `doctor` readiness matrix
+
+## Development Quality
 
 ```bash
 make check
 ```
 
-This runs Ruff, MyPy, and pytest.
+Runs Ruff, MyPy, and pytest.

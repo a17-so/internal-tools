@@ -43,6 +43,7 @@ def main() -> int:
 def _run_checks(settings: Settings) -> list[CheckResult]:
     out: list[CheckResult] = []
     out.extend(_check_local_scrape_config(settings))
+    out.append(_check_tiktok_mode(settings))
 
     sheets = _build_sheets_check(settings)
     out.append(sheets)
@@ -58,9 +59,13 @@ def _run_checks(settings: Settings) -> list[CheckResult]:
         )
         out.extend(_check_sender_accounts(settings, firestore_client))
         out.extend(_check_sessions(settings, firestore_client))
+        out.append(_check_account_readiness_matrix(settings, firestore_client))
     else:
         out.append(CheckResult("accounts", False, "Skipped (Firestore unavailable)", blocking=False))
         out.append(CheckResult("sessions", False, "Skipped (Firestore unavailable)", blocking=False))
+        out.append(
+            CheckResult("account_readiness_matrix", False, "Skipped (Firestore unavailable)", blocking=False)
+        )
 
     out.append(_check_tiktok_attach(settings))
     out.extend(_check_gmail_config(settings))
@@ -240,6 +245,125 @@ def _check_gmail_config(settings: Settings) -> list[CheckResult]:
         )
     )
     return out
+
+
+def _check_tiktok_mode(settings: Settings) -> CheckResult:
+    allowed = {"per_account_session", "attach_single_browser"}
+    mode = settings.tiktok_cycling_mode
+    if mode not in allowed:
+        return CheckResult(
+            "tiktok_mode",
+            False,
+            f"Unsupported mode={mode} allowed={sorted(allowed)}",
+            blocking=True,
+        )
+    if settings.tiktok_attach_mode and mode != "attach_single_browser":
+        return CheckResult(
+            "tiktok_mode",
+            False,
+            "TIKTOK_ATTACH_MODE=true requires TIKTOK_CYCLING_MODE=attach_single_browser",
+            blocking=True,
+        )
+    if (not settings.tiktok_attach_mode) and mode == "attach_single_browser":
+        return CheckResult(
+            "tiktok_mode",
+            False,
+            "TIKTOK_CYCLING_MODE=attach_single_browser requires TIKTOK_ATTACH_MODE=true",
+            blocking=True,
+        )
+    return CheckResult(
+        "tiktok_mode",
+        True,
+        f"mode={mode} attach_mode={settings.tiktok_attach_mode}",
+        blocking=False,
+    )
+
+
+def _check_account_readiness_matrix(settings: Settings, firestore_client: FirestoreClient) -> CheckResult:
+    session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
+    gmail_handles = {cfg.email.strip().lower() for cfg in settings.gmail_accounts}
+    attach_reachable = False
+    attach_endpoint = settings.tiktok_cdp_url or ""
+    if settings.tiktok_attach_mode and settings.tiktok_cdp_url:
+        parsed = urlparse(settings.tiktok_cdp_url)
+        if parsed.hostname and parsed.port:
+            attach_reachable = _is_socket_reachable(parsed.hostname, parsed.port)
+
+    entries: list[dict[str, str | bool]] = []
+    total_ready = 0
+    total = 0
+
+    for platform in (Platform.EMAIL, Platform.INSTAGRAM, Platform.TIKTOK):
+        accounts = firestore_client.list_active_accounts(platform)
+        for account in accounts:
+            total += 1
+            ready, reason = _account_readiness(
+                settings=settings,
+                session_manager=session_manager,
+                gmail_handles=gmail_handles,
+                platform=platform,
+                account=account,
+                attach_reachable=attach_reachable,
+            )
+            if ready:
+                total_ready += 1
+            entries.append(
+                {
+                    "platform": platform.value,
+                    "handle": account.handle,
+                    "ready": ready,
+                    "reason": reason or "ok",
+                }
+            )
+
+    detail = json.dumps(
+        {
+            "ready_accounts": total_ready,
+            "total_accounts": total,
+            "tiktok_attach_mode": settings.tiktok_attach_mode,
+            "tiktok_cycling_mode": settings.tiktok_cycling_mode,
+            "tiktok_cdp_url": attach_endpoint,
+            "tiktok_cdp_reachable": attach_reachable,
+            "matrix": entries,
+        },
+        separators=(",", ":"),
+    )
+    return CheckResult("account_readiness_matrix", True, detail, blocking=False)
+
+
+def _account_readiness(
+    *,
+    settings: Settings,
+    session_manager: SessionManager,
+    gmail_handles: set[str],
+    platform: Platform,
+    account: Account,
+    attach_reachable: bool,
+) -> tuple[bool, str | None]:
+    handle_norm = account.handle.strip().lower()
+    if platform == Platform.EMAIL:
+        if handle_norm in gmail_handles:
+            return True, None
+        return False, "missing_refresh_token"
+    if platform == Platform.INSTAGRAM:
+        profile_dir = session_manager.profile_dir_for(platform, account.handle)
+        if profile_dir.exists():
+            return True, None
+        return False, "missing_session"
+    # TikTok
+    if settings.tiktok_attach_mode:
+        pinned = (settings.tiktok_sender_handle or "").strip().lower()
+        if not pinned:
+            return False, "attach_requires_pinned_handle"
+        if handle_norm != pinned:
+            return False, "attach_single_account_mismatch"
+        if attach_reachable or settings.tiktok_attach_auto_start:
+            return True, None
+        return False, "cdp_unreachable"
+    profile_dir = session_manager.profile_dir_for(platform, account.handle)
+    if profile_dir.exists():
+        return True, None
+    return False, "missing_session"
 
 
 if __name__ == "__main__":

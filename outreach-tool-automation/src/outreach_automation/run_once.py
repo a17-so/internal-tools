@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
@@ -98,17 +99,23 @@ def main() -> int:
         try:
             scrape_client = _build_scrape_client(settings)
             session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
+            readiness_fn = _build_account_readiness_checker(
+                settings=settings,
+                session_manager=session_manager,
+            )
+            account_router = AccountRouter(
+                firestore_client,
+                email_handle=settings.email_sender_handle,
+                instagram_handle=settings.instagram_sender_handle,
+                tiktok_handle=settings.tiktok_sender_handle,
+                strict_sender_pinning=settings.strict_sender_pinning,
+                is_account_ready=readiness_fn,
+            )
             orchestrator = Orchestrator(
                 sheets_client=sheets_client,
                 scrape_client=scrape_client,
                 firestore_client=firestore_client,
-                account_router=AccountRouter(
-                    firestore_client,
-                    email_handle=settings.email_sender_handle,
-                    instagram_handle=settings.instagram_sender_handle,
-                    tiktok_handle=settings.tiktok_sender_handle,
-                    strict_sender_pinning=settings.strict_sender_pinning,
-                ),
+                account_router=account_router,
                 email_sender=EmailSender(settings),
                 ig_sender=InstagramDmSender(
                     session_manager,
@@ -156,6 +163,9 @@ def main() -> int:
                                     row_index=args.lead_row_index or -1,
                                     url="",
                                     final_status="interrupted",
+                                    sender_email=None,
+                                    sender_ig=None,
+                                    sender_tiktok=None,
                                     email_status="skipped",
                                     email_error="interrupted",
                                     ig_status="skipped",
@@ -186,10 +196,22 @@ def main() -> int:
                 for item in result.lead_summaries:
                     print(
                         f"- row={item.row_index} url={item.url} final={item.final_status} "
+                        f"sender_email={item.sender_email or '-'} "
+                        f"sender_ig={item.sender_ig or '-'} "
+                        f"sender_tiktok={item.sender_tiktok or '-'} "
                         f"email={item.email_status}:{item.email_error or 'none'} "
                         f"ig={item.ig_status}:{item.ig_error or 'none'} "
                         f"tiktok={item.tiktok_status}:{item.tiktok_error or 'none'}"
                     )
+            route_telemetry = account_router.telemetry()
+            if route_telemetry.selected_counts:
+                print("account_usage_selected:")
+                for key, count in sorted(route_telemetry.selected_counts.items()):
+                    print(f"- {key}={count}")
+            if route_telemetry.skipped_counts:
+                print("account_usage_skips:")
+                for key, count in sorted(route_telemetry.skipped_counts.items()):
+                    print(f"- {key}={count}")
             if not args.no_report:
                 report_path = _write_run_report(
                     started_at=started_at,
@@ -200,6 +222,8 @@ def main() -> int:
                     row_index=args.lead_row_index,
                     dedupe_enabled=not args.ignore_dedupe,
                     result=result,
+                    account_usage_selected=route_telemetry.selected_counts,
+                    account_usage_skips=route_telemetry.skipped_counts,
                 )
                 print(f"run_report={report_path}")
             return 0
@@ -238,6 +262,7 @@ def _run_startup_preflight(
     enabled_channels: set[str],
     dry_run: bool,
 ) -> None:
+    _validate_tiktok_mode(settings)
     if not settings.local_templates_dir.exists():
         raise ValueError(f"LOCAL_TEMPLATES_DIR does not exist: {settings.local_templates_dir}")
     app_template = settings.local_templates_dir / f"{settings.scrape_app.lower()}.py"
@@ -253,6 +278,11 @@ def _run_startup_preflight(
         return
 
     session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
+    if "email" in enabled_channels:
+        _ensure_email_tokens_exist(
+            accounts=firestore_client.list_active_accounts(Platform.EMAIL),
+            settings=settings,
+        )
     if "instagram" in enabled_channels:
         _ensure_account_sessions_exist(
             accounts=firestore_client.list_active_accounts(Platform.INSTAGRAM),
@@ -261,6 +291,10 @@ def _run_startup_preflight(
         )
     if "tiktok" in enabled_channels:
         if settings.tiktok_attach_mode:
+            if not settings.tiktok_sender_handle:
+                raise ValueError(
+                    "TIKTOK_ATTACH_MODE=true is single-account mode. Set TIKTOK_SENDER_HANDLE to pin one account."
+                )
             _ensure_tiktok_attach_available(
                 cdp_url=settings.tiktok_cdp_url,
                 auto_start=settings.tiktok_attach_auto_start,
@@ -295,6 +329,23 @@ def _ensure_account_sessions_exist(
         )
 
 
+def _ensure_email_tokens_exist(*, accounts: list[Account], settings: Settings) -> None:
+    configured = {conf.email.strip().lower() for conf in settings.gmail_accounts}
+    missing: list[str] = []
+    for account in accounts:
+        handle = account.handle.strip().lower()
+        if not handle:
+            continue
+        if handle not in configured:
+            missing.append(account.handle)
+    if missing:
+        joined = ", ".join(sorted(missing))
+        raise ValueError(
+            f"Missing Gmail refresh token config for active email accounts: {joined}. "
+            "Set matching GMAIL_ACCOUNT_*_EMAIL and GMAIL_ACCOUNT_*_REFRESH_TOKEN entries."
+        )
+
+
 def _parse_channels(raw: str) -> set[str]:
     aliases = {
         "email": "email",
@@ -309,6 +360,63 @@ def _parse_channels(raw: str) -> set[str]:
     if not normalized:
         raise ValueError("No valid channels selected. Use email,instagram,tiktok.")
     return normalized
+
+
+def _validate_tiktok_mode(settings: Settings) -> None:
+    allowed = {"per_account_session", "attach_single_browser"}
+    if settings.tiktok_cycling_mode not in allowed:
+        raise ValueError(
+            f"Unsupported TIKTOK_CYCLING_MODE={settings.tiktok_cycling_mode}. Allowed: {sorted(allowed)}"
+        )
+    if settings.tiktok_attach_mode and settings.tiktok_cycling_mode != "attach_single_browser":
+        raise ValueError(
+            "TIKTOK_ATTACH_MODE=true requires TIKTOK_CYCLING_MODE=attach_single_browser"
+        )
+    if not settings.tiktok_attach_mode and settings.tiktok_cycling_mode == "attach_single_browser":
+        raise ValueError(
+            "TIKTOK_CYCLING_MODE=attach_single_browser requires TIKTOK_ATTACH_MODE=true"
+        )
+
+
+def _build_account_readiness_checker(
+    *,
+    settings: Settings,
+    session_manager: SessionManager,
+) -> Callable[[Platform, Account], tuple[bool, str | None]]:
+    gmail_handles = {cfg.email.strip().lower() for cfg in settings.gmail_accounts}
+
+    def _check(platform: Platform, account: Account) -> tuple[bool, str | None]:
+        handle_norm = account.handle.strip().lower()
+        if platform == Platform.EMAIL:
+            if handle_norm not in gmail_handles:
+                return False, "missing_refresh_token"
+            return True, None
+        if platform == Platform.INSTAGRAM:
+            profile_dir = session_manager.profile_dir_for(platform, account.handle)
+            if not profile_dir.exists():
+                return False, "missing_session"
+            return True, None
+        # TikTok
+        if settings.tiktok_attach_mode:
+            if not settings.tiktok_sender_handle:
+                return False, "attach_requires_pinned_handle"
+            if handle_norm != settings.tiktok_sender_handle.strip().lower():
+                return False, "attach_single_account_mismatch"
+            if settings.tiktok_cdp_url:
+                parsed = urlparse(settings.tiktok_cdp_url)
+                host = parsed.hostname
+                port = parsed.port
+                if host and port and _is_cdp_reachable(host, port):
+                    return True, None
+            if settings.tiktok_attach_auto_start:
+                return True, None
+            return False, "cdp_unreachable"
+        profile_dir = session_manager.profile_dir_for(platform, account.handle)
+        if not profile_dir.exists():
+            return False, "missing_session"
+        return True, None
+
+    return _check
 
 
 def _ensure_tiktok_attach_available(*, cdp_url: str | None, auto_start: bool) -> None:
@@ -387,6 +495,8 @@ def _write_run_report(
     row_index: int | None,
     dedupe_enabled: bool,
     result: OrchestratorResult,
+    account_usage_selected: dict[str, int] | None = None,
+    account_usage_skips: dict[str, int] | None = None,
     extra: dict[str, object] | None = None,
 ) -> str:
     report_dir = Path(__file__).resolve().parents[2] / "logs" / "run-reports"
@@ -407,11 +517,16 @@ def _write_run_report(
         "skipped": result.skipped,
         "failed_tiktok_links": result.failed_tiktok_links,
         "tracking_append_failed_links": result.tracking_append_failed_links,
+        "account_usage_selected": account_usage_selected or {},
+        "account_usage_skips": account_usage_skips or {},
         "lead_summaries": [
             {
                 "row_index": item.row_index,
                 "url": item.url,
                 "final_status": item.final_status,
+                "sender_email": item.sender_email,
+                "sender_instagram": item.sender_ig,
+                "sender_tiktok": item.sender_tiktok,
                 "email": {"status": item.email_status, "error": item.email_error},
                 "instagram": {"status": item.ig_status, "error": item.ig_error},
                 "tiktok": {"status": item.tiktok_status, "error": item.tiktok_error},

@@ -28,6 +28,9 @@ def test_write_run_report_creates_expected_json(tmp_path: Path, monkeypatch: Any
                 row_index=12,
                 url="https://www.tiktok.com/@creator",
                 final_status="Processed",
+                sender_email="ethan@a17.so",
+                sender_ig="@ethan",
+                sender_tiktok="@regen.app",
                 email_status="sent",
                 email_error=None,
                 ig_status="sent",
@@ -56,3 +59,6 @@ def test_write_run_report_creates_expected_json(tmp_path: Path, monkeypatch: Any
     assert payload["failed_tiktok_links"] == ["https://www.tiktok.com/@failed"]
     assert payload["tracking_append_failed_links"] == ["https://www.tiktok.com/@trackfail"]
     assert payload["lead_summaries"][0]["row_index"] == 12
+    assert payload["lead_summaries"][0]["sender_email"] == "ethan@a17.so"
+    assert payload["lead_summaries"][0]["sender_instagram"] == "@ethan"
+    assert payload["lead_summaries"][0]["sender_tiktok"] == "@regen.app"

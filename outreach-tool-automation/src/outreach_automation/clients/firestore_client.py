@@ -117,6 +117,22 @@ class FirestoreClient:
                 return acc
         return None
 
+    def list_eligible_accounts(self, platform: Platform) -> list[Account]:
+        candidates = sorted(
+            self._active_account_docs(platform),
+            key=lambda d: (d.to_dict() or {}).get("daily_sent", 0),
+        )
+        out: list[Account] = []
+        for doc in candidates:
+            acc = self._doc_to_account(doc.id, doc.to_dict() or {})
+            if acc.daily_sent >= acc.daily_limit:
+                continue
+            out.append(acc)
+        return out
+
+    def claim_account(self, account_id: str, expected_daily_sent: int) -> bool:
+        return self._try_increment_daily_sent(account_id, expected_daily_sent)
+
     def next_account_for_handle(self, platform: Platform, handle: str) -> Account | None:
         normalized = handle.strip().lower()
         if not normalized:

@@ -299,6 +299,9 @@ def test_partial_failure_does_not_mark_link_error_when_any_channel_sent() -> Non
     assert sheets.cleared_rows == [2]
     assert len(sheets.tracking_rows) == 1
     assert sheets.tracking_rows[0]["sender_email"] == "ethan@a17.so"
+    assert result.lead_summaries[0].sender_email == "ethan@a17.so"
+    assert result.lead_summaries[0].sender_ig == "@ethan"
+    assert result.lead_summaries[0].sender_tiktok == "@ethan"
     assert result.failed_tiktok_links == []
 
 

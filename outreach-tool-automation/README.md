@@ -86,7 +86,8 @@ Important behavior controls:
 - `TIKTOK_SENDER_HANDLE`
 - `STRICT_SENDER_PINNING=true` (recommended)
 - `EMAIL_RECIPIENT_BLOCKLIST`
-- `TIKTOK_ATTACH_MODE=true`
+- `TIKTOK_CYCLING_MODE=per_account_session` (recommended)
+- `TIKTOK_ATTACH_MODE=false` (set `true` only for single-account/manual mode)
 - `TIKTOK_ATTACH_AUTO_START=true`
 - `TIKTOK_CDP_URL=http://127.0.0.1:9222`
 
@@ -177,16 +178,25 @@ Environment and dependency doctor:
 python -m outreach_automation.doctor
 ```
 
+`doctor` includes a per-account readiness matrix (`platform`, `handle`, `ready`, `reason`) so you can verify cycling readiness before live runs.
+
 ## Current Runtime Behavior
 
 - Per-lead channel order: `TikTok -> Instagram -> Email`
+- Account routing: least-used eligible account with strict caps
+- Eligibility gate: `status=active`, under daily cap, and platform readiness must pass
 - URL cell is cleared after each attempted lead
 - Lead becomes `Processed` when at least one channel sends successfully
 - End-of-run prints failed TikTok links
 - End-of-run prints tracking-append failures (if any)
+- End-of-run prints account usage selected and skip reason counts
 - End-of-run writes JSON report to `logs/run-reports/` unless `--no-report`
 - Email has blocklist + duplicate-recipient suppression
 - DM pacing uses jittered waits (non-fixed cadence)
+
+TikTok runtime modes:
+- `TIKTOK_CYCLING_MODE=per_account_session` (default, true multi-account cycling)
+- `TIKTOK_CYCLING_MODE=attach_single_browser` + `TIKTOK_ATTACH_MODE=true` (single-account/manual mode)
 
 ## Troubleshooting
 

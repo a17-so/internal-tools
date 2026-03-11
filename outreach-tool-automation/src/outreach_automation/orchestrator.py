@@ -112,6 +112,9 @@ class LeadRunSummary:
     row_index: int
     url: str
     final_status: str
+    sender_email: str | None
+    sender_ig: str | None
+    sender_tiktok: str | None
     email_status: str
     email_error: str | None
     ig_status: str
@@ -204,6 +207,9 @@ class Orchestrator:
                     row_index=lead.row_index,
                     url=lead.creator_url,
                     final_status="skipped_dedupe",
+                    sender_email=None,
+                    sender_ig=None,
+                    sender_tiktok=None,
                     email_status="skipped",
                     email_error="dedupe",
                     ig_status="skipped",
@@ -244,6 +250,9 @@ class Orchestrator:
                     row_index=lead.row_index,
                     url=lead.creator_url,
                     final_status="failed_missing_tier",
+                    sender_email=None,
+                    sender_ig=None,
+                    sender_tiktok=None,
                     email_status="skipped",
                     email_error="failed_missing_tier",
                     ig_status="skipped",
@@ -264,6 +273,9 @@ class Orchestrator:
                     row_index=lead.row_index,
                     url=lead.creator_url,
                     final_status="failed_invalid_tier",
+                    sender_email=None,
+                    sender_ig=None,
+                    sender_tiktok=None,
                     email_status="skipped",
                     email_error="failed_invalid_tier",
                     ig_status="skipped",
@@ -285,6 +297,9 @@ class Orchestrator:
                     row_index=lead.row_index,
                     url=lead.creator_url,
                     final_status="failed_missing_url",
+                    sender_email=None,
+                    sender_ig=None,
+                    sender_tiktok=None,
                     email_status="skipped",
                     email_error="failed_missing_url",
                     ig_status="skipped",
@@ -420,6 +435,9 @@ class Orchestrator:
             row_index=lead.row_index,
             url=lead.creator_url,
             final_status=final_status,
+            sender_email=sender_email,
+            sender_ig=sender_ig,
+            sender_tiktok=sender_tiktok,
             email_status=email_result.status,
             email_error=email_result.error_code,
             ig_status=ig_result.status,

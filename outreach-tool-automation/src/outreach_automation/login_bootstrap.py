@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 
 from outreach_automation.clients.firestore_client import FirestoreClient
 from outreach_automation.models import Account, Platform
@@ -56,16 +57,22 @@ def main() -> int:
 
 
 def _bootstrap_account(platform: Platform, account: Account, session_manager: SessionManager) -> None:
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("playwright not installed") from exc
-
     profile_dir = session_manager.profile_dir_for(platform, account.handle)
     start_url = _start_url(platform, account.handle)
     print(f"\n[bootstrap] platform={platform.value} handle={account.handle}")
     print(f"[bootstrap] opening {start_url}")
     print(f"[bootstrap] chrome_profile_dir={profile_dir}")
+
+    if platform is Platform.TIKTOK:
+        # Use plain Chrome for TikTok auth to avoid triggering login-attempt anti-bot checks.
+        _open_chrome_profile(profile_dir=str(profile_dir), start_url=start_url)
+        input("Complete login + 2FA in the opened Chrome window, then press Enter here to continue: ")
+        return
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("playwright not installed") from exc
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
@@ -84,8 +91,23 @@ def _start_url(platform: Platform, handle: str) -> str:
     if platform is Platform.INSTAGRAM:
         return f"https://www.instagram.com/{clean_handle}/"
     if platform is Platform.TIKTOK:
-        return f"https://www.tiktok.com/@{clean_handle}"
+        return "https://www.tiktok.com/login"
     raise ValueError(f"Unsupported platform: {platform.value}")
+
+
+def _open_chrome_profile(*, profile_dir: str, start_url: str) -> None:
+    subprocess.run(
+        [
+            "open",
+            "-na",
+            "Google Chrome",
+            "--args",
+            f"--user-data-dir={profile_dir}",
+            "--profile-directory=Default",
+            start_url,
+        ],
+        check=True,
+    )
 
 
 if __name__ == "__main__":

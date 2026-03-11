@@ -95,14 +95,15 @@ This opens normal Chrome with user-data-dir under:
 
 Log in + 2FA manually, then close that Chrome window. Credentials are stored in that profile dir.
 
-Alternative bootstrap command (Playwright persistent profile):
+Alternative bootstrap command:
 
 ```bash
-python -m outreach_automation.login_bootstrap --platform tiktok --account-handle @regenapp
 python -m outreach_automation.login_bootstrap --platform instagram --account-handle @ethan.peps
+python -m outreach_automation.login_bootstrap --platform tiktok --account-handle @regenapp
 ```
 
-Use manual Chrome helper when TikTok shows login attempt limits.
+`login_bootstrap` now uses plain Chrome for TikTok auth and Playwright profile bootstrap for Instagram.
+If TikTok shows login attempt limits, keep using the manual helper and wait cooldown windows.
 
 ### 5) Doctor check
 

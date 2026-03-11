@@ -16,7 +16,12 @@ from outreach_automation.models import (
     ScrapeResponse,
 )
 from outreach_automation.status_mapper import final_sheet_status
-from outreach_automation.tier_resolver import InvalidTierError, MissingTierError, resolve_tier
+from outreach_automation.tier_resolver import (
+    InvalidTierError,
+    MissingTierError,
+    UnsupportedTierDeferredError,
+    resolve_tier,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -282,6 +287,29 @@ class Orchestrator:
                     ig_error="failed_invalid_tier",
                     tiktok_status="skipped",
                     tiktok_error="failed_invalid_tier",
+                ),
+            )
+        except UnsupportedTierDeferredError:
+            self._sheets.update_status(lead.row_index, "skipped_unsupported_tier")
+            self._write_validation_job(lead, "skipped_unsupported_tier", dry_run)
+            self._sheets.clear_creator_link(lead)
+            return (
+                "skipped",
+                None,
+                None,
+                LeadRunSummary(
+                    row_index=lead.row_index,
+                    url=lead.creator_url,
+                    final_status="skipped_unsupported_tier",
+                    sender_email=None,
+                    sender_ig=None,
+                    sender_tiktok=None,
+                    email_status="skipped",
+                    email_error="skipped_unsupported_tier",
+                    ig_status="skipped",
+                    ig_error="skipped_unsupported_tier",
+                    tiktok_status="skipped",
+                    tiktok_error="skipped_unsupported_tier",
                 ),
             )
 

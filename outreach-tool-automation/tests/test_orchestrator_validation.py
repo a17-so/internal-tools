@@ -359,6 +359,36 @@ def test_invalid_tier_fails_validation() -> None:
     assert result.failed_tiktok_links == []
 
 
+def test_deferred_unsupported_tier_is_skipped() -> None:
+    sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://tiktok.com/@user", creator_tier="YT Creator", status="")
+    ]
+    firestore = FakeFirestore()
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=True)
+    assert result.failed == 0
+    assert result.skipped == 1
+    assert sheets._statuses[2] == "skipped_unsupported_tier"
+    assert sheets.cleared_rows == [2]
+    assert sheets.tracking_rows == []
+    assert scraper.last_category is None
+    assert result.failed_tiktok_links == []
+
+
 def test_email_skips_when_address_already_contacted() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()

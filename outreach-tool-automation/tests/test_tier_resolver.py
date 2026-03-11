@@ -1,7 +1,12 @@
 import pytest
 
 from outreach_automation.models import Tier
-from outreach_automation.tier_resolver import InvalidTierError, MissingTierError, resolve_tier
+from outreach_automation.tier_resolver import (
+    InvalidTierError,
+    MissingTierError,
+    UnsupportedTierDeferredError,
+    resolve_tier,
+)
 
 
 @pytest.mark.parametrize(
@@ -30,3 +35,9 @@ def test_missing_tier() -> None:
 def test_invalid_tier() -> None:
     with pytest.raises(InvalidTierError):
         resolve_tier("nano")
+
+
+@pytest.mark.parametrize("raw", ["YT Creator", "yt_creator", "AI Influencer", "ai-influencer"])
+def test_deferred_unsupported_tier(raw: str) -> None:
+    with pytest.raises(UnsupportedTierDeferredError):
+        resolve_tier(raw)

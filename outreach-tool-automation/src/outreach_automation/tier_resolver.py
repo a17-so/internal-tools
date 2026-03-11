@@ -28,10 +28,26 @@ class InvalidTierError(TierValidationError):
     pass
 
 
+class UnsupportedTierDeferredError(TierValidationError):
+    pass
+
+
+_DEFERRED_UNSUPPORTED = {
+    "yt creator",
+    "yt-creator",
+    "yt_creator",
+    "ai influencer",
+    "ai-influencer",
+    "ai_influencer",
+}
+
+
 def resolve_tier(raw: str) -> Tier:
     normalized = raw.strip().lower().replace("_", "-")
     if not normalized:
         raise MissingTierError("creator_tier is required")
+    if normalized in _DEFERRED_UNSUPPORTED:
+        raise UnsupportedTierDeferredError(f"unsupported creator_tier for automation: {raw}")
 
     matched = _ALLOWED.get(normalized)
     if matched is None:

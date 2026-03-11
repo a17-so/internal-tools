@@ -126,3 +126,75 @@ def test_raw_lead_requires_creator_tier(mock_get_config, mock_check_exists, mock
     data = response.get_json()
     assert "creator_tier" in data["error"]
     mock_append.assert_not_called()
+
+
+@patch('api.main._append_url_to_raw_leads_column')
+@patch('api.main._check_creator_exists_across_all_sheets')
+@patch('api.main._get_app_config')
+def test_raw_lead_accepts_ai_influencer_tier(mock_get_config, mock_check_exists, mock_append, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id"
+    }
+    mock_check_exists.return_value = {"exists": False}
+    mock_append.return_value = {"ok": True, "row_added": 2}
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@some_creator",
+        "category": "rawlead",
+        "creator_tier": "AI Influencer",
+    }
+
+    response = client.post('/add_raw_leads', json=payload)
+    assert response.status_code == 200
+
+    args, _ = mock_append.call_args
+    assert args[3] == "AI Influencer"
+
+
+@patch('api.main._append_url_to_raw_leads_column')
+@patch('api.main._check_creator_exists_across_all_sheets')
+@patch('api.main._get_app_config')
+def test_raw_lead_accepts_youtube_creator_tier(mock_get_config, mock_check_exists, mock_append, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id"
+    }
+    mock_check_exists.return_value = {"exists": False}
+    mock_append.return_value = {"ok": True, "row_added": 2}
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@some_creator",
+        "category": "rawlead",
+        "creator_tier": "YT Creator",
+    }
+
+    response = client.post('/add_raw_leads', json=payload)
+    assert response.status_code == 200
+
+    args, _ = mock_append.call_args
+    assert args[3] == "YT Creator"
+
+
+@patch('api.main._append_url_to_raw_leads_column')
+@patch('api.main._check_creator_exists_across_all_sheets')
+@patch('api.main._get_app_config')
+def test_raw_lead_rejects_non_whitelisted_tier(mock_get_config, mock_check_exists, mock_append, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id"
+    }
+    mock_check_exists.return_value = {"exists": False}
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@some_creator",
+        "category": "rawlead",
+        "creator_tier": "AI influencers",
+    }
+
+    response = client.post('/add_raw_leads', json=payload)
+    assert response.status_code == 400
+    mock_append.assert_not_called()

@@ -32,22 +32,22 @@ def _log(event: str, **fields: Any) -> None:
 def _normalize_category(category: str) -> str:
     """Normalize category names to standard keys."""
     cat_lower = (category or "").strip().lower()
-    # Map variations to canonical keys
-    if cat_lower in {"macro", "macros"}:
+    # Strict accepted category values (plus internal canonical keys)
+    if cat_lower == "macro":
         return "macro"
-    if cat_lower in {"micro", "micros"}:
+    if cat_lower == "micro":
         return "micro"
-    if cat_lower in {"submicro", "submicros", "sub-micro", "sub-micros"}:
+    if cat_lower == "submicro":
         return "submicro"
-    if cat_lower in {"ambassador", "ambassadors"}:
+    if cat_lower == "ambassador":
         return "ambassador"
-    if cat_lower in {"themepage", "themepages", "theme-page", "theme-pages", "theme page", "theme pages"}:
+    if cat_lower == "themepage":
         return "themepage"
-    if cat_lower in {"rawlead", "rawleads", "raw-lead", "raw-leads", "raw lead", "raw leads"}:
+    if cat_lower == "rawlead":
         return "rawlead"
-    if cat_lower in {"yt_creator", "ytcreator", "yt creator", "yt-creator", "youtube", "youtube creator"}:
+    if cat_lower in {"yt_creator", "yt creator"}:
         return "yt_creator"
-    if cat_lower in {"ai_influencer", "aiinfluencer", "ai influencer", "ai-influencer", "ai influencers", "ai_influencers"}:
+    if cat_lower in {"ai_influencer", "ai influencer"}:
         return "ai_influencer"
     return cat_lower
 
@@ -55,16 +55,20 @@ def _normalize_category(category: str) -> str:
 def _normalize_creator_tier(tier: str) -> str:
     """Normalize creator tier values to canonical sheet values."""
     tier_lower = (tier or "").strip().lower()
-    if tier_lower in {"macro", "macros"}:
+    if tier_lower == "macro":
         return "Macro"
-    if tier_lower in {"micro", "micros"}:
+    if tier_lower == "micro":
         return "Micro"
-    if tier_lower in {"submicro", "submicros", "sub-micro", "sub-micros"}:
+    if tier_lower == "submicro":
         return "Submicro"
-    if tier_lower in {"ambassador", "ambassadors"}:
+    if tier_lower == "ambassador":
         return "Ambassador"
-    if tier_lower in {"themepage", "theme page", "theme-page", "themepages", "theme pages"}:
+    if tier_lower == "themepage":
         return "Themepage"
+    if tier_lower == "yt creator":
+        return "YT Creator"
+    if tier_lower == "ai influencer":
+        return "AI Influencer"
     return ""
 
 

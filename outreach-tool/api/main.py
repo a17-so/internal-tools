@@ -410,6 +410,24 @@ def scrape_endpoint():
     # 1) First, try to extract handles from URL to check if user already exists
     spreadsheet_id = app_cfg.get("sheets_spreadsheet_id") or ""
     cat_key_normalized = _normalize_category(category)
+    # Strict category whitelist for /scrape flow
+    if request.path.endswith("/scrape"):
+        allowed_scrape_categories = {
+            "macro",
+            "micro",
+            "submicro",
+            "ambassador",
+            "themepage",
+            "yt creator",
+            "ai influencer",
+        }
+        category_input = (category or "").strip().lower()
+        if category_input not in allowed_scrape_categories:
+            return jsonify({
+                "error": "Invalid category",
+                "message": "Category must be one of: Macro, Micro, Submicro, Ambassador, Themepage, YT Creator, AI Influencer",
+            }), 400
+
     is_theme_pages = cat_key_normalized == "themepage"
     sheet_name = CATEGORY_TO_SHEET.get(cat_key_normalized)
     
@@ -445,7 +463,7 @@ def scrape_endpoint():
         if not creator_tier:
             return jsonify({
                 "error": "Missing or invalid creator_tier",
-                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, Ambassador, or Themepage",
+                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, Ambassador, Themepage, YT Creator, or AI Influencer",
             }), 400
         
         # IMPORTANT: Check if creator exists in ANY sheet (Macros, Micros, Ambassadors, Theme Pages, Raw Leads)
@@ -517,12 +535,13 @@ def scrape_endpoint():
             return jsonify({"error": "No spreadsheet configured"}), 500
 
         sender_name = app_cfg.get("from_name") or (sender_profile_key.capitalize() if sender_profile_key else "Unknown")
+        yt_sheet_name = sheet_name or CATEGORY_TO_SHEET.get("yt_creator") or "YT Creators"
 
         # 1) Log the raw URL to the YT Creators subsheet first
         _log("yt_creator.append", url=url, sender=sender_name)
         result = _append_url_to_subsheet(
             spreadsheet_id,
-            "YT Creators",
+            yt_sheet_name,
             url,
             sender_name,
             delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
@@ -596,7 +615,7 @@ def scrape_endpoint():
         return jsonify({
             "ok": True,
             "message": "YT Creator lead added successfully",
-            "sheet_name": "YT Creators",
+            "sheet_name": result.get("sheet_name") or yt_sheet_name,
             "row_added": result.get("row_added"),
             "url": url,
             # Contact info scraped from YouTube channel

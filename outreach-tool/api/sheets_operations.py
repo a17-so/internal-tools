@@ -11,6 +11,13 @@ from google_services import _sheets_client
 
 # Cache for sheet IDs to avoid repeated API calls
 _SHEET_ID_CACHE: Dict[str, int] = {}
+_SHEET_TITLE_CACHE: Dict[str, List[str]] = {}
+
+# Accept common tab naming variants for newer categories.
+_SHEET_NAME_ALIASES = {
+    "YT Creators": ["YT Creators", "YouTube Creators", "YouTube Creator", "YT Creator"],
+    "AI Influencers": ["AI Influencers", "AI influencers", "AI Influencer"],
+}
 
 
 def _hyperlink_formula(url: str, label: str) -> str:
@@ -49,6 +56,58 @@ def _get_sheet_id(service: Any, spreadsheet_id: str, sheet_name: str) -> Optiona
     return None
 
 
+def _get_sheet_titles(service: Any, spreadsheet_id: str) -> List[str]:
+    cache_key = f"{spreadsheet_id}:titles"
+    cached = _SHEET_TITLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    meta = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets(properties(title))",
+    ).execute()
+    titles = [
+        (sheet.get("properties") or {}).get("title", "")
+        for sheet in (meta.get("sheets") or [])
+    ]
+    _SHEET_TITLE_CACHE[cache_key] = titles
+    return titles
+
+
+def _resolve_sheet_name(service: Any, spreadsheet_id: str, requested_sheet_name: str) -> str:
+    """Resolve a requested sheet name to an existing tab title (with aliases)."""
+    try:
+        titles = _get_sheet_titles(service, spreadsheet_id)
+        if requested_sheet_name in titles:
+            return requested_sheet_name
+
+        # Try known aliases first.
+        alias_candidates = _SHEET_NAME_ALIASES.get(requested_sheet_name, [])
+        for candidate in alias_candidates:
+            if candidate in titles:
+                _log(
+                    "sheets.resolve_name.alias_match",
+                    requested=requested_sheet_name,
+                    resolved=candidate,
+                )
+                return candidate
+
+        # Last resort: case-insensitive exact match.
+        requested_lower = requested_sheet_name.lower()
+        for title in titles:
+            if title.lower() == requested_lower:
+                _log(
+                    "sheets.resolve_name.casefold_match",
+                    requested=requested_sheet_name,
+                    resolved=title,
+                )
+                return title
+    except Exception as e:
+        _log("sheets.resolve_name.error", requested=requested_sheet_name, error=str(e))
+
+    # Fallback to original so caller gets the normal API error behavior.
+    return requested_sheet_name
+
+
 def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, tt_handle: str, delegated_user: Optional[str] = None) -> Dict[str, Any]:
     """Check if a creator already exists in the spreadsheet by IG or TT handle.
     
@@ -68,11 +127,12 @@ def _check_creator_exists(spreadsheet_id: str, sheet_name: str, ig_handle: str, 
         return {"exists": False, "error": "Sheets client not configured"}
     
     try:
+        resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
         # Read all data from the sheet (columns A-K)
-        _log("sheets.check_exists.request", spreadsheet_id=spreadsheet_id, sheet_name=sheet_name, ig=ig_handle, tt=tt_handle)
+        _log("sheets.check_exists.request", spreadsheet_id=spreadsheet_id, sheet_name=resolved_sheet_name, ig=ig_handle, tt=tt_handle)
         result = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A:K"
+            range=f"{resolved_sheet_name}!A:K"
         ).execute()
         
         values = result.get("values", [])
@@ -407,26 +467,27 @@ def _append_url_to_subsheet(
     first_name = sender_name.split()[0] if sender_name else "Unknown"
 
     try:
+        resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
         # Read existing column B to detect duplicates and find length
         result = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!B:B"
+            range=f"{resolved_sheet_name}!B:B"
         ).execute()
         col_b_values = result.get("values", [])
 
         # Ensure header row exists
         if not col_b_values or (col_b_values[0] and col_b_values[0][0] != "URL"):
             pending_headers = [
-                {"range": f"{sheet_name}!A1", "values": [["Date Added"]]},
-                {"range": f"{sheet_name}!B1", "values": [["URL"]]},
-                {"range": f"{sheet_name}!C1", "values": [["Added By"]]},
+                {"range": f"{resolved_sheet_name}!A1", "values": [["Date Added"]]},
+                {"range": f"{resolved_sheet_name}!B1", "values": [["URL"]]},
+                {"range": f"{resolved_sheet_name}!C1", "values": [["Added By"]]},
             ]
             service.spreadsheets().values().batchUpdate(
                 spreadsheetId=spreadsheet_id,
                 body={"valueInputOption": "USER_ENTERED", "data": pending_headers},
             ).execute()
             # Bold the header row
-            sheet_id = _get_sheet_id(service, spreadsheet_id, sheet_name)
+            sheet_id = _get_sheet_id(service, spreadsheet_id, resolved_sheet_name)
             if sheet_id is not None:
                 service.spreadsheets().batchUpdate(
                     spreadsheetId=spreadsheet_id,
@@ -457,19 +518,19 @@ def _append_url_to_subsheet(
         for idx, row in enumerate(col_b_values[1:], start=2):
             cell_value = (row[0] if row else "").strip()
             if cell_value == url:
-                _log("subsheet.append.duplicate", sheet_name=sheet_name, url=url, row=idx)
+                _log("subsheet.append.duplicate", sheet_name=resolved_sheet_name, url=url, row=idx)
                 return {
                     "ok": False,
                     "error": "Duplicate URL",
-                    "message": f"URL already exists in '{sheet_name}' at row {idx}",
+                    "message": f"URL already exists in '{resolved_sheet_name}' at row {idx}",
                     "duplicate_row": idx,
                 }
 
         next_row = len(col_b_values) + 1
         writes = [
-            {"range": f"{sheet_name}!A{next_row}", "values": [[date_str]]},
-            {"range": f"{sheet_name}!B{next_row}", "values": [[url]]},
-            {"range": f"{sheet_name}!C{next_row}", "values": [[first_name]]},
+            {"range": f"{resolved_sheet_name}!A{next_row}", "values": [[date_str]]},
+            {"range": f"{resolved_sheet_name}!B{next_row}", "values": [[url]]},
+            {"range": f"{resolved_sheet_name}!C{next_row}", "values": [[first_name]]},
         ]
         service.spreadsheets().values().batchUpdate(
             spreadsheetId=spreadsheet_id,
@@ -478,13 +539,13 @@ def _append_url_to_subsheet(
 
         _log(
             "subsheet.append.success",
-            sheet_name=sheet_name,
+            sheet_name=resolved_sheet_name,
             row=next_row,
             sender=first_name,
         )
         return {
             "ok": True,
-            "sheet_name": sheet_name,
+            "sheet_name": resolved_sheet_name,
             "row_added": next_row,
             "stored_sender": first_name,
             "url": url,
@@ -504,16 +565,17 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
 
     body = {"values": [row_values]}
     try:
+        resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
         _log(
             "sheets.append.request",
             spreadsheet_id=spreadsheet_id,
-            sheet_name=sheet_name,
+            sheet_name=resolved_sheet_name,
             row_len=len(row_values),
             delegated_user=bool(delegated_user),
         )
         resp = service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range=f"{sheet_name}!A:K",
+            range=f"{resolved_sheet_name}!A:K",
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body=body,
@@ -531,7 +593,7 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
                 row_index_zero_based = appended_row_one_based - 1
 
                 # Lookup sheetId (cached)
-                cache_key = f"{spreadsheet_id}:{sheet_name}"
+                cache_key = f"{spreadsheet_id}:{resolved_sheet_name}"
                 sheet_id = _SHEET_ID_CACHE.get(cache_key)
                 if sheet_id is None:
                     meta = service.spreadsheets().get(
@@ -540,7 +602,7 @@ def _append_to_sheet(spreadsheet_id: str, sheet_name: str, row_values: List[Any]
                     ).execute()
                     for s in (meta.get("sheets") or []):
                         props = s.get("properties") or {}
-                        if props.get("title") == sheet_name:
+                        if props.get("title") == resolved_sheet_name:
                             sheet_id = int(props.get("sheetId"))
                             _SHEET_ID_CACHE[cache_key] = sheet_id
                             break

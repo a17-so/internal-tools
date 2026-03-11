@@ -2,14 +2,18 @@
 
 import os
 import json
+import shutil
+import subprocess
 from typing import List, Optional, Tuple, Any
 
 try:
     from google.oauth2 import service_account
+    from google.oauth2.credentials import Credentials as UserCredentials
     from googleapiclient.discovery import build
     import google.auth
 except Exception:
     service_account = None
+    UserCredentials = None
     build = None
     google = None
 
@@ -95,12 +99,81 @@ def _load_default_credentials(scopes: List[str]):
         return None
 
 
+def _load_gcloud_cli_credentials():
+    """Load short-lived user credentials from gcloud CLI login.
+
+    This fallback supports local dev when no service account key/ADC file exists,
+    but the developer is already authenticated via `gcloud auth login`.
+    """
+    if UserCredentials is None:
+        _log("google.credentials.gcloud.no_library")
+        return None
+
+    gcloud_path = shutil.which("gcloud")
+    if not gcloud_path:
+        _log("google.credentials.gcloud.not_found")
+        return None
+
+    try:
+        token_proc = subprocess.run(
+            [gcloud_path, "auth", "print-access-token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as e:
+        _log("google.credentials.gcloud.exec_error", error=str(e))
+        return None
+
+    if token_proc.returncode != 0:
+        _log(
+            "google.credentials.gcloud.token_error",
+            returncode=token_proc.returncode,
+            stderr=(token_proc.stderr or "").strip(),
+        )
+        return None
+
+    token = (token_proc.stdout or "").strip()
+    if not token:
+        _log("google.credentials.gcloud.empty_token")
+        return None
+
+    quota_project = None
+    try:
+        project_proc = subprocess.run(
+            [gcloud_path, "config", "get-value", "project"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if project_proc.returncode == 0:
+            value = (project_proc.stdout or "").strip()
+            if value and value != "(unset)":
+                quota_project = value
+    except Exception:
+        pass
+
+    creds = UserCredentials(token=token)
+    if quota_project:
+        try:
+            creds = creds.with_quota_project(quota_project)
+        except Exception:
+            pass
+
+    _log("google.credentials.from_gcloud_cli", quota_project=quota_project)
+    return creds
+
+
 def _sheets_client(delegated_user: Optional[str] = None):
     """Get Google Sheets API client."""
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = _load_service_account_credentials(scopes, delegated_user=delegated_user)
     if creds is None:
         creds = _load_default_credentials(scopes)
+    if creds is None:
+        creds = _load_gcloud_cli_credentials()
     if creds is None:
         _log("sheets.client.no_credentials")
         return None
@@ -127,6 +200,10 @@ def _gmail_client(delegated_user_override: Optional[str] = None) -> Optional[Tup
         creds = _load_default_credentials(scopes)
         if creds is not None and delegated_user:
             _log("gmail.client.delegation_skipped_for_adc", user=delegated_user)
+    if creds is None:
+        creds = _load_gcloud_cli_credentials()
+        if creds is not None and delegated_user:
+            _log("gmail.client.delegation_skipped_for_gcloud", user=delegated_user)
     if creds is None:
         _log("gmail.client.no_credentials")
         return None

@@ -72,8 +72,9 @@ Recommended routing defaults:
   - Keep active TikTok accounts at `daily_limit=25` for `25/25/25` run behavior.
 - Instagram attach mode (recommended to avoid separate Playwright windows):
   - `IG_ATTACH_MODE=true`
-  - `IG_CDP_URL=http://127.0.0.1:9222`
+  - `IG_CDP_URL=http://127.0.0.1:9232`
   - `IG_ATTACH_AUTO_START=false`
+  - If you intentionally reuse TikTok’s debug browser, set `IG_CDP_URL` to that same port.
 - Optional run-level reset:
   - `RESET_COUNTERS_ON_RUN_EXIT=true` (resets account counters when run ends)
 
@@ -165,8 +166,14 @@ python -m outreach_automation.run_once --live --channels tiktok --max-leads 90 -
 Channel-specific:
 
 ```bash
-python -m outreach_automation.run_once --live --channels tiktok --max-leads 5 --ignore-dedupe --verbose-summary
+python -m outreach_automation.run_once --live --channels tiktok --max-leads 5 --verbose-summary
 python -m outreach_automation.run_once --live --channels instagram,email --max-leads 10 --verbose-summary
+```
+
+Full 75-lead run (25/25/25 TikTok cycling with all channels enabled):
+
+```bash
+python -m outreach_automation.run_once --live --channels email,instagram,tiktok --max-leads 75 --verbose-summary
 ```
 
 ### Stop / Recovery
@@ -228,6 +235,7 @@ Status mapping:
 - `pending_tomorrow` for account-availability constraints.
 - Failure statuses map to `failed_<code>`.
 - Deferred unsupported tiers map to `skipped_unsupported_tier`.
+- Dedupe is disabled by default in runtime; `--ignore-dedupe` is a no-op legacy flag.
 
 ## Firestore Collections
 
@@ -303,7 +311,7 @@ Instagram summary shows `failed:missing_ig_auth`:
 
 No IG/TikTok tab appears during run:
 
-- likely dedupe/skip/no eligible account/readiness fail
+- likely skip/no eligible account/readiness fail
 - rerun with `--verbose-summary` and inspect `doctor` readiness matrix
 
 ## Development Quality

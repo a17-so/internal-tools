@@ -180,10 +180,16 @@ async def _open_thread(page: Any, ig_handle: str) -> bool:
         raise RuntimeError("missing ig auth")
     opened = await _open_thread_via_profile_message(page, ig_handle)
     if opened:
+        _LOG.info("instagram thread opened via profile message CTA", extra={"ig_handle": ig_handle})
         return True
+    _LOG.info("instagram profile CTA path unavailable, trying inbox search", extra={"ig_handle": ig_handle})
     opened = await _open_thread_via_inbox_search(page, ig_handle)
     if not opened and await _needs_login(page):
         raise RuntimeError("missing ig auth")
+    if opened:
+        _LOG.info("instagram thread opened via inbox search", extra={"ig_handle": ig_handle})
+    else:
+        _LOG.info("instagram thread not found in inbox search", extra={"ig_handle": ig_handle})
     return opened
 
 
@@ -197,10 +203,17 @@ async def _open_thread_via_profile_message(page: Any, ig_handle: str) -> bool:
     try:
         button = await _find_first(page, INSTAGRAM_MESSAGE_BUTTONS)
     except RuntimeError:
+        _LOG.info("instagram profile message CTA missing", extra={"ig_handle": ig_handle})
         return False
     await button.click()
     await page.wait_for_timeout(random.randint(1200, 2600))
-    return True
+    await _dismiss_instagram_popups(page)
+    # Some profiles show a Message CTA but do not open a writable composer.
+    # Treat that as a miss and fallback to inbox search flow.
+    has_input = await _has_dm_input(page)
+    if not has_input:
+        _LOG.info("instagram profile CTA click did not open writable composer", extra={"ig_handle": ig_handle})
+    return has_input
 
 
 async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
@@ -216,6 +229,7 @@ async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
         with contextlib.suppress(RuntimeError):
             search = await _find_first(page, INSTAGRAM_INBOX_SEARCH_INPUTS)
         if search is None:
+            _LOG.info("instagram inbox search input not found", extra={"ig_handle": ig_handle})
             return False
 
     await search.click()
@@ -232,7 +246,12 @@ async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
         if target in text:
             await row.click()
             await page.wait_for_timeout(random.randint(1000, 2200))
-            return True
+            await _dismiss_instagram_popups(page)
+            if await _has_dm_input(page):
+                return True
+            # Continue scanning if this row did not open a writable thread.
+            continue
+    _LOG.info("instagram inbox search found no matching thread row", extra={"ig_handle": ig_handle})
     return False
 
 
@@ -264,6 +283,14 @@ async def _find_all(page: Any, selectors: list[str]) -> list[Any]:
         if out:
             return out
     return out
+
+
+async def _has_dm_input(page: Any) -> bool:
+    for selector in INSTAGRAM_DM_INPUTS:
+        with contextlib.suppress(Exception):
+            if await page.locator(selector).count() > 0:
+                return True
+    return False
 
 
 async def _dismiss_instagram_popups(page: Any) -> None:

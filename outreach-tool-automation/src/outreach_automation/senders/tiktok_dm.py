@@ -224,14 +224,13 @@ async def _find_dm_input_with_recovery(page: Any) -> Any:
 
 
 async def _open_profile_message_thread(page: Any) -> bool:
-    # Prefer the profile CTA link with a user-specific conversation id.
+    # Prefer profile CTA link with a user-specific conversation id.
     link_candidates = page.locator("a[href*='/messages?'][href*='u=']")
     link_count = await link_candidates.count()
     for idx in range(link_count):
         candidate = link_candidates.nth(idx)
-        text = (await candidate.inner_text()).strip().lower()
         href = (await candidate.get_attribute("href") or "").lower()
-        if text == "message" and "u=" in href:
+        if "u=" in href:
             await candidate.click()
             return True
 
@@ -248,6 +247,18 @@ async def _open_profile_message_thread(page: Any) -> bool:
             continue
         await candidate.click()
         return True
+
+    # Last fallback: a visible message-like CTA with common attributes.
+    fallback = page.locator(
+        "[data-e2e*='message' i], [aria-label*='message' i], [title*='message' i]"
+    )
+    fallback_count = await fallback.count()
+    for idx in range(fallback_count):
+        candidate = fallback.nth(idx)
+        with contextlib.suppress(Exception):
+            if await candidate.is_visible():
+                await candidate.click()
+                return True
     return False
 
 

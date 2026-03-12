@@ -26,10 +26,22 @@ TIKTOK_MESSAGE_BUTTONS = [
 ]
 
 TIKTOK_DM_INPUTS = [
+    "input[placeholder*='send a message' i]",
+    "input[placeholder*='message' i]",
+    "input[aria-label*='message' i]",
     "[data-e2e='chat-input'] div[contenteditable='true']",
     "[data-e2e='message-input-area'] div[contenteditable='true']",
+    "[data-e2e='message-input-area'] [contenteditable='plaintext-only']",
+    "[data-e2e='chat-input'] [contenteditable='plaintext-only']",
+    "[data-e2e*='chat-input'] [contenteditable]",
+    "[data-e2e*='message-input'] [contenteditable]",
+    "div[role='textbox'][contenteditable='true']",
+    "div[role='textbox'][contenteditable='plaintext-only']",
+    "div[aria-label*='message' i][contenteditable]",
     "div[contenteditable='true'][role='textbox']",
+    "div[contenteditable='plaintext-only'][role='textbox']",
     "div[contenteditable='true']",
+    "div[contenteditable='plaintext-only']",
     "textarea[placeholder*='message' i]",
     "textarea",
 ]

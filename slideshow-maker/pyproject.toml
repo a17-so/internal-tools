@@ -3,15 +3,29 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "slideshow-machine"
+name = "slideshow-maker"
 version = "0.1.0"
-description = "Playwright-first slideshow backfill and generation pipeline"
+description = "Python CLI tool for generating TikTok slideshow variations"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "playwright>=1.52.0",
+  "Pillow>=10.0.0",
 ]
 
+[project.optional-dependencies]
+flow = [
+  "playwright>=1.48.0",
+]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+slideshow-maker = "slideshow_maker.cli:main"
+
+[tool.setuptools]
+packages = ["slideshow_maker", "slideshow_maker.formats", "slideshow_maker.sources"]
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
 testpaths = ["tests"]
+pythonpath = ["."]

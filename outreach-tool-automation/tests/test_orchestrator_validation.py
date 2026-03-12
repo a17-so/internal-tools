@@ -1,6 +1,7 @@
 from typing import Any
 
 from outreach_automation.account_router import RoutedAccounts
+from outreach_automation.clients.local_scraper_client import ProfileNotFoundError
 from outreach_automation.models import (
     Account,
     AccountStatus,
@@ -99,6 +100,12 @@ class FakeScraper:
         )
 
 
+class MissingProfileScraper(FakeScraper):
+    def scrape(self, payload: Any) -> ScrapeResponse:
+        _ = payload
+        raise ProfileNotFoundError("SearchAPI returned no profile for @user")
+
+
 class FakeFirestore:
     def __init__(self) -> None:
         self.jobs: list[tuple[str, Any]] = []
@@ -124,6 +131,10 @@ class FakeFirestore:
 class FakeRouter:
     def route_all(self) -> RoutedAccounts:
         return self.route_selected(enable_email=True, enable_instagram=True, enable_tiktok=True)
+
+    def has_available(self, platform: Platform) -> bool:
+        _ = platform
+        return True
 
     def route_selected(
         self,
@@ -389,7 +400,34 @@ def test_deferred_unsupported_tier_is_skipped() -> None:
     assert result.failed_tiktok_links == []
 
 
-def test_email_skips_when_address_already_contacted() -> None:
+def test_missing_profile_is_skipped_and_cleared() -> None:
+    sheets = FakeSheets()
+    firestore = FakeFirestore()
+    scraper = MissingProfileScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.failed == 0
+    assert result.skipped == 1
+    assert sheets._statuses[2] == "skipped_profile_not_found"
+    assert sheets.cleared_rows == [2]
+    assert result.lead_summaries[0].final_status == "skipped_profile_not_found"
+    assert len(firestore.jobs) == 1
+    assert firestore.jobs[0][1].status == "completed"
+
+
+def test_email_still_sends_when_address_was_already_contacted() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()
     firestore.processed_email.add("test@example.com")
@@ -411,8 +449,9 @@ def test_email_skips_when_address_already_contacted() -> None:
     assert result.processed == 1
     assert len(firestore.jobs) == 1
     record = firestore.jobs[0][1]
-    assert record.email_status.status == "skipped"
-    assert record.email_status.error_code == "email_already_contacted"
+    # Dedupe is intentionally disabled in v1 automation so every raw lead is attempted.
+    assert record.email_status.status == "sent"
+    assert record.email_status.error_code is None
 
 
 def test_dedupe_skip_clears_and_marks_row() -> None:

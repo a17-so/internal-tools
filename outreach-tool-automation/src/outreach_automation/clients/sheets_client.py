@@ -3,12 +3,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import google.auth
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.utils import ValueInputOption
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from outreach_automation.models import LeadRow
 
@@ -16,6 +23,26 @@ _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+
+
+def _extract_status_code(exc: gspread.exceptions.APIError) -> int:
+    response: Any = getattr(exc, "response", None)
+    if response is None:
+        return 0
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    try:
+        return int(status_code)
+    except Exception:
+        return 0
+
+
+def _is_retryable_gspread_error(exc: BaseException) -> bool:
+    if not isinstance(exc, gspread.exceptions.APIError):
+        return False
+    status = _extract_status_code(exc)
+    return status == 429 or status >= 500
 
 
 @dataclass(slots=True)
@@ -126,22 +153,64 @@ class SheetsClient:
                 break
         return out
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=1.5, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_gspread_error),
+    )
     def update_status(self, row_index: int, status: str) -> None:
         if self._columns.status is None:
             return
         self._sheet.update_cell(row_index, self._columns.status, status)
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=1.5, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_gspread_error),
+    )
     def clear_creator_link(self, lead: LeadRow) -> None:
         col = self._resolve_lead_url_col(lead)
         if col is None:
             return
+        if lead.tier_col_index is not None:
+            row_range = f"{self._col_letter(col)}{lead.row_index}:{self._col_letter(lead.tier_col_index)}{lead.row_index}"
+            self._sheet.update(row_range, [["", ""]], value_input_option=ValueInputOption.user_entered)
+            return
         self._sheet.update_cell(lead.row_index, col, "")
-        if lead.tier_col_index is not None:
-            self._sheet.update_cell(lead.row_index, lead.tier_col_index, "")
-        self._set_cell_background_color(lead.row_index, col, red=1.0, green=1.0, blue=1.0)
-        if lead.tier_col_index is not None:
-            self._set_cell_background_color(lead.row_index, lead.tier_col_index, red=1.0, green=1.0, blue=1.0)
 
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=1.5, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_gspread_error),
+    )
+    def finalize_lead(self, *, lead: LeadRow, status: str) -> None:
+        updates: list[dict[str, Any]] = []
+        if self._columns.status is not None:
+            status_range = f"{self._col_letter(self._columns.status)}{lead.row_index}"
+            updates.append({"range": status_range, "values": [[status]]})
+
+        col = self._resolve_lead_url_col(lead)
+        if col is not None:
+            if lead.tier_col_index is not None:
+                clear_range = f"{self._col_letter(col)}{lead.row_index}:{self._col_letter(lead.tier_col_index)}{lead.row_index}"
+                updates.append({"range": clear_range, "values": [["", ""]]})
+            else:
+                clear_range = f"{self._col_letter(col)}{lead.row_index}"
+                updates.append({"range": clear_range, "values": [[""]]})
+
+        if not updates:
+            return
+        self._sheet.batch_update(updates, value_input_option=ValueInputOption.user_entered)
+
+    @retry(
+        reraise=True,
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=1.5, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_gspread_error),
+    )
     def append_outreach_tracking_row(
         self,
         *,
@@ -216,42 +285,14 @@ class SheetsClient:
             return ""
         return f'=HYPERLINK("https://www.tiktok.com/@{normalized}","@{normalized}")'
 
-    def _set_cell_background_color(
-        self,
-        row_index: int,
-        col_index: int,
-        *,
-        red: float,
-        green: float,
-        blue: float,
-    ) -> None:
-        self._sheet.spreadsheet.batch_update(
-            {
-                "requests": [
-                    {
-                        "repeatCell": {
-                            "range": {
-                                "sheetId": self._sheet.id,
-                                "startRowIndex": row_index - 1,
-                                "endRowIndex": row_index,
-                                "startColumnIndex": col_index - 1,
-                                "endColumnIndex": col_index,
-                            },
-                            "cell": {
-                                "userEnteredFormat": {
-                                    "backgroundColor": {
-                                        "red": red,
-                                        "green": green,
-                                        "blue": blue,
-                                    }
-                                }
-                            },
-                            "fields": "userEnteredFormat.backgroundColor",
-                        }
-                    }
-                ]
-            }
-        )
+    @staticmethod
+    def _col_letter(col_idx_one_based: int) -> str:
+        idx = col_idx_one_based
+        out = ""
+        while idx > 0:
+            idx, rem = divmod(idx - 1, 26)
+            out = chr(65 + rem) + out
+        return out
 
     def _fetch_matrix_urls(
         self,

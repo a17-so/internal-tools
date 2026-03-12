@@ -7,11 +7,13 @@ from typing import Protocol
 from uuid import uuid4
 
 from outreach_automation.account_router import RoutedAccounts
+from outreach_automation.clients.local_scraper_client import ProfileNotFoundError
 from outreach_automation.models import (
     Account,
     ChannelResult,
     JobRecord,
     LeadRow,
+    Platform,
     ScrapePayload,
     ScrapeResponse,
 )
@@ -59,6 +61,7 @@ class FirestoreClientProto(Protocol):
 
 class AccountRouterProto(Protocol):
     def route_all(self) -> RoutedAccounts: ...
+    def has_available(self, platform: Platform) -> bool: ...
     def route_selected(
         self,
         *,
@@ -144,6 +147,7 @@ class Orchestrator:
         enable_instagram: bool = True,
         enable_tiktok: bool = True,
         dedupe_enabled: bool = True,
+        stop_when_tiktok_exhausted: bool = False,
     ) -> None:
         self._sheets = sheets_client
         self._scraper = scrape_client
@@ -158,6 +162,7 @@ class Orchestrator:
         self._enable_instagram = enable_instagram
         self._enable_tiktok = enable_tiktok
         self._dedupe_enabled = dedupe_enabled
+        self._stop_when_tiktok_exhausted = stop_when_tiktok_exhausted
 
     def run(self, batch_size: int, dry_run: bool, row_index: int | None = None) -> OrchestratorResult:
         leads = self._sheets.fetch_unprocessed(batch_size=batch_size, row_index=row_index)
@@ -170,6 +175,13 @@ class Orchestrator:
         lead_summaries: list[LeadRunSummary] = []
 
         for lead in leads:
+            if (
+                self._enable_tiktok
+                and self._stop_when_tiktok_exhausted
+                and not self._router.has_available(Platform.TIKTOK)
+            ):
+                _LOG.info("stopping run because no TikTok accounts are currently available")
+                break
             result, failed_tiktok_link, tracking_append_failed_link, summary = self._process_lead(
                 lead=lead,
                 dry_run=dry_run,
@@ -202,8 +214,7 @@ class Orchestrator:
         dry_run: bool,
     ) -> tuple[str, str | None, str | None, LeadRunSummary | None]:
         if self._dedupe_enabled and self._firestore.was_processed_url(lead.creator_url):
-            self._sheets.update_status(lead.row_index, "skipped_dedupe")
-            self._sheets.clear_creator_link(lead)
+            self._safe_finalize_lead(lead, "skipped_dedupe")
             return (
                 "skipped",
                 None,
@@ -244,9 +255,8 @@ class Orchestrator:
             tier = resolve_tier(lead.creator_tier)
             category = tier.value
         except MissingTierError:
-            self._sheets.update_status(lead.row_index, "failed_missing_tier")
+            self._safe_finalize_lead(lead, "failed_missing_tier")
             self._write_validation_job(lead, "failed_missing_tier", dry_run)
-            self._sheets.clear_creator_link(lead)
             return (
                 "failed",
                 None,
@@ -267,9 +277,8 @@ class Orchestrator:
                 ),
             )
         except InvalidTierError:
-            self._sheets.update_status(lead.row_index, "failed_invalid_tier")
+            self._safe_finalize_lead(lead, "failed_invalid_tier")
             self._write_validation_job(lead, "failed_invalid_tier", dry_run)
-            self._sheets.clear_creator_link(lead)
             return (
                 "failed",
                 None,
@@ -290,9 +299,8 @@ class Orchestrator:
                 ),
             )
         except UnsupportedTierDeferredError:
-            self._sheets.update_status(lead.row_index, "skipped_unsupported_tier")
+            self._safe_finalize_lead(lead, "skipped_unsupported_tier")
             self._write_validation_job(lead, "skipped_unsupported_tier", dry_run)
-            self._sheets.clear_creator_link(lead)
             return (
                 "skipped",
                 None,
@@ -314,9 +322,8 @@ class Orchestrator:
             )
 
         if not lead.creator_url.strip():
-            self._sheets.update_status(lead.row_index, "failed_missing_url")
+            self._safe_finalize_lead(lead, "failed_missing_url")
             self._write_validation_job(lead, "failed_missing_url", dry_run)
-            self._sheets.clear_creator_link(lead)
             return (
                 "failed",
                 None,
@@ -381,16 +388,13 @@ class Orchestrator:
                 ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if self._enable_email:
-                if scrape.email_to and self._firestore.was_processed_email(scrape.email_to):
-                    email_result = ChannelResult(status="skipped", error_code="email_already_contacted")
-                else:
-                    email_result = self._email_sender.send(
-                        to_email=scrape.email_to,
-                        subject=scrape.email_subject,
-                        body=scrape.email_body_text,
-                        account=routed.email,
-                        dry_run=dry_run,
-                    )
+                email_result = self._email_sender.send(
+                    to_email=scrape.email_to,
+                    subject=scrape.email_subject,
+                    body=scrape.email_body_text,
+                    account=routed.email,
+                    dry_run=dry_run,
+                )
             else:
                 email_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
@@ -416,8 +420,7 @@ class Orchestrator:
                 except Exception:
                     _LOG.exception("failed to append outreach tracking row", extra={"url": lead.creator_url})
                     tracking_append_failed_link = lead.creator_url
-            self._sheets.update_status(lead.row_index, final_status)
-            self._sheets.clear_creator_link(lead)
+            self._safe_finalize_lead(lead, final_status)
 
             if final_status == "Processed":
                 return_value = "processed"
@@ -430,10 +433,23 @@ class Orchestrator:
                 job_status = "dead"
                 job_error = final_status
 
+        except ProfileNotFoundError as exc:
+            final_status = "skipped_profile_not_found"
+            _LOG.info(
+                "lead skipped because profile was not found",
+                extra={"row_index": lead.row_index, "url": lead.creator_url},
+            )
+            self._safe_finalize_lead(lead, final_status)
+            job_error = str(exc)
+            job_status = "completed"
+            return_value = "skipped"
         except Exception as exc:
-            final_status = "failed_internal_error"
-            self._sheets.update_status(lead.row_index, final_status)
-            self._sheets.clear_creator_link(lead)
+            final_status = self._runtime_status_for_exception(exc)
+            _LOG.exception(
+                "lead processing runtime failure",
+                extra={"row_index": lead.row_index, "url": lead.creator_url},
+            )
+            self._safe_finalize_lead(lead, final_status)
             job_error = str(exc)
             job_status = "dead"
             self._firestore.mark_dead_job(str(uuid4()), reason=str(exc))
@@ -474,6 +490,43 @@ class Orchestrator:
             tiktok_error=tiktok_result.error_code,
         )
         return return_value, failed_tiktok_link, tracking_append_failed_link, summary
+
+    @staticmethod
+    def _runtime_status_for_exception(exc: Exception) -> str:
+        message = str(exc).lower()
+        if "searchapi returned no profile" in message:
+            return "skipped_profile_not_found"
+        if "missing app template file" in message:
+            return "failed_missing_scrape_template"
+        if "missing required environment variable" in message:
+            return "failed_missing_config"
+        return "failed_runtime_error"
+
+    def _safe_update_status(self, row_index: int, status: str) -> None:
+        try:
+            self._sheets.update_status(row_index, status)
+        except Exception:
+            _LOG.exception("failed to update sheet status", extra={"row_index": row_index, "status": status})
+
+    def _safe_clear_creator_link(self, lead: LeadRow) -> None:
+        try:
+            self._sheets.clear_creator_link(lead)
+        except Exception:
+            _LOG.exception("failed to clear creator link", extra={"row_index": lead.row_index, "url": lead.creator_url})
+
+    def _safe_finalize_lead(self, lead: LeadRow, status: str) -> None:
+        finalize = getattr(self._sheets, "finalize_lead", None)
+        if callable(finalize):
+            try:
+                finalize(lead=lead, status=status)
+                return
+            except Exception:
+                _LOG.exception(
+                    "failed to finalize lead row in batch update",
+                    extra={"row_index": lead.row_index, "url": lead.creator_url, "status": status},
+                )
+        self._safe_update_status(lead.row_index, status)
+        self._safe_clear_creator_link(lead)
 
     def _write_validation_job(self, lead: LeadRow, status: str, dry_run: bool) -> None:
         now = datetime.now(UTC)

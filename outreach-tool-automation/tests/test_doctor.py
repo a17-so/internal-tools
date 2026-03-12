@@ -72,6 +72,25 @@ def test_check_tiktok_mode_attach_requires_attach_flag() -> None:
     assert result.blocking is True
 
 
+def test_check_tiktok_mode_attach_per_account_requires_attach_flag() -> None:
+    settings = SimpleNamespace(tiktok_cycling_mode="attach_per_account_browser", tiktok_attach_mode=False)
+    result = _check_tiktok_mode(settings)  # type: ignore[arg-type]
+    assert result.ok is False
+    assert result.blocking is True
+
+
+def test_check_tiktok_attach_per_account_missing_map_is_blocking() -> None:
+    settings = SimpleNamespace(
+        tiktok_attach_mode=True,
+        tiktok_cycling_mode="attach_per_account_browser",
+        tiktok_attach_account_cdp_urls={},
+        tiktok_attach_auto_start=True,
+    )
+    result = _check_tiktok_attach(settings)  # type: ignore[arg-type]
+    assert result.ok is False
+    assert result.blocking is True
+
+
 class _FakeFirestore:
     def list_active_accounts(self, platform: Platform) -> list[Account]:
         if platform == Platform.EMAIL:

@@ -37,18 +37,6 @@ class FakeFirestore:
         }
         self.claims: list[tuple[str, int]] = []
 
-    def next_account(self, platform: Platform) -> Account | None:  # pragma: no cover - proto compatibility
-        accounts = self._accounts.get(platform, [])
-        return accounts[0] if accounts else None
-
-    def next_account_for_handle(
-        self, platform: Platform, handle: str
-    ) -> Account | None:  # pragma: no cover - proto compatibility
-        for account in self._accounts.get(platform, []):
-            if account.handle.lower() == handle.lower():
-                return account
-        return None
-
     def list_eligible_accounts(self, platform: Platform) -> list[Account]:
         return list(self._accounts.get(platform, []))
 
@@ -119,3 +107,22 @@ def test_readiness_filter_skips_unready_and_claims_ready_account() -> None:
     telemetry = router.telemetry()
     assert telemetry.skipped_counts["tiktok:unready:missing_session"] == 1
     assert telemetry.selected_counts["tiktok:@backup"] == 1
+
+
+def test_tiktok_fill_then_cycle_prefers_lowest_id_until_limit() -> None:
+    firestore = FakeFirestore()
+    router = AccountRouter(firestore, tiktok_fill_then_cycle=True)
+    first = router.route(Platform.TIKTOK)
+    second = router.route(Platform.TIKTOK)
+    assert first is not None and second is not None
+    assert first.handle == "@sender"
+    assert second.handle == "@sender"
+
+
+def test_has_available_respects_strict_pinning() -> None:
+    router = AccountRouter(
+        FakeFirestore(),
+        tiktok_handle="@missing",
+        strict_sender_pinning=True,
+    )
+    assert router.has_available(Platform.TIKTOK) is False

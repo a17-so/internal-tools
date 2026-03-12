@@ -18,8 +18,6 @@ class RoutedAccounts:
 
 
 class FirestoreClientProto(Protocol):
-    def next_account(self, platform: Platform) -> Account | None: ...
-    def next_account_for_handle(self, platform: Platform, handle: str) -> Account | None: ...
     def list_eligible_accounts(self, platform: Platform) -> list[Account]: ...
     def claim_account(self, account_id: str, expected_daily_sent: int) -> bool: ...
 
@@ -39,6 +37,7 @@ class AccountRouter:
         instagram_handle: str | None = None,
         tiktok_handle: str | None = None,
         strict_sender_pinning: bool = True,
+        tiktok_fill_then_cycle: bool = False,
         is_account_ready: Callable[[Platform, Account], tuple[bool, str | None]] | None = None,
     ) -> None:
         self._firestore = firestore_client
@@ -46,6 +45,7 @@ class AccountRouter:
         self._instagram_handle = instagram_handle
         self._tiktok_handle = tiktok_handle
         self._strict_sender_pinning = strict_sender_pinning
+        self._tiktok_fill_then_cycle = tiktok_fill_then_cycle
         self._is_account_ready = is_account_ready
         self._selected_counts: dict[str, int] = {}
         self._skipped_counts: dict[str, int] = {}
@@ -82,6 +82,24 @@ class AccountRouter:
             tiktok=self.route(Platform.TIKTOK) if enable_tiktok else None,
         )
 
+    def has_available(self, platform: Platform) -> bool:
+        preferred: str | None = None
+        if platform == Platform.EMAIL:
+            preferred = self._email_handle
+        elif platform == Platform.INSTAGRAM:
+            preferred = self._instagram_handle
+        elif platform == Platform.TIKTOK:
+            preferred = self._tiktok_handle
+        eligible = self._firestore.list_eligible_accounts(platform)
+        if preferred:
+            preferred_norm = preferred.strip().lower()
+            preferred_eligible = [acc for acc in eligible if acc.handle.strip().lower() == preferred_norm]
+            if self._strict_sender_pinning:
+                return any(self._is_ready(platform, account) for account in preferred_eligible)
+            if preferred_eligible:
+                return any(self._is_ready(platform, account) for account in preferred_eligible)
+        return any(self._is_ready(platform, account) for account in eligible)
+
     def telemetry(self) -> AccountRouteTelemetry:
         return AccountRouteTelemetry(
             selected_counts=dict(self._selected_counts),
@@ -111,6 +129,8 @@ class AccountRouter:
 
     def _route_from_pool(self, platform: Platform) -> Account | None:
         eligible = self._firestore.list_eligible_accounts(platform)
+        if platform == Platform.TIKTOK and self._tiktok_fill_then_cycle:
+            eligible = sorted(eligible, key=lambda account: account.id)
         if not eligible:
             self._bump_skip(f"{platform.value}:no_eligible")
             return None

@@ -67,6 +67,7 @@ def _run_checks(settings: Settings) -> list[CheckResult]:
             CheckResult("account_readiness_matrix", False, "Skipped (Firestore unavailable)", blocking=False)
         )
 
+    out.append(_check_ig_attach(settings))
     out.append(_check_tiktok_attach(settings))
     out.extend(_check_gmail_config(settings))
     return out
@@ -167,8 +168,15 @@ def _check_pinned_handle(name: str, handle: str | None, active_accounts: list[Ac
 def _check_sessions(settings: Settings, firestore_client: FirestoreClient) -> list[CheckResult]:
     out: list[CheckResult] = []
     session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
-    ig_missing = _missing_profile_dirs(session_manager, Platform.INSTAGRAM, firestore_client.list_active_accounts(Platform.INSTAGRAM))
-    if settings.tiktok_attach_mode:
+    if bool(getattr(settings, "ig_attach_mode", False)):
+        ig_missing: list[str] = []
+    else:
+        ig_missing = _missing_profile_dirs(
+            session_manager,
+            Platform.INSTAGRAM,
+            firestore_client.list_active_accounts(Platform.INSTAGRAM),
+        )
+    if bool(getattr(settings, "tiktok_attach_mode", False)):
         tt_missing: list[str] = []
     else:
         tt_missing = _missing_profile_dirs(session_manager, Platform.TIKTOK, firestore_client.list_active_accounts(Platform.TIKTOK))
@@ -176,6 +184,56 @@ def _check_sessions(settings: Settings, firestore_client: FirestoreClient) -> li
     out.append(CheckResult("instagram_sessions", not ig_missing, "missing=" + ",".join(ig_missing) if ig_missing else "OK", blocking=bool(ig_missing)))
     out.append(CheckResult("tiktok_sessions", not tt_missing, "missing=" + ",".join(tt_missing) if tt_missing else "OK", blocking=bool(tt_missing)))
     return out
+
+
+def _check_ig_attach(settings: Settings) -> CheckResult:
+    if not settings.ig_attach_mode:
+        return CheckResult("ig_attach_mode", True, "Disabled", blocking=False)
+
+    cdp_map = getattr(settings, "ig_attach_account_cdp_urls", {})
+    if cdp_map:
+        unreachable: list[str] = []
+        invalid: list[str] = []
+        for handle, cdp_url in cdp_map.items():
+            parsed = urlparse(cdp_url)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or not port:
+                invalid.append(f"{handle}={cdp_url}")
+                continue
+            if not _is_socket_reachable(host, port):
+                unreachable.append(f"{handle}={cdp_url}")
+        ok = not invalid and not unreachable
+        blocking = (not ok) and (not settings.ig_attach_auto_start)
+        if ok:
+            detail = f"accounts={len(cdp_map)} reachable=true"
+        else:
+            detail = (
+                f"invalid={invalid} unreachable={unreachable} auto_start={settings.ig_attach_auto_start}"
+            )
+        return CheckResult("ig_attach_mode", ok, detail, blocking=blocking)
+
+    if not settings.ig_cdp_url:
+        return CheckResult("ig_attach_mode", False, "IG_CDP_URL or IG_ATTACH_ACCOUNT_CDP_URLS missing", blocking=True)
+    parsed = urlparse(settings.ig_cdp_url)
+    host = parsed.hostname
+    port = parsed.port
+    if not host or not port:
+        return CheckResult(
+            "ig_attach_mode", False, f"Invalid CDP URL: {settings.ig_cdp_url}", blocking=True
+        )
+    ok = _is_socket_reachable(host, port)
+    blocking = not ok and not settings.ig_attach_auto_start
+    return CheckResult(
+        "ig_attach_mode",
+        ok,
+        (
+            f"{settings.ig_cdp_url} reachable={ok}"
+            if ok
+            else f"{settings.ig_cdp_url} unreachable now (auto_start={settings.ig_attach_auto_start})"
+        ),
+        blocking=blocking,
+    )
 
 
 def _missing_profile_dirs(
@@ -197,25 +255,59 @@ def _missing_profile_dirs(
 def _check_tiktok_attach(settings: Settings) -> CheckResult:
     if not settings.tiktok_attach_mode:
         return CheckResult("tiktok_attach_mode", True, "Disabled", blocking=False)
-    if not settings.tiktok_cdp_url:
-        return CheckResult("tiktok_attach_mode", False, "TIKTOK_CDP_URL missing", blocking=True)
-    parsed = urlparse(settings.tiktok_cdp_url)
-    host = parsed.hostname
-    port = parsed.port
-    if not host or not port:
-        return CheckResult("tiktok_attach_mode", False, f"Invalid CDP URL: {settings.tiktok_cdp_url}", blocking=True)
-    ok = _is_socket_reachable(host, port)
-    blocking = not ok and not settings.tiktok_attach_auto_start
-    return CheckResult(
-        "tiktok_attach_mode",
-        ok,
-        (
-            f"{settings.tiktok_cdp_url} reachable={ok}"
-            if ok
-            else f"{settings.tiktok_cdp_url} unreachable now (auto_start={settings.tiktok_attach_auto_start})"
-        ),
-        blocking=blocking,
-    )
+    mode = getattr(settings, "tiktok_cycling_mode", "attach_single_browser")
+    if mode == "attach_single_browser":
+        if not settings.tiktok_cdp_url:
+            return CheckResult("tiktok_attach_mode", False, "TIKTOK_CDP_URL missing", blocking=True)
+        parsed = urlparse(settings.tiktok_cdp_url)
+        host = parsed.hostname
+        port = parsed.port
+        if not host or not port:
+            return CheckResult(
+                "tiktok_attach_mode", False, f"Invalid CDP URL: {settings.tiktok_cdp_url}", blocking=True
+            )
+        ok = _is_socket_reachable(host, port)
+        blocking = not ok and not settings.tiktok_attach_auto_start
+        return CheckResult(
+            "tiktok_attach_mode",
+            ok,
+            (
+                f"{settings.tiktok_cdp_url} reachable={ok}"
+                if ok
+                else f"{settings.tiktok_cdp_url} unreachable now (auto_start={settings.tiktok_attach_auto_start})"
+            ),
+            blocking=blocking,
+        )
+    if mode == "attach_per_account_browser":
+        cdp_map = getattr(settings, "tiktok_attach_account_cdp_urls", {})
+        if not cdp_map:
+            return CheckResult(
+                "tiktok_attach_mode",
+                False,
+                "TIKTOK_ATTACH_ACCOUNT_CDP_URLS missing",
+                blocking=True,
+            )
+        unreachable: list[str] = []
+        invalid: list[str] = []
+        for handle, cdp_url in cdp_map.items():
+            parsed = urlparse(cdp_url)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or not port:
+                invalid.append(f"{handle}={cdp_url}")
+                continue
+            if not _is_socket_reachable(host, port):
+                unreachable.append(f"{handle}={cdp_url}")
+        ok = not invalid and not unreachable
+        blocking = (not ok) and (not settings.tiktok_attach_auto_start)
+        if ok:
+            detail = f"accounts={len(cdp_map)} reachable=true"
+        else:
+            detail = (
+                f"invalid={invalid} unreachable={unreachable} auto_start={settings.tiktok_attach_auto_start}"
+            )
+        return CheckResult("tiktok_attach_mode", ok, detail, blocking=blocking)
+    return CheckResult("tiktok_attach_mode", False, "Unsupported attach mode config", blocking=True)
 
 
 def _is_socket_reachable(host: str, port: int) -> bool:
@@ -248,8 +340,8 @@ def _check_gmail_config(settings: Settings) -> list[CheckResult]:
 
 
 def _check_tiktok_mode(settings: Settings) -> CheckResult:
-    allowed = {"per_account_session", "attach_single_browser"}
-    mode = settings.tiktok_cycling_mode
+    allowed = {"per_account_session", "attach_single_browser", "attach_per_account_browser"}
+    mode = getattr(settings, "tiktok_cycling_mode", "per_account_session")
     if mode not in allowed:
         return CheckResult(
             "tiktok_mode",
@@ -257,18 +349,18 @@ def _check_tiktok_mode(settings: Settings) -> CheckResult:
             f"Unsupported mode={mode} allowed={sorted(allowed)}",
             blocking=True,
         )
-    if settings.tiktok_attach_mode and mode != "attach_single_browser":
+    if settings.tiktok_attach_mode and mode == "per_account_session":
         return CheckResult(
             "tiktok_mode",
             False,
-            "TIKTOK_ATTACH_MODE=true requires TIKTOK_CYCLING_MODE=attach_single_browser",
+            "TIKTOK_ATTACH_MODE=true cannot use TIKTOK_CYCLING_MODE=per_account_session",
             blocking=True,
         )
-    if (not settings.tiktok_attach_mode) and mode == "attach_single_browser":
+    if (not settings.tiktok_attach_mode) and mode in {"attach_single_browser", "attach_per_account_browser"}:
         return CheckResult(
             "tiktok_mode",
             False,
-            "TIKTOK_CYCLING_MODE=attach_single_browser requires TIKTOK_ATTACH_MODE=true",
+            "TIKTOK_CYCLING_MODE=attach_* requires TIKTOK_ATTACH_MODE=true",
             blocking=True,
         )
     return CheckResult(
@@ -282,10 +374,15 @@ def _check_tiktok_mode(settings: Settings) -> CheckResult:
 def _check_account_readiness_matrix(settings: Settings, firestore_client: FirestoreClient) -> CheckResult:
     session_manager = SessionManager(settings.ig_profile_dir, settings.tiktok_profile_dir)
     gmail_handles = {cfg.email.strip().lower() for cfg in settings.gmail_accounts}
+    ig_attach_mode = bool(getattr(settings, "ig_attach_mode", False))
+    ig_cdp_url = getattr(settings, "ig_cdp_url", None) or ""
+    tiktok_attach_mode = bool(getattr(settings, "tiktok_attach_mode", False))
+    tiktok_cdp_url = getattr(settings, "tiktok_cdp_url", None) or ""
+    tiktok_cycling_mode = getattr(settings, "tiktok_cycling_mode", "per_account_session")
     attach_reachable = False
-    attach_endpoint = settings.tiktok_cdp_url or ""
-    if settings.tiktok_attach_mode and settings.tiktok_cdp_url:
-        parsed = urlparse(settings.tiktok_cdp_url)
+    attach_endpoint = tiktok_cdp_url
+    if tiktok_attach_mode and tiktok_cdp_url:
+        parsed = urlparse(tiktok_cdp_url)
         if parsed.hostname and parsed.port:
             attach_reachable = _is_socket_reachable(parsed.hostname, parsed.port)
 
@@ -320,8 +417,10 @@ def _check_account_readiness_matrix(settings: Settings, firestore_client: Firest
         {
             "ready_accounts": total_ready,
             "total_accounts": total,
-            "tiktok_attach_mode": settings.tiktok_attach_mode,
-            "tiktok_cycling_mode": settings.tiktok_cycling_mode,
+            "ig_attach_mode": ig_attach_mode,
+            "ig_cdp_url": ig_cdp_url,
+            "tiktok_attach_mode": tiktok_attach_mode,
+            "tiktok_cycling_mode": tiktok_cycling_mode,
             "tiktok_cdp_url": attach_endpoint,
             "tiktok_cdp_reachable": attach_reachable,
             "matrix": entries,
@@ -341,25 +440,61 @@ def _account_readiness(
     attach_reachable: bool,
 ) -> tuple[bool, str | None]:
     handle_norm = account.handle.strip().lower()
+    ig_attach_mode = bool(getattr(settings, "ig_attach_mode", False))
+    ig_attach_auto_start = bool(getattr(settings, "ig_attach_auto_start", False))
+    ig_cdp_url = getattr(settings, "ig_cdp_url", None)
+    tiktok_attach_mode = bool(getattr(settings, "tiktok_attach_mode", False))
+    tiktok_attach_auto_start = bool(getattr(settings, "tiktok_attach_auto_start", False))
     if platform == Platform.EMAIL:
         if handle_norm in gmail_handles:
             return True, None
         return False, "missing_refresh_token"
     if platform == Platform.INSTAGRAM:
+        if ig_attach_mode:
+            cdp_map = getattr(settings, "ig_attach_account_cdp_urls", {})
+            cdp_url = cdp_map.get(handle_norm) or cdp_map.get(f"@{handle_norm.lstrip('@')}")
+            if not cdp_url:
+                cdp_url = ig_cdp_url
+            if not cdp_url:
+                return False, "missing_ig_cdp_url"
+            parsed = urlparse(cdp_url)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or not port:
+                return False, "invalid_ig_cdp_url"
+            if _is_socket_reachable(host, port) or ig_attach_auto_start:
+                return True, None
+            return False, "ig_cdp_unreachable"
         profile_dir = session_manager.profile_dir_for(platform, account.handle)
         if profile_dir.exists():
             return True, None
         return False, "missing_session"
     # TikTok
-    if settings.tiktok_attach_mode:
-        pinned = (settings.tiktok_sender_handle or "").strip().lower()
-        if not pinned:
-            return False, "attach_requires_pinned_handle"
-        if handle_norm != pinned:
-            return False, "attach_single_account_mismatch"
-        if attach_reachable or settings.tiktok_attach_auto_start:
-            return True, None
-        return False, "cdp_unreachable"
+    if tiktok_attach_mode:
+        mode = getattr(settings, "tiktok_cycling_mode", "attach_single_browser")
+        if mode == "attach_single_browser":
+            pinned = (settings.tiktok_sender_handle or "").strip().lower()
+            if not pinned:
+                return False, "attach_requires_pinned_handle"
+            if handle_norm != pinned:
+                return False, "attach_single_account_mismatch"
+            if attach_reachable or tiktok_attach_auto_start:
+                return True, None
+            return False, "cdp_unreachable"
+        if mode == "attach_per_account_browser":
+            cdp_map = getattr(settings, "tiktok_attach_account_cdp_urls", {})
+            cdp_url = cdp_map.get(handle_norm) or cdp_map.get(f"@{handle_norm.lstrip('@')}")
+            if not cdp_url:
+                return False, "missing_account_cdp_url"
+            parsed = urlparse(cdp_url)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or not port:
+                return False, "invalid_account_cdp_url"
+            if _is_socket_reachable(host, port) or tiktok_attach_auto_start:
+                return True, None
+            return False, "cdp_unreachable"
+        return False, "unsupported_tiktok_mode"
     profile_dir = session_manager.profile_dir_for(platform, account.handle)
     if profile_dir.exists():
         return True, None

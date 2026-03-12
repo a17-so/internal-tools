@@ -5,6 +5,7 @@ import contextlib
 import random
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -23,12 +24,14 @@ class TiktokDmSender:
         *,
         attach_mode: bool = False,
         cdp_url: str | None = None,
+        cdp_url_resolver: Callable[[str], str | None] | None = None,
         min_seconds_between_sends: int = 3,
         send_jitter_seconds: float = 2.0,
     ) -> None:
         self._session_manager = session_manager
         self._attach_mode = attach_mode
         self._cdp_url = cdp_url
+        self._cdp_url_resolver = cdp_url_resolver
         self._min_seconds_between_sends = max(0, min_seconds_between_sends)
         self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
@@ -43,8 +46,11 @@ class TiktokDmSender:
         self._enforce_send_spacing(account.handle)
 
         profile_dir: Path | None = None
+        selected_cdp_url = self._cdp_url
         if self._attach_mode:
-            if not self._cdp_url:
+            if self._cdp_url_resolver is not None:
+                selected_cdp_url = self._cdp_url_resolver(account.handle)
+            if not selected_cdp_url:
                 return ChannelResult(status="failed", error_code="missing_tiktok_cdp_url")
         else:
             profile_dir = self._session_manager.profile_dir_for(Platform.TIKTOK, account.handle)
@@ -58,7 +64,7 @@ class TiktokDmSender:
                     dm_text=dm_text,
                     profile_dir=profile_dir,
                     attach_mode=self._attach_mode,
-                    cdp_url=self._cdp_url,
+                    cdp_url=selected_cdp_url,
                 )
             )
             return ChannelResult(status="sent")
@@ -168,6 +174,14 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
         loc = page.locator(selector)
         if await loc.count() > 0:
             return loc.first
+    # Business account chat composer can be hosted in an iframe.
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        for selector in selectors:
+            loc = frame.locator(selector)
+            if await loc.count() > 0:
+                return loc.first
     raise RuntimeError("No matching selector found")
 
 
@@ -203,6 +217,15 @@ async def _send_message(page: Any) -> None:
             with contextlib.suppress(Exception):
                 await button.first.click()
                 return
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        for selector in TIKTOK_SEND_BUTTONS:
+            button = frame.locator(selector)
+            if await button.count() > 0:
+                with contextlib.suppress(Exception):
+                    await button.first.click()
+                    return
     await page.keyboard.press("Enter")
 
 
@@ -218,14 +241,13 @@ async def _find_dm_input_with_recovery(page: Any) -> Any:
 
 
 async def _open_profile_message_thread(page: Any) -> bool:
-    # Prefer the profile CTA link with a user-specific conversation id.
+    # Prefer profile CTA link with a user-specific conversation id.
     link_candidates = page.locator("a[href*='/messages?'][href*='u=']")
     link_count = await link_candidates.count()
     for idx in range(link_count):
         candidate = link_candidates.nth(idx)
-        text = (await candidate.inner_text()).strip().lower()
         href = (await candidate.get_attribute("href") or "").lower()
-        if text == "message" and "u=" in href:
+        if "u=" in href:
             await candidate.click()
             return True
 
@@ -242,6 +264,18 @@ async def _open_profile_message_thread(page: Any) -> bool:
             continue
         await candidate.click()
         return True
+
+    # Last fallback: a visible message-like CTA with common attributes.
+    fallback = page.locator(
+        "[data-e2e*='message' i], [aria-label*='message' i], [title*='message' i]"
+    )
+    fallback_count = await fallback.count()
+    for idx in range(fallback_count):
+        candidate = fallback.nth(idx)
+        with contextlib.suppress(Exception):
+            if await candidate.is_visible():
+                await candidate.click()
+                return True
     return False
 
 
@@ -258,9 +292,10 @@ async def _settle_dm_thread_page(page: Any) -> None:
 
 
 async def _needs_login(page: Any) -> bool:
-    login_button = page.locator("button:has-text('Log in')")
-    count = int(await login_button.count())
-    return count > 0
+    if "/login" in (page.url or "").lower():
+        return True
+    login_cta = page.locator("button:has-text('Log in'):visible, a:has-text('Log in'):visible")
+    return int(await login_cta.count()) > 0
 
 
 def _extract_handle(url: str) -> str | None:

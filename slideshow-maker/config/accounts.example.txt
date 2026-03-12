@@ -1,4 +1,0 @@
-# One handle or URL per line
-@app.pretti
-@abhaychebium
-https://www.tiktok.com/@advaithakella

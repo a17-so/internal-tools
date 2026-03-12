@@ -12,6 +12,7 @@ from outreach_automation.models import (
     ChannelResult,
     JobRecord,
     LeadRow,
+    Platform,
     ScrapePayload,
     ScrapeResponse,
 )
@@ -59,6 +60,7 @@ class FirestoreClientProto(Protocol):
 
 class AccountRouterProto(Protocol):
     def route_all(self) -> RoutedAccounts: ...
+    def has_available(self, platform: Platform) -> bool: ...
     def route_selected(
         self,
         *,
@@ -144,6 +146,7 @@ class Orchestrator:
         enable_instagram: bool = True,
         enable_tiktok: bool = True,
         dedupe_enabled: bool = True,
+        stop_when_tiktok_exhausted: bool = False,
     ) -> None:
         self._sheets = sheets_client
         self._scraper = scrape_client
@@ -158,6 +161,7 @@ class Orchestrator:
         self._enable_instagram = enable_instagram
         self._enable_tiktok = enable_tiktok
         self._dedupe_enabled = dedupe_enabled
+        self._stop_when_tiktok_exhausted = stop_when_tiktok_exhausted
 
     def run(self, batch_size: int, dry_run: bool, row_index: int | None = None) -> OrchestratorResult:
         leads = self._sheets.fetch_unprocessed(batch_size=batch_size, row_index=row_index)
@@ -170,6 +174,13 @@ class Orchestrator:
         lead_summaries: list[LeadRunSummary] = []
 
         for lead in leads:
+            if (
+                self._enable_tiktok
+                and self._stop_when_tiktok_exhausted
+                and not self._router.has_available(Platform.TIKTOK)
+            ):
+                _LOG.info("stopping run because no TikTok accounts are currently available")
+                break
             result, failed_tiktok_link, tracking_append_failed_link, summary = self._process_lead(
                 lead=lead,
                 dry_run=dry_run,

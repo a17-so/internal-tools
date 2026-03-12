@@ -107,3 +107,22 @@ def test_readiness_filter_skips_unready_and_claims_ready_account() -> None:
     telemetry = router.telemetry()
     assert telemetry.skipped_counts["tiktok:unready:missing_session"] == 1
     assert telemetry.selected_counts["tiktok:@backup"] == 1
+
+
+def test_tiktok_fill_then_cycle_prefers_lowest_id_until_limit() -> None:
+    firestore = FakeFirestore()
+    router = AccountRouter(firestore, tiktok_fill_then_cycle=True)
+    first = router.route(Platform.TIKTOK)
+    second = router.route(Platform.TIKTOK)
+    assert first is not None and second is not None
+    assert first.handle == "@sender"
+    assert second.handle == "@sender"
+
+
+def test_has_available_respects_strict_pinning() -> None:
+    router = AccountRouter(
+        FakeFirestore(),
+        tiktok_handle="@missing",
+        strict_sender_pinning=True,
+    )
+    assert router.has_available(Platform.TIKTOK) is False

@@ -109,6 +109,7 @@ def main() -> int:
                 instagram_handle=settings.instagram_sender_handle,
                 tiktok_handle=settings.tiktok_sender_handle,
                 strict_sender_pinning=settings.strict_sender_pinning,
+                tiktok_fill_then_cycle=settings.tiktok_fill_then_cycle,
                 is_account_ready=readiness_fn,
             )
             orchestrator = Orchestrator(
@@ -136,6 +137,7 @@ def main() -> int:
                 enable_instagram="instagram" in enabled_channels,
                 enable_tiktok="tiktok" in enabled_channels,
                 dedupe_enabled=not args.ignore_dedupe,
+                stop_when_tiktok_exhausted=("tiktok" in enabled_channels),
             )
             try:
                 result = orchestrator.run(
@@ -144,6 +146,9 @@ def main() -> int:
                     row_index=args.lead_row_index,
                 )
             except KeyboardInterrupt:
+                if settings.reset_counters_on_run_exit and not dry_run:
+                    reset_count = firestore_client.reset_daily_counters()
+                    print(f"reset_accounts_on_exit={reset_count}")
                 if not args.no_report:
                     _write_run_report(
                         started_at=started_at,
@@ -227,6 +232,9 @@ def main() -> int:
                     account_usage_skips=route_telemetry.skipped_counts,
                 )
                 print(f"run_report={report_path}")
+            if settings.reset_counters_on_run_exit and not dry_run:
+                reset_count = firestore_client.reset_daily_counters()
+                print(f"reset_accounts_on_exit={reset_count}")
             return 0
         finally:
             firestore_client.release_run_lock(holder=holder)

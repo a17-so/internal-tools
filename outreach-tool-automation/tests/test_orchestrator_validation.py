@@ -125,6 +125,10 @@ class FakeRouter:
     def route_all(self) -> RoutedAccounts:
         return self.route_selected(enable_email=True, enable_instagram=True, enable_tiktok=True)
 
+    def has_available(self, platform: Platform) -> bool:
+        _ = platform
+        return True
+
     def route_selected(
         self,
         *,

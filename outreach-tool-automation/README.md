@@ -68,6 +68,9 @@ Recommended routing defaults:
   - `TIKTOK_ATTACH_MODE=true`
   - `TIKTOK_CYCLING_MODE=attach_per_account_browser`
   - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223`
+  - `TIKTOK_FILL_THEN_CYCLE=true` (use first account until limit, then next)
+- Optional run-level reset:
+  - `RESET_COUNTERS_ON_RUN_EXIT=true` (resets account counters when run ends)
 
 ### 3) Seed Firestore accounts
 
@@ -177,6 +180,8 @@ python -m outreach_automation.reset_counters
 ## Routing Behavior
 
 - Routing algorithm: least-used eligible account.
+- Optional TikTok routing mode:
+  - `TIKTOK_FILL_THEN_CYCLE=true` uses stable account order (`tt_1` then `tt_2`) until each hits limit.
 - Eligibility:
   - Firestore `status=active`
   - `daily_sent < daily_limit`
@@ -209,6 +214,7 @@ Status mapping:
 ## Firestore Collections
 
 - `accounts`: sender handles, status, daily counters, limits
+  - If `RESET_COUNTERS_ON_RUN_EXIT=true`, counters are reset at the end of each run.
 - `jobs`: per-lead job records (channel outcomes + selected sender handles)
 - `locks`: single run lock (`locks/orchestrator`)
 

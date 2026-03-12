@@ -32,6 +32,7 @@ class Settings:
     log_level: str
     batch_size: int
     run_lock_ttl_seconds: int
+    reset_counters_on_run_exit: bool
     sender_profile: str
     strict_sender_pinning: bool
     email_sender_handle: str | None
@@ -54,6 +55,7 @@ class Settings:
     tiktok_attach_account_cdp_urls: dict[str, str]
     tiktok_min_seconds_between_sends: int
     tiktok_send_jitter_seconds: float
+    tiktok_fill_then_cycle: bool
 
 
 def _required(name: str) -> str:
@@ -146,6 +148,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         batch_size=int(os.getenv("BATCH_SIZE", "100")),
         run_lock_ttl_seconds=int(os.getenv("RUN_LOCK_TTL_SECONDS", "1800")),
+        reset_counters_on_run_exit=os.getenv("RESET_COUNTERS_ON_RUN_EXIT", "false").lower() == "true",
         sender_profile=os.getenv("SENDER_PROFILE", "default"),
         strict_sender_pinning=os.getenv("STRICT_SENDER_PINNING", "true").lower() == "true",
         email_sender_handle=os.getenv("EMAIL_SENDER_HANDLE", "").strip() or None,
@@ -169,4 +172,5 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         tiktok_attach_account_cdp_urls=_parse_tiktok_attach_account_cdp_urls(),
         tiktok_min_seconds_between_sends=int(os.getenv("TIKTOK_MIN_SECONDS_BETWEEN_SENDS", "3")),
         tiktok_send_jitter_seconds=float(os.getenv("TIKTOK_SEND_JITTER_SECONDS", "2.0")),
+        tiktok_fill_then_cycle=os.getenv("TIKTOK_FILL_THEN_CYCLE", "false").lower() == "true",
     )

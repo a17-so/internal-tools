@@ -393,7 +393,7 @@ def test_deferred_unsupported_tier_is_skipped() -> None:
     assert result.failed_tiktok_links == []
 
 
-def test_email_skips_when_address_already_contacted() -> None:
+def test_email_still_sends_when_address_was_already_contacted() -> None:
     sheets = FakeSheets()
     firestore = FakeFirestore()
     firestore.processed_email.add("test@example.com")
@@ -415,8 +415,9 @@ def test_email_skips_when_address_already_contacted() -> None:
     assert result.processed == 1
     assert len(firestore.jobs) == 1
     record = firestore.jobs[0][1]
-    assert record.email_status.status == "skipped"
-    assert record.email_status.error_code == "email_already_contacted"
+    # Dedupe is intentionally disabled in v1 automation so every raw lead is attempted.
+    assert record.email_status.status == "sent"
+    assert record.email_status.error_code is None
 
 
 def test_dedupe_skip_clears_and_marks_row() -> None:

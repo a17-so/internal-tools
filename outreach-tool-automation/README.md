@@ -67,8 +67,13 @@ Recommended routing defaults:
 - TikTok cycling mode:
   - `TIKTOK_ATTACH_MODE=true`
   - `TIKTOK_CYCLING_MODE=attach_per_account_browser`
-  - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223`
+  - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223,@ekam_m3hat=http://127.0.0.1:9224`
   - `TIKTOK_FILL_THEN_CYCLE=true` (use first account until limit, then next)
+  - Keep active TikTok accounts at `daily_limit=25` for `25/25/25` run behavior.
+- Instagram attach mode (recommended to avoid separate Playwright windows):
+  - `IG_ATTACH_MODE=true`
+  - `IG_CDP_URL=http://127.0.0.1:9222`
+  - `IG_ATTACH_AUTO_START=false`
 - Optional run-level reset:
   - `RESET_COUNTERS_ON_RUN_EXIT=true` (resets account counters when run ends)
 
@@ -97,6 +102,13 @@ For per-account TikTok attach mode, start one debug Chrome per account:
 ```bash
 ./ops/start_tiktok_account_debug.sh @regen.app 9222
 ./ops/start_tiktok_account_debug.sh @regenapp 9223
+./ops/start_tiktok_account_debug.sh @ekam_m3hat 9224
+```
+
+If using Instagram attach mode, start one IG debug profile:
+
+```bash
+./ops/start_ig_account_debug.sh @regenhealth.app 9232
 ```
 
 This opens normal Chrome with user-data-dir under:
@@ -144,6 +156,12 @@ Live run:
 python -m outreach_automation.run_once --live --max-leads 30 --verbose-summary
 ```
 
+TikTok-only `25/25/25` style batch:
+
+```bash
+python -m outreach_automation.run_once --live --channels tiktok --max-leads 90 --verbose-summary
+```
+
 Channel-specific:
 
 ```bash
@@ -181,7 +199,7 @@ python -m outreach_automation.reset_counters
 
 - Routing algorithm: least-used eligible account.
 - Optional TikTok routing mode:
-  - `TIKTOK_FILL_THEN_CYCLE=true` uses stable account order (`tt_1` then `tt_2`) until each hits limit.
+  - `TIKTOK_FILL_THEN_CYCLE=true` uses stable account order (`tt_1` -> `tt_2` -> `tt_3`) until each hits limit.
 - Eligibility:
   - Firestore `status=active`
   - `daily_sent < daily_limit`
@@ -274,6 +292,14 @@ TikTok login shows `Maximum number of attempts reached`:
 - for attach-per-account mode, run dedicated debuggers:
   - `./ops/start_tiktok_account_debug.sh @handle 9222`
 - wait cooldown window before retrying login
+
+Instagram summary shows `failed:missing_ig_auth`:
+
+- attach mode connected, but that Chrome profile is not logged into Instagram.
+- open the same profile and log in once:
+  - `./ops/open_platform_profile.sh instagram @regenhealth.app`
+  - or `./ops/start_ig_account_debug.sh @regenhealth.app 9232`
+- rerun `python -m outreach_automation.doctor` and confirm `ig_attach_mode` is reachable.
 
 No IG/TikTok tab appears during run:
 

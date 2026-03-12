@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import random
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -12,9 +14,12 @@ from outreach_automation.models import Account, ChannelResult, Platform
 from outreach_automation.selectors import (
     INSTAGRAM_DM_INPUTS,
     INSTAGRAM_INBOX_SEARCH_INPUTS,
+    INSTAGRAM_MESSAGE_BUTTONS,
     INSTAGRAM_THREAD_ROWS,
 )
 from outreach_automation.session_manager import SessionManager
+
+_LOG = logging.getLogger(__name__)
 
 
 class InstagramDmSender:
@@ -24,10 +29,16 @@ class InstagramDmSender:
         self,
         session_manager: SessionManager,
         *,
+        attach_mode: bool = False,
+        cdp_url: str | None = None,
+        cdp_url_resolver: Callable[[str], str | None] | None = None,
         min_seconds_between_sends: int = 2,
         send_jitter_seconds: float = 1.5,
     ) -> None:
         self._session_manager = session_manager
+        self._attach_mode = attach_mode
+        self._cdp_url = cdp_url
+        self._cdp_url_resolver = cdp_url_resolver
         self._min_seconds_between_sends = max(0, min_seconds_between_sends)
         self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
@@ -39,20 +50,33 @@ class InstagramDmSender:
         if dry_run:
             return ChannelResult(status="sent")
         self._enforce_send_spacing(account.handle)
-        profile_dir = self._session_manager.profile_dir_for(Platform.INSTAGRAM, account.handle)
-        if not profile_dir.exists():
-            return ChannelResult(status="failed", error_code="missing_ig_session")
+
+        profile_dir: Path | None = None
+        selected_cdp_url = self._cdp_url
+        if self._attach_mode:
+            if self._cdp_url_resolver is not None:
+                selected_cdp_url = self._cdp_url_resolver(account.handle)
+            if not selected_cdp_url:
+                return ChannelResult(status="failed", error_code="missing_ig_cdp_url")
+        else:
+            profile_dir = self._session_manager.profile_dir_for(Platform.INSTAGRAM, account.handle)
+            if not profile_dir.exists():
+                return ChannelResult(status="failed", error_code="missing_ig_session")
         try:
             asyncio.run(
                 self._send_async(
                     ig_handle=ig_handle,
                     dm_text=dm_text,
                     profile_dir=profile_dir,
+                    attach_mode=self._attach_mode,
+                    cdp_url=selected_cdp_url,
                 )
             )
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
+            if "missing ig auth" in message:
+                return ChannelResult(status="failed", error_code="missing_ig_auth", error_message=str(exc))
             if "no matching selector found" in message:
                 return ChannelResult(status="skipped", error_code="ig_dm_unavailable")
             if "blocked" in message or "rate" in message:
@@ -74,41 +98,73 @@ class InstagramDmSender:
             time.sleep(remaining)
         self._last_send_ts_by_account[account_handle] = time.time()
 
-    async def _send_async(self, ig_handle: str, dm_text: str, profile_dir: Path) -> None:
+    async def _send_async(
+        self,
+        ig_handle: str,
+        dm_text: str,
+        profile_dir: Path | None,
+        *,
+        attach_mode: bool,
+        cdp_url: str | None,
+    ) -> None:
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright not installed") from exc
 
         async with async_playwright() as p:
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=str(profile_dir),
-                channel="chrome",
-                headless=False,
-            )
-            page = context.pages[0] if context.pages else await context.new_page()
-            # Some Chrome profiles spawn an extra about:blank tab; close extras to avoid tab buildup.
-            for extra in context.pages:
-                if extra == page:
-                    continue
-                with contextlib.suppress(Exception):
-                    if (await extra.title()).strip().lower() == "about:blank":
-                        await extra.close()
-            opened = await _open_thread_via_inbox_search(page, ig_handle)
-            if not opened:
-                raise RuntimeError("No matching selector found: instagram thread row")
+            page = None
+            if attach_mode:
+                if not cdp_url:
+                    raise RuntimeError("missing ig cdp url")
+                _LOG.info("instagram attach mode using cdp", extra={"cdp_url": cdp_url})
+                browser = await p.chromium.connect_over_cdp(cdp_url)
+                contexts = browser.contexts
+                if not contexts:
+                    raise RuntimeError("No browser contexts found in attached Chrome session")
+                context = contexts[0]
+                page = await context.new_page()
+                close_context = False
+            else:
+                if profile_dir is None:
+                    raise RuntimeError("missing ig profile dir")
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    channel="chrome",
+                    headless=False,
+                )
+                page = context.pages[0] if context.pages else await context.new_page()
+                # Some Chrome profiles spawn an extra about:blank tab; close extras to avoid tab buildup.
+                for extra in context.pages:
+                    if extra == page:
+                        continue
+                    with contextlib.suppress(Exception):
+                        if (await extra.title()).strip().lower() == "about:blank":
+                            await extra.close()
+                close_context = True
 
-            message_text = normalize_dm_text(dm_text)
-            if not message_text:
-                raise RuntimeError("Empty DM text after normalization")
+            try:
+                opened = await _open_thread(page, ig_handle)
+                if not opened:
+                    raise RuntimeError("No matching selector found: instagram thread row")
 
-            input_locator = await _find_first(page, INSTAGRAM_DM_INPUTS)
-            await input_locator.click()
-            await page.keyboard.insert_text(message_text)
-            await page.keyboard.press("Enter")
+                message_text = normalize_dm_text(dm_text)
+                if not message_text:
+                    raise RuntimeError("Empty DM text after normalization")
 
-            await page.wait_for_timeout(random.randint(2000, 5000))
-            await context.close()
+                input_locator = await _find_first(page, INSTAGRAM_DM_INPUTS)
+                await input_locator.click()
+                await page.keyboard.insert_text(message_text)
+                await page.keyboard.press("Enter")
+
+                await page.wait_for_timeout(random.randint(2000, 5000))
+            finally:
+                if page is not None:
+                    with contextlib.suppress(Exception):
+                        await page.close()
+                if close_context:
+                    with contextlib.suppress(Exception):
+                        await context.close()
 
 
 async def _find_first(page: Any, selectors: list[str]) -> Any:
@@ -117,6 +173,34 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
         if await loc.count() > 0:
             return loc.first
     raise RuntimeError("No matching selector found")
+
+
+async def _open_thread(page: Any, ig_handle: str) -> bool:
+    if await _needs_login(page):
+        raise RuntimeError("missing ig auth")
+    opened = await _open_thread_via_profile_message(page, ig_handle)
+    if opened:
+        return True
+    opened = await _open_thread_via_inbox_search(page, ig_handle)
+    if not opened and await _needs_login(page):
+        raise RuntimeError("missing ig auth")
+    return opened
+
+
+async def _open_thread_via_profile_message(page: Any, ig_handle: str) -> bool:
+    handle = ig_handle.strip().lstrip("@")
+    if not handle:
+        return False
+    await page.goto(f"https://www.instagram.com/{handle}/", wait_until="domcontentloaded")
+    await page.wait_for_timeout(random.randint(1200, 2400))
+    await _dismiss_instagram_popups(page)
+    try:
+        button = await _find_first(page, INSTAGRAM_MESSAGE_BUTTONS)
+    except RuntimeError:
+        return False
+    await button.click()
+    await page.wait_for_timeout(random.randint(1200, 2600))
+    return True
 
 
 async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
@@ -148,6 +232,22 @@ async def _open_thread_via_inbox_search(page: Any, ig_handle: str) -> bool:
         if target in text:
             await row.click()
             await page.wait_for_timeout(random.randint(1000, 2200))
+            return True
+    return False
+
+
+async def _needs_login(page: Any) -> bool:
+    try:
+        url = (page.url or "").lower()
+    except Exception:
+        url = ""
+    if "instagram.com/accounts/login" in url:
+        return True
+    with contextlib.suppress(Exception):
+        if await page.locator("input[name='username']").count() > 0:
+            return True
+    with contextlib.suppress(Exception):
+        if await page.get_by_role("button", name="Log in").count() > 0:
             return True
     return False
 

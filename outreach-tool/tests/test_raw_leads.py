@@ -198,3 +198,45 @@ def test_raw_lead_rejects_non_whitelisted_tier(mock_get_config, mock_check_exist
     response = client.post('/add_raw_leads', json=payload)
     assert response.status_code == 400
     mock_append.assert_not_called()
+
+
+@patch('api.main._append_peptide_vendor_row')
+@patch('api.main.scrape_profile_sync')
+@patch('api.main._get_app_config')
+def test_add_raw_leads_with_peptide_vendor_routes_to_peptide_subsheet(mock_get_config, mock_scrape_profile_sync, mock_append_subsheet, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id",
+        "from_name": "Tester",
+    }
+    mock_scrape_profile_sync.return_value = {
+        "name": "Vendor Name",
+        "tt": "some_vendor",
+        "ig": "vendor_ig",
+        "site": "https://vendor-site.com",
+        "bio": "TikTok bio text",
+    }
+    mock_append_subsheet.return_value = {
+        "ok": True,
+        "row_added": 6,
+        "sheet_name": "Peptide Vendors",
+        "name": "Vendor Name",
+        "tt_handle": "some_vendor",
+        "ig_handle": "vendor_ig",
+        "site": "https://vendor-site.com",
+    }
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@some_vendor",
+        "category": "Peptide Vendor",
+    }
+    response = client.post('/add_raw_leads', json=payload)
+
+    assert response.status_code == 200
+    mock_scrape_profile_sync.assert_called_once()
+    mock_append_subsheet.assert_called_once()
+    args, _ = mock_append_subsheet.call_args
+    assert args[1] == "Peptide Vendors"
+    assert args[2] == "Vendor Name"
+    assert args[3] == "some_vendor"

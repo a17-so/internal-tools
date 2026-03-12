@@ -99,6 +99,7 @@ def test_normalize_category_supports_strict_values():
 
     assert _normalize_category("YT Creator") == "yt_creator"
     assert _normalize_category("AI Influencer") == "ai_influencer"
+    assert _normalize_category("Peptide Vendor") == "peptide_vendor"
     assert _normalize_category("YouTube creators") == "youtube creators"
     assert _normalize_category("AI influencers") == "ai influencers"
 
@@ -117,3 +118,49 @@ def test_scrape_rejects_non_whitelisted_category(mock_get_app_config, client):
     }
     response = client.post("/scrape", json=payload, content_type="application/json")
     assert response.status_code == 400
+
+
+@patch("main._append_peptide_vendor_row")
+@patch("main.scrape_profile_sync")
+@patch("main._get_app_config")
+def test_peptide_vendor_category_routes_to_peptide_subsheet(
+    mock_get_app_config,
+    mock_scrape_profile_sync,
+    mock_append_peptide_vendor_row,
+    client,
+):
+    mock_get_app_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id",
+        "gmail_sender": "test@example.com",
+        "from_name": "Tester",
+    }
+    mock_scrape_profile_sync.return_value = {
+        "name": "Vendor Name",
+        "tt": "peptidevendor",
+        "ig": "peptideig",
+        "site": "https://peptidevendor.com",
+        "bio": "Peptides and research compounds",
+    }
+    mock_append_peptide_vendor_row.return_value = {
+        "ok": True,
+        "row_added": 4,
+        "sheet_name": "Peptide Vendors",
+        "name": "Vendor Name",
+        "tt_handle": "peptidevendor",
+        "ig_handle": "peptideig",
+        "site": "https://peptidevendor.com",
+    }
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@peptidevendor",
+        "category": "Peptide Vendor",
+    }
+    response = client.post("/scrape", json=payload, content_type="application/json")
+
+    assert response.status_code == 200
+    mock_scrape_profile_sync.assert_called_once()
+    mock_append_peptide_vendor_row.assert_called_once()
+    args, _ = mock_append_peptide_vendor_row.call_args
+    assert args[1] == "Peptide Vendors"

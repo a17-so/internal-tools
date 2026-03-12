@@ -12,6 +12,23 @@ except ImportError:
     requests = None
 
 
+def _extract_site(value: str) -> str:
+    """Extract a best-effort website URL from freeform text."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+
+    explicit = re.search(r"https?://[^\s)]+", text, re.I)
+    if explicit:
+        return explicit.group(0).rstrip(".,;)")
+
+    bare = re.search(r"(?:www\.)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:/[^\s)]*)?", text, re.I)
+    if bare:
+        candidate = bare.group(0).rstrip(".,;)")
+        return f"https://{candidate}" if not candidate.lower().startswith("www.") else f"https://{candidate}"
+    return ""
+
+
 def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
     """Synchronous wrapper for scraping profiles (now pure HTTP/API).
     
@@ -66,11 +83,19 @@ def scrape_profile_sync(url: str, timeout_seconds: float = 60.0) -> dict:
         
     _log("scrape.result", data=data)
 
+    site = ""
+    if data.get("bio_link"):
+        site = str(data.get("bio_link")).strip()
+    if not site:
+        site = _extract_site(str(data.get("bio") or ""))
+
     # Normalize output
     out = {
         "platform": data.get("platform"),
         "name": data.get("name") or "",
         "email": data.get("email") or "",
+        "bio": data.get("bio") or "",
+        "site": site,
         "ig": data.get("ig_handle") or (data.get("username") if data.get("platform") == "instagram" else ""),
         "tt": data.get("username") if data.get("platform") == "tiktok" else "",
         "yt_handle": data.get("yt_handle") or "",
@@ -211,6 +236,7 @@ def scrape_tiktok_with_searchapi(username: str) -> dict:
             "username": profile.get("username", clean_username),
             "email": email,
             "ig_handle": ig_handle,
+            "bio_link": bio_link,
             "followers": profile.get("followers", 0),
             "following": profile.get("following", 0),
             "posts": profile.get("posts", 0),

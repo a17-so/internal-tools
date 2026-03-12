@@ -17,6 +17,7 @@ _SHEET_TITLE_CACHE: Dict[str, List[str]] = {}
 _SHEET_NAME_ALIASES = {
     "YT Creators": ["YT Creators", "YouTube Creators", "YouTube Creator", "YT Creator"],
     "AI Influencers": ["AI Influencers", "AI influencers", "AI Influencer"],
+    "Peptide Vendors": ["Peptide Vendors", "Peptide Vendor", "Peptide vendors", "Peptide vendor"],
 }
 
 
@@ -202,7 +203,7 @@ def _check_creator_exists_across_all_sheets(spreadsheet_id: str, ig_handle: str,
     # Check all subtabs
     all_sheets = [
         "Macros", "Micros", "Submicros", "Ambassadors",
-        "Theme Pages", "Raw Leads", "YT Creators", "AI Influencers",
+        "Theme Pages", "Raw Leads", "Peptide Vendors", "YT Creators", "AI Influencers",
     ]
     
     for sheet_name in all_sheets:
@@ -553,6 +554,101 @@ def _append_url_to_subsheet(
 
     except Exception as e:
         _log("subsheet.append.error", sheet_name=sheet_name, error=str(e))
+        return {"ok": False, "error": str(e)}
+
+
+def _append_peptide_vendor_row(
+    spreadsheet_id: str,
+    sheet_name: str,
+    name: str,
+    tiktok_handle: str,
+    instagram_handle: str,
+    site: str,
+    delegated_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Append a peptide vendor row to Name/TikTok/Instagram/Site columns."""
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("peptide_vendor.append.no_client", sheet_name=sheet_name)
+        return {"ok": False, "error": "Sheets client not configured"}
+
+    clean_name = (name or "").strip()
+    clean_tt = (tiktok_handle or "").strip().lstrip("@")
+    clean_ig = (instagram_handle or "").strip().lstrip("@")
+    clean_site = (site or "").strip()
+
+    try:
+        resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{resolved_sheet_name}!A:D"
+        ).execute()
+        values = result.get("values", [])
+
+        headers = ["Name", "TikTok @", "Instagram @", "Site"]
+        if not values or values[0][:4] != headers:
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{resolved_sheet_name}!A1:D1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [headers]},
+            ).execute()
+
+            sheet_id = _get_sheet_id(service, spreadsheet_id, resolved_sheet_name)
+            if sheet_id is not None:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        "requests": [{
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 0,
+                                    "endRowIndex": 1,
+                                    "startColumnIndex": 0,
+                                    "endColumnIndex": 4,
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "textFormat": {"bold": True}
+                                    }
+                                },
+                                "fields": "userEnteredFormat.textFormat.bold",
+                            }
+                        }]
+                    },
+                ).execute()
+            if not values:
+                values = [headers]
+
+        next_row = len(values) + 1
+        row_values = [[clean_name, clean_tt, clean_ig, clean_site]]
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{resolved_sheet_name}!A{next_row}:D{next_row}",
+            valueInputOption="USER_ENTERED",
+            body={"values": row_values},
+        ).execute()
+
+        _log(
+            "peptide_vendor.append.success",
+            sheet_name=resolved_sheet_name,
+            row=next_row,
+            tt_handle=clean_tt,
+            has_ig=bool(clean_ig),
+            has_site=bool(clean_site),
+        )
+        return {
+            "ok": True,
+            "sheet_name": resolved_sheet_name,
+            "row_added": next_row,
+            "name": clean_name,
+            "tt_handle": clean_tt,
+            "ig_handle": clean_ig,
+            "site": clean_site,
+        }
+    except Exception as e:
+        _log("peptide_vendor.append.error", sheet_name=sheet_name, error=str(e))
         return {"ok": False, "error": str(e)}
 
 

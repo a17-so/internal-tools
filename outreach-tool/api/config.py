@@ -20,6 +20,7 @@ CATEGORY_TO_SHEET = {
     "ambassador": "Ambassadors",
     "themepage": "Theme Pages",
     "rawlead": "Raw Leads",
+    "peptide_vendor": "Peptide Vendors",
     "yt_creator": "YT Creators",
     "ai_influencer": "AI Influencers",
 }

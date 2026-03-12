@@ -45,6 +45,8 @@ def _normalize_category(category: str) -> str:
         return "themepage"
     if cat_lower == "rawlead":
         return "rawlead"
+    if cat_lower in {"peptide vendor", "peptide_vendor"}:
+        return "peptide_vendor"
     if cat_lower in {"yt_creator", "yt creator"}:
         return "yt_creator"
     if cat_lower in {"ai_influencer", "ai influencer"}:

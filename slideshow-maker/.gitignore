@@ -1,9 +1,22 @@
-.DS_Store
-assets/
-.venv/
+# Python
 __pycache__/
+*.py[cod]
+*.so
 .pytest_cache/
-*.pyc
-*.egg-info/
-data/
+
+# Virtual environments
+.venv/
+venv/
+
+# Slideshow maker generated outputs
+out/
 output/
+_flow_cache/
+.flow_profile/
+**/variation_*/
+**/slides/
+**/slide_*.png
+**/copy_draft.temp.json
+
+# OS
+.DS_Store

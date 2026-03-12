@@ -45,6 +45,10 @@ _LINK_CRAWL_TIMEOUT_SECONDS = 3.0
 _LINK_CRAWL_MAX_BYTES = 200_000
 
 
+class ProfileNotFoundError(RuntimeError):
+    """Raised when SearchAPI cannot resolve a TikTok profile for a handle."""
+
+
 @dataclass(frozen=True, slots=True)
 class LocalScrapeSettings:
     searchapi_key: str
@@ -113,7 +117,7 @@ class LocalScrapeClient:
                 result = response.json()
                 profile = result.get("profile")
                 if not isinstance(profile, dict):
-                    raise RuntimeError(f"SearchAPI returned no profile for @{username}")
+                    raise ProfileNotFoundError(f"SearchAPI returned no profile for @{username}")
                 return profile
             except Exception as exc:
                 last_exc = exc

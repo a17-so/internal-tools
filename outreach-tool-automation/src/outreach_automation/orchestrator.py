@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from outreach_automation.account_router import RoutedAccounts
+from outreach_automation.clients.local_scraper_client import ProfileNotFoundError
 from outreach_automation.models import (
     Account,
     ChannelResult,
@@ -432,6 +433,16 @@ class Orchestrator:
                 job_status = "dead"
                 job_error = final_status
 
+        except ProfileNotFoundError as exc:
+            final_status = "skipped_profile_not_found"
+            _LOG.info(
+                "lead skipped because profile was not found",
+                extra={"row_index": lead.row_index, "url": lead.creator_url},
+            )
+            self._safe_finalize_lead(lead, final_status)
+            job_error = str(exc)
+            job_status = "completed"
+            return_value = "skipped"
         except Exception as exc:
             final_status = self._runtime_status_for_exception(exc)
             _LOG.exception(
@@ -484,7 +495,7 @@ class Orchestrator:
     def _runtime_status_for_exception(exc: Exception) -> str:
         message = str(exc).lower()
         if "searchapi returned no profile" in message:
-            return "failed_scrape_profile_not_found"
+            return "skipped_profile_not_found"
         if "missing app template file" in message:
             return "failed_missing_scrape_template"
         if "missing required environment variable" in message:

@@ -174,6 +174,14 @@ async def _find_first(page: Any, selectors: list[str]) -> Any:
         loc = page.locator(selector)
         if await loc.count() > 0:
             return loc.first
+    # Business account chat composer can be hosted in an iframe.
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        for selector in selectors:
+            loc = frame.locator(selector)
+            if await loc.count() > 0:
+                return loc.first
     raise RuntimeError("No matching selector found")
 
 
@@ -209,6 +217,15 @@ async def _send_message(page: Any) -> None:
             with contextlib.suppress(Exception):
                 await button.first.click()
                 return
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        for selector in TIKTOK_SEND_BUTTONS:
+            button = frame.locator(selector)
+            if await button.count() > 0:
+                with contextlib.suppress(Exception):
+                    await button.first.click()
+                    return
     await page.keyboard.press("Enter")
 
 

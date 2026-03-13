@@ -670,6 +670,8 @@ def _append_x_creator_row(
 
     clean_name = (name or "").strip()
     clean_twitter = (twitter_handle or "").strip().lstrip("@")
+    name_link_label = clean_name or clean_twitter
+    name_link_cell = _hyperlink_formula(f"https://x.com/{clean_twitter}", name_link_label) if clean_twitter else clean_name
     twitter_link_cell = _hyperlink_formula(f"https://x.com/{clean_twitter}", f"@{clean_twitter}") if clean_twitter else ""
 
     try:
@@ -717,7 +719,7 @@ def _append_x_creator_row(
                 values = [headers]
 
         next_row = len(values) + 1
-        row_values = [[clean_name, twitter_link_cell]]
+        row_values = [[name_link_cell, twitter_link_cell]]
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{resolved_sheet_name}!A{next_row}:B{next_row}",

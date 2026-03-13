@@ -240,3 +240,72 @@ def test_add_raw_leads_with_peptide_vendor_routes_to_peptide_subsheet(mock_get_c
     assert args[1] == "Peptide Vendors"
     assert args[2] == "Vendor Name"
     assert args[3] == "some_vendor"
+
+
+@patch('api.main._append_peptide_vendor_row')
+@patch('api.main.scrape_profile_sync')
+@patch('api.main._get_app_config')
+def test_rawlead_tier_peptide_vendor_routes_to_peptide_sheet(mock_get_config, mock_scrape_profile_sync, mock_append_peptide, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id",
+    }
+    mock_scrape_profile_sync.return_value = {
+        "name": "Peptide Name",
+        "tt": "peptide_tt",
+        "ig": "peptide_ig",
+        "site": "https://peptide.example",
+        "bio": "bio text",
+    }
+    mock_append_peptide.return_value = {
+        "ok": True,
+        "row_added": 8,
+        "sheet_name": "Peptide Vendors",
+        "name": "Peptide Name",
+        "tt_handle": "peptide_tt",
+        "ig_handle": "peptide_ig",
+        "site": "https://peptide.example",
+    }
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@peptide_tt",
+        "category": "rawlead",
+        "creator_tier": "Peptide Vendor",
+    }
+    response = client.post('/add_raw_leads', json=payload)
+
+    assert response.status_code == 200
+    mock_scrape_profile_sync.assert_called_once()
+    mock_append_peptide.assert_called_once()
+
+
+@patch('api.main._append_x_creator_row')
+@patch('api.main._get_app_config')
+def test_rawlead_tier_x_creator_routes_to_x_creators_sheet(mock_get_config, mock_append_x_creator, client):
+    mock_get_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id",
+    }
+    mock_append_x_creator.return_value = {
+        "ok": True,
+        "row_added": 11,
+        "sheet_name": "X Creators",
+        "name": "myhandle",
+        "twitter_handle": "myhandle",
+    }
+
+    payload = {
+        "app": "regen",
+        "url": "https://x.com/myhandle",
+        "category": "rawlead",
+        "creator_tier": "X Creator",
+    }
+    response = client.post('/add-raw-leads', json=payload)
+
+    assert response.status_code == 200
+    mock_append_x_creator.assert_called_once()
+    args, _ = mock_append_x_creator.call_args
+    assert args[1] == "X Creators"
+    assert args[2] == "myhandle"
+    assert args[3] == "myhandle"

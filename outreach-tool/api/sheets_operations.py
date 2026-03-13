@@ -18,6 +18,7 @@ _SHEET_NAME_ALIASES = {
     "YT Creators": ["YT Creators", "YouTube Creators", "YouTube Creator", "YT Creator"],
     "AI Influencers": ["AI Influencers", "AI influencers", "AI Influencer"],
     "Peptide Vendors": ["Peptide Vendors", "Peptide Vendor", "Peptide vendors", "Peptide vendor"],
+    "X Creators": ["X Creators", "X Creator", "Twitter Creators", "Twitter Creator"],
 }
 
 
@@ -203,7 +204,7 @@ def _check_creator_exists_across_all_sheets(spreadsheet_id: str, ig_handle: str,
     # Check all subtabs
     all_sheets = [
         "Macros", "Micros", "Submicros", "Ambassadors",
-        "Theme Pages", "Raw Leads", "Peptide Vendors", "YT Creators", "AI Influencers",
+        "Theme Pages", "Raw Leads", "Peptide Vendors", "X Creators", "YT Creators", "AI Influencers",
     ]
     
     for sheet_name in all_sheets:
@@ -576,6 +577,8 @@ def _append_peptide_vendor_row(
     clean_tt = (tiktok_handle or "").strip().lstrip("@")
     clean_ig = (instagram_handle or "").strip().lstrip("@")
     clean_site = (site or "").strip()
+    tt_link_cell = _hyperlink_formula(f"https://www.tiktok.com/@{clean_tt}", f"@{clean_tt}") if clean_tt else ""
+    ig_link_cell = _hyperlink_formula(f"https://www.instagram.com/{clean_ig}", f"@{clean_ig}") if clean_ig else ""
 
     try:
         resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
@@ -622,7 +625,7 @@ def _append_peptide_vendor_row(
                 values = [headers]
 
         next_row = len(values) + 1
-        row_values = [[clean_name, clean_tt, clean_ig, clean_site]]
+        row_values = [[clean_name, tt_link_cell, ig_link_cell, clean_site]]
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{resolved_sheet_name}!A{next_row}:D{next_row}",
@@ -649,6 +652,89 @@ def _append_peptide_vendor_row(
         }
     except Exception as e:
         _log("peptide_vendor.append.error", sheet_name=sheet_name, error=str(e))
+        return {"ok": False, "error": str(e)}
+
+
+def _append_x_creator_row(
+    spreadsheet_id: str,
+    sheet_name: str,
+    name: str,
+    twitter_handle: str,
+    delegated_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Append an X creator row to Name/Twitter columns."""
+    service = _sheets_client(delegated_user=delegated_user)
+    if not service:
+        _log("x_creator.append.no_client", sheet_name=sheet_name)
+        return {"ok": False, "error": "Sheets client not configured"}
+
+    clean_name = (name or "").strip()
+    clean_twitter = (twitter_handle or "").strip().lstrip("@")
+    twitter_link_cell = _hyperlink_formula(f"https://x.com/{clean_twitter}", f"@{clean_twitter}") if clean_twitter else ""
+
+    try:
+        resolved_sheet_name = _resolve_sheet_name(service, spreadsheet_id, sheet_name)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"{resolved_sheet_name}!A:B"
+        ).execute()
+        values = result.get("values", [])
+
+        headers = ["Name", "Twitter @"]
+        if not values or values[0][:2] != headers:
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{resolved_sheet_name}!A1:B1",
+                valueInputOption="USER_ENTERED",
+                body={"values": [headers]},
+            ).execute()
+
+            sheet_id = _get_sheet_id(service, spreadsheet_id, resolved_sheet_name)
+            if sheet_id is not None:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={
+                        "requests": [{
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": 0,
+                                    "endRowIndex": 1,
+                                    "startColumnIndex": 0,
+                                    "endColumnIndex": 2,
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "textFormat": {"bold": True}
+                                    }
+                                },
+                                "fields": "userEnteredFormat.textFormat.bold",
+                            }
+                        }]
+                    },
+                ).execute()
+            if not values:
+                values = [headers]
+
+        next_row = len(values) + 1
+        row_values = [[clean_name, twitter_link_cell]]
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{resolved_sheet_name}!A{next_row}:B{next_row}",
+            valueInputOption="USER_ENTERED",
+            body={"values": row_values},
+        ).execute()
+
+        _log("x_creator.append.success", sheet_name=resolved_sheet_name, row=next_row, handle=clean_twitter)
+        return {
+            "ok": True,
+            "sheet_name": resolved_sheet_name,
+            "row_added": next_row,
+            "name": clean_name,
+            "twitter_handle": clean_twitter,
+        }
+    except Exception as e:
+        _log("x_creator.append.error", sheet_name=sheet_name, error=str(e))
         return {"ok": False, "error": str(e)}
 
 

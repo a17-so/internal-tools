@@ -32,6 +32,7 @@ def _log(event: str, **fields: Any) -> None:
 def _normalize_category(category: str) -> str:
     """Normalize category names to standard keys."""
     cat_lower = (category or "").strip().lower()
+    cat_compact = re.sub(r"[\s_-]+", "", cat_lower)
     # Strict accepted category values (plus internal canonical keys)
     if cat_lower == "macro":
         return "macro"
@@ -43,9 +44,9 @@ def _normalize_category(category: str) -> str:
         return "ambassador"
     if cat_lower == "themepage":
         return "themepage"
-    if cat_lower == "rawlead":
+    if cat_compact in {"rawlead", "rawleads"}:
         return "rawlead"
-    if cat_lower in {"peptide vendor", "peptide_vendor"}:
+    if cat_compact in {"peptidevendor", "peptidevendors"}:
         return "peptide_vendor"
     if cat_lower in {"yt_creator", "yt creator"}:
         return "yt_creator"
@@ -57,6 +58,7 @@ def _normalize_category(category: str) -> str:
 def _normalize_creator_tier(tier: str) -> str:
     """Normalize creator tier values to canonical sheet values."""
     tier_lower = (tier or "").strip().lower()
+    tier_compact = re.sub(r"[\s_-]+", "", tier_lower)
     if tier_lower == "macro":
         return "Macro"
     if tier_lower == "micro":
@@ -71,6 +73,10 @@ def _normalize_creator_tier(tier: str) -> str:
         return "YT Creator"
     if tier_lower == "ai influencer":
         return "AI Influencer"
+    if tier_compact in {"peptidevendor", "peptidevendors"}:
+        return "Peptide Vendor"
+    if tier_compact in {"xcreator", "xcreators", "twittercreator", "twittercreators"}:
+        return "X Creator"
     return ""
 
 

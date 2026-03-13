@@ -14,7 +14,7 @@ from datetime import datetime
 from utils import _log, _normalize_category, _normalize_creator_tier, _clean_url, _markdown_to_text
 from config import CATEGORY_TO_SHEET, _load_outreach_apps_config, _get_app_config, _validate_app_config, _resolve_sender_profile
 from google_services import _sheets_client, _gmail_client
-from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_url_to_subsheet, _append_peptide_vendor_row, _append_to_sheet, _update_creator_contact_info
+from sheets_operations import _hyperlink_formula, _check_creator_exists, _check_creator_exists_across_all_sheets, _check_creator_exists_in_raw_leads, _get_email_from_existing_row, _update_sheet_row, _append_url_to_raw_leads_column, _append_url_to_subsheet, _append_peptide_vendor_row, _append_x_creator_row, _append_to_sheet, _update_creator_contact_info
 from email_operations import _send_email
 from template_generation import _get_display_name, _get_templates_for_app, _build_email_and_dm
 
@@ -360,6 +360,7 @@ def warmup():
 
 @app.post("/scrape")
 @app.post("/add_raw_leads")
+@app.post("/add-raw-leads")
 def scrape_endpoint():
     # Determine which app context to use
     app_key_from_query = (request.args.get("app") or request.args.get("app_name") or "").strip()
@@ -418,15 +419,15 @@ def scrape_endpoint():
             "submicro",
             "ambassador",
             "themepage",
-            "peptide vendor",
-            "yt creator",
-            "ai influencer",
+            "rawlead",
+            "peptide_vendor",
+            "yt_creator",
+            "ai_influencer",
         }
-        category_input = (category or "").strip().lower()
-        if category_input not in allowed_scrape_categories:
+        if cat_key_normalized not in allowed_scrape_categories:
             return jsonify({
                 "error": "Invalid category",
-                "message": "Category must be one of: Macro, Micro, Submicro, Ambassador, Themepage, Peptide Vendor, YT Creator, AI Influencer",
+                "message": "Category must be one of: Macro, Micro, Submicro, Ambassador, Themepage, Raw Lead, Peptide Vendor, YT Creator, AI Influencer",
             }), 400
 
     is_theme_pages = cat_key_normalized == "themepage"
@@ -450,6 +451,106 @@ def scrape_endpoint():
         pass
     
     
+    def _handle_peptide_vendor_lead() -> Any:
+        """Scrape TikTok and append Name/TikTok/Instagram/Site to Peptide Vendors."""
+        if not spreadsheet_id:
+            return jsonify({"error": "No spreadsheet configured"}), 500
+
+        if "tiktok.com" not in url.lower():
+            return jsonify({
+                "error": "Invalid URL for Peptide Vendor",
+                "message": "Peptide Vendor flow currently supports TikTok profile URLs only.",
+            }), 400
+
+        peptide_sheet_name = CATEGORY_TO_SHEET.get("peptide_vendor") or "Peptide Vendors"
+
+        profile = {}
+        try:
+            profile = scrape_profile_sync(url, timeout_seconds=30.0)
+        except Exception as e:
+            _log("peptide_vendor.scrape_error", error=str(e))
+
+        tt_handle = (profile.get("tt") or tt_handle_from_url or "").strip().lstrip("@")
+        ig_handle = (profile.get("ig") or "").strip().lstrip("@")
+        site = (profile.get("site") or "").strip()
+        tiktok_bio = (profile.get("bio") or "").strip()
+        name = (profile.get("name") or "").strip()
+        if not name:
+            name = tt_handle or "Unknown"
+
+        _log("peptide_vendor.append", url=url, tt_handle=tt_handle, has_ig=bool(ig_handle), has_site=bool(site))
+        result = _append_peptide_vendor_row(
+            spreadsheet_id,
+            peptide_sheet_name,
+            name,
+            tt_handle,
+            ig_handle,
+            site,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+
+        if not result.get("ok"):
+            return jsonify({
+                "error": result.get("error", "Failed to add peptide vendor lead"),
+                "message": result.get("message", ""),
+            }), 500
+
+        _log("peptide_vendor.success", row=result.get("row_added"))
+        return jsonify({
+            "ok": True,
+            "message": "Peptide vendor lead added successfully",
+            "sheet_name": result.get("sheet_name") or peptide_sheet_name,
+            "row_added": result.get("row_added"),
+            "name": result.get("name"),
+            "tt_handle": result.get("tt_handle"),
+            "ig_handle": result.get("ig_handle") or None,
+            "site": result.get("site") or None,
+            "tiktok_bio": tiktok_bio or None,
+            "url": url,
+        })
+
+    def _handle_x_creator_lead() -> Any:
+        """Extract X/Twitter username and append Name/Twitter@ to X Creators."""
+        if not spreadsheet_id:
+            return jsonify({"error": "No spreadsheet configured"}), 500
+
+        handle_match = re.search(
+            r"(?:x\.com|twitter\.com)/(?!home|explore|search|i/|share)([A-Za-z0-9_]{1,15})(?:[/?#]|$)",
+            url,
+            re.I,
+        )
+        handle = (handle_match.group(1).strip() if handle_match else "")
+        if not handle:
+            return jsonify({
+                "error": "Invalid URL for X Creator",
+                "message": "X Creator flow requires an X/Twitter profile URL like https://x.com/username",
+            }), 400
+
+        x_sheet_name = "X Creators"
+        result = _append_x_creator_row(
+            spreadsheet_id,
+            x_sheet_name,
+            handle,  # Name defaults to username for now.
+            handle,
+            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
+        )
+
+        if not result.get("ok"):
+            return jsonify({
+                "error": result.get("error", "Failed to add X creator lead"),
+                "message": result.get("message", ""),
+            }), 500
+
+        return jsonify({
+            "ok": True,
+            "message": "X creator lead added successfully",
+            "sheet_name": result.get("sheet_name") or x_sheet_name,
+            "row_added": result.get("row_added"),
+            "name": result.get("name"),
+            "twitter_handle": result.get("twitter_handle"),
+            "url": url,
+        })
+
     # RAW LEADS: Use column-based approach (skip scraping, just save URL)
     if cat_key_normalized == "rawlead":
         if not spreadsheet_id:
@@ -460,11 +561,19 @@ def scrape_endpoint():
             or payload.get("tier")
             or ""
         )
+
+        # Special case: Raw Leads + Peptide Vendor should use peptide vendor scrape flow.
+        raw_creator_tier_compact = re.sub(r"[\s_-]+", "", (raw_creator_tier or "").strip().lower())
+        if raw_creator_tier_compact in {"peptidevendor", "peptidevendors"}:
+            return _handle_peptide_vendor_lead()
+        if raw_creator_tier_compact in {"xcreator", "xcreators", "twittercreator", "twittercreators"}:
+            return _handle_x_creator_lead()
+
         creator_tier = _normalize_creator_tier(str(raw_creator_tier))
         if not creator_tier:
             return jsonify({
                 "error": "Missing or invalid creator_tier",
-                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, Ambassador, Themepage, YT Creator, or AI Influencer",
+                "message": "For raw leads, creator_tier is required: Macro, Micro, Submicro, Ambassador, Themepage, YT Creator, AI Influencer, Peptide Vendor, or X Creator",
             }), 400
         
         # IMPORTANT: Check if creator exists in ANY sheet (Macros, Micros, Ambassadors, Theme Pages, Raw Leads)
@@ -531,61 +640,7 @@ def scrape_endpoint():
 
     # PEPTIDE VENDORS: scrape TikTok profile and fill Name/TikTok/Instagram/Site columns.
     if cat_key_normalized == "peptide_vendor":
-        if not spreadsheet_id:
-            return jsonify({"error": "No spreadsheet configured"}), 500
-
-        if "tiktok.com" not in url.lower():
-            return jsonify({
-                "error": "Invalid URL for Peptide Vendor",
-                "message": "Peptide Vendor flow currently supports TikTok profile URLs only.",
-            }), 400
-
-        peptide_sheet_name = sheet_name or CATEGORY_TO_SHEET.get("peptide_vendor") or "Peptide Vendors"
-
-        profile = {}
-        try:
-            profile = scrape_profile_sync(url, timeout_seconds=30.0)
-        except Exception as e:
-            _log("peptide_vendor.scrape_error", error=str(e))
-
-        tt_handle = (profile.get("tt") or tt_handle_from_url or "").strip().lstrip("@")
-        ig_handle = (profile.get("ig") or "").strip().lstrip("@")
-        site = (profile.get("site") or "").strip()
-        tiktok_bio = (profile.get("bio") or "").strip()
-        name = (profile.get("name") or "").strip()
-        if not name:
-            name = tt_handle or "Unknown"
-
-        _log("peptide_vendor.append", url=url, tt_handle=tt_handle, has_ig=bool(ig_handle), has_site=bool(site))
-        result = _append_peptide_vendor_row(
-            spreadsheet_id,
-            peptide_sheet_name,
-            name,
-            tt_handle,
-            ig_handle,
-            site,
-            delegated_user=app_cfg.get("delegated_user") or app_cfg.get("gmail_sender") or None,
-        )
-
-        if not result.get("ok"):
-            return jsonify({
-                "error": result.get("error", "Failed to add peptide vendor lead"),
-                "message": result.get("message", ""),
-            }), 500
-
-        _log("peptide_vendor.success", row=result.get("row_added"))
-        return jsonify({
-            "ok": True,
-            "message": "Peptide vendor lead added successfully",
-            "sheet_name": result.get("sheet_name") or peptide_sheet_name,
-            "row_added": result.get("row_added"),
-            "name": result.get("name"),
-            "tt_handle": result.get("tt_handle"),
-            "ig_handle": result.get("ig_handle") or None,
-            "site": result.get("site") or None,
-            "tiktok_bio": tiktok_bio or None,
-            "url": url,
-        })
+        return _handle_peptide_vendor_lead()
 
     # YT CREATORS: Scrape YouTube channel for IG/TT/email via SearchAPI, generate
     # DM + email scripts, log to "YT Creators" sheet, and return outreach scripts.

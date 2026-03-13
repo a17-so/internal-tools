@@ -100,6 +100,8 @@ def test_normalize_category_supports_strict_values():
     assert _normalize_category("YT Creator") == "yt_creator"
     assert _normalize_category("AI Influencer") == "ai_influencer"
     assert _normalize_category("Peptide Vendor") == "peptide_vendor"
+    assert _normalize_category("Peptide Vendors") == "peptide_vendor"
+    assert _normalize_category("Raw Leads") == "rawlead"
     assert _normalize_category("YouTube creators") == "youtube creators"
     assert _normalize_category("AI influencers") == "ai influencers"
 
@@ -118,6 +120,24 @@ def test_scrape_rejects_non_whitelisted_category(mock_get_app_config, client):
     }
     response = client.post("/scrape", json=payload, content_type="application/json")
     assert response.status_code == 400
+
+
+@patch("main._get_app_config")
+def test_scrape_accepts_raw_leads_category_variant(mock_get_app_config, client):
+    mock_get_app_config.return_value = {
+        "app_key": "regen",
+        "sheets_spreadsheet_id": "test_sheet_id",
+    }
+
+    payload = {
+        "app": "regen",
+        "url": "https://www.tiktok.com/@creator",
+        "category": "Raw Leads",
+    }
+    response = client.post("/scrape", json=payload, content_type="application/json")
+    assert response.status_code == 400
+    data = response.get_json()
+    assert "creator_tier" in (data.get("error") or "")
 
 
 @patch("main._append_peptide_vendor_row")

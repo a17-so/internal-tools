@@ -274,6 +274,11 @@ Supported formats:
 1. Row format with headers: `creator_url`, `creator_tier`, optional `status`
 2. Matrix format with URL columns and paired `<header> Tier` columns
 
+Supported creator source links:
+
+- `https://www.tiktok.com/@...`
+- `https://www.instagram.com/...`
+
 Current automation tier support:
 
 - `Macro`
@@ -281,11 +286,11 @@ Current automation tier support:
 - `Submicro`
 - `Ambassador`
 - `Themepage`
+- `AI Influencer`
 
 Temporarily deferred (auto-skipped):
 
 - `YT Creator`
-- `AI Influencer`
 
 ## Reports and Logs
 
@@ -331,6 +336,11 @@ Instagram summary shows `failed:missing_ig_auth`:
   - `./ops/open_platform_profile.sh instagram @regenhealth.app`
   - or `./ops/start_ig_account_debug.sh @regenhealth.app 9232`
 - rerun `python -m outreach_automation.doctor` and confirm `ig_attach_mode` is reachable.
+
+Instagram source lead has no TikTok send attempt:
+
+- expected when no TikTok handle can be discovered from profile bio/links.
+- status uses `tiktok=skipped:missing_tiktok_from_source_profile` while IG/email can still process.
 
 No IG/TikTok tab appears during run:
 

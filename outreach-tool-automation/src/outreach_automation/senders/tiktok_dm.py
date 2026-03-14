@@ -11,8 +11,8 @@ from typing import Any, ClassVar
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
-from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_SEND_BUTTONS
 from outreach_automation.node_runtime import suppress_node_deprecation_warnings
+from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_SEND_BUTTONS
 from outreach_automation.session_manager import SessionManager
 
 
@@ -36,8 +36,19 @@ class TiktokDmSender:
         self._min_seconds_between_sends = max(0, min_seconds_between_sends)
         self._send_jitter_seconds = max(0.0, send_jitter_seconds)
 
-    def send(self, creator_url: str, dm_text: str, account: Account | None, *, dry_run: bool) -> ChannelResult:
-        handle = _extract_handle(creator_url)
+    def send(
+        self,
+        target_tiktok_url: str | None,
+        dm_text: str,
+        account: Account | None,
+        *,
+        dry_run: bool,
+    ) -> ChannelResult:
+        if not (target_tiktok_url or "").strip():
+            return ChannelResult(status="skipped", error_code="missing_tiktok_from_source_profile")
+        assert target_tiktok_url is not None
+        resolved_target_url = target_tiktok_url.strip()
+        handle = _extract_handle(resolved_target_url)
         if not handle:
             return ChannelResult(status="skipped", error_code="missing_tiktok_handle")
         if account is None:

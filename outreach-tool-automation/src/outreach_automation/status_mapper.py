@@ -10,6 +10,7 @@ _ALLOWED_SKIP_CODES = {
     "blocked_email_recipient",
     "missing_ig_handle",
     "missing_tiktok_handle",
+    "missing_tiktok_from_source_profile",
     "ig_dm_unavailable",
     "tiktok_dm_unavailable",
 }

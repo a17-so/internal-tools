@@ -32,6 +32,8 @@ def _extract_status_code(exc: gspread.exceptions.APIError) -> int:
     status_code = getattr(response, "status_code", None)
     if isinstance(status_code, int):
         return status_code
+    if status_code is None:
+        return 0
     try:
         return int(status_code)
     except Exception:
@@ -99,7 +101,7 @@ class SheetsClient:
             return None
 
         url_candidates = [url_column_name] if url_column_name else []
-        url_candidates.extend(["creator_url", "url", "tiktok_url", "creator link"])
+        url_candidates.extend(["creator_url", "url", "tiktok_url", "instagram_url", "creator link"])
 
         tier_candidates = [tier_column_name] if tier_column_name else []
         tier_candidates.extend(["creator_tier", "tier", "category", "creator_type", "type"])
@@ -140,6 +142,8 @@ class SheetsClient:
             creator_url = self._get_cell(row, self._columns.creator_url)
             if not creator_url.strip():
                 continue
+            if not self._is_supported_creator_url(creator_url):
+                continue
             creator_tier = self._get_cell(row, self._columns.creator_tier)
             out.append(
                 LeadRow(
@@ -176,7 +180,10 @@ class SheetsClient:
             return
         if lead.tier_col_index is not None:
             row_range = f"{self._col_letter(col)}{lead.row_index}:{self._col_letter(lead.tier_col_index)}{lead.row_index}"
-            self._sheet.update(row_range, [["", ""]], value_input_option=ValueInputOption.user_entered)
+            self._sheet.batch_update(
+                [{"range": row_range, "values": [["", ""]]}],
+                value_input_option=ValueInputOption.user_entered,
+            )
             return
         self._sheet.update_cell(lead.row_index, col, "")
 
@@ -320,7 +327,7 @@ class SheetsClient:
                 lower = value.lower()
                 if not (lower.startswith("http://") or lower.startswith("https://")):
                     continue
-                if "tiktok.com/" not in lower:
+                if not self._is_supported_creator_url(value):
                     continue
                 if value in seen:
                     continue
@@ -358,7 +365,7 @@ class SheetsClient:
                     continue
                 if not (value.startswith("http://") or value.startswith("https://")):
                     continue
-                if "tiktok.com/" not in value:
+                if not self._is_supported_creator_url(value):
                     continue
                 columns.add(c_idx)
         return columns
@@ -390,3 +397,10 @@ class SheetsClient:
     def _is_tier_header(header: str) -> bool:
         normalized = SheetsClient._normalize_header(header)
         return normalized.endswith(" tier")
+
+    @staticmethod
+    def _is_supported_creator_url(value: str) -> bool:
+        lower = (value or "").strip().lower()
+        if not (lower.startswith("http://") or lower.startswith("https://")):
+            return False
+        return "tiktok.com/" in lower or "instagram.com/" in lower

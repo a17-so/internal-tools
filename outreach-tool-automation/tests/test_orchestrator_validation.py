@@ -1,7 +1,10 @@
 from typing import Any
 
 from outreach_automation.account_router import RoutedAccounts
-from outreach_automation.clients.local_scraper_client import ProfileNotFoundError
+from outreach_automation.clients.local_scraper_client import (
+    InvalidCreatorUrlError,
+    ProfileNotFoundError,
+)
 from outreach_automation.models import (
     Account,
     AccountStatus,
@@ -209,13 +212,32 @@ class FakeIgSender:
 class FakeTiktokSender:
     def send(
         self,
-        creator_url: str,
+        target_tiktok_url: str | None,
         dm_text: str,
         account: Any,
         *,
         dry_run: bool,
     ) -> ChannelResult:
-        _ = (creator_url, dm_text, account, dry_run)
+        _ = (target_tiktok_url, dm_text, account, dry_run)
+        return ChannelResult(status="sent")
+
+
+class CapturingTiktokSender:
+    def __init__(self) -> None:
+        self.targets: list[str | None] = []
+
+    def send(
+        self,
+        target_tiktok_url: str | None,
+        dm_text: str,
+        account: Any,
+        *,
+        dry_run: bool,
+    ) -> ChannelResult:
+        _ = (dm_text, account, dry_run)
+        self.targets.append(target_tiktok_url)
+        if not target_tiktok_url:
+            return ChannelResult(status="skipped", error_code="missing_tiktok_from_source_profile")
         return ChannelResult(status="sent")
 
 
@@ -249,14 +271,42 @@ class FailingEmailSender:
 class FailingTiktokSender:
     def send(
         self,
-        creator_url: str,
+        target_tiktok_url: str | None,
         dm_text: str,
         account: Any,
         *,
         dry_run: bool,
     ) -> ChannelResult:
-        _ = (creator_url, dm_text, account, dry_run)
+        _ = (target_tiktok_url, dm_text, account, dry_run)
         return ChannelResult(status="failed", error_code="tiktok_send_failed")
+
+
+class InstagramNoTiktokScraper(FakeScraper):
+    def scrape(self, payload: Any) -> ScrapeResponse:
+        _ = payload
+        return ScrapeResponse(
+            dm_text="hello",
+            email_to="test@example.com",
+            email_subject="subj",
+            email_body_text="body",
+            ig_handle="ig_user",
+            creator_name="ig_user",
+            tiktok_handle=None,
+        )
+
+
+class InstagramWithTiktokScraper(FakeScraper):
+    def scrape(self, payload: Any) -> ScrapeResponse:
+        _ = payload
+        return ScrapeResponse(
+            dm_text="hello",
+            email_to="test@example.com",
+            email_subject="subj",
+            email_body_text="body",
+            ig_handle="ig_user",
+            creator_name="ig_user",
+            tiktok_handle="discovered_tt",
+        )
 
 
 def test_missing_tier_fails_validation() -> None:
@@ -541,3 +591,91 @@ def test_tiktok_tier_deferred_keeps_creator_link_for_retry() -> None:
     assert sheets.cleared_rows == []
     assert len(firestore.jobs) == 1
     assert firestore.jobs[0][1].status == "completed"
+
+
+def test_instagram_source_without_discovered_tiktok_still_processes_email_and_ig() -> None:
+    sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://www.instagram.com/ig_user", creator_tier="Micro", status="")
+    ]
+    firestore = FakeFirestore()
+    scraper = InstagramNoTiktokScraper()
+    tiktok_sender = CapturingTiktokSender()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=tiktok_sender,
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.processed == 1
+    assert result.failed == 0
+    assert tiktok_sender.targets == []
+    assert result.lead_summaries[0].tiktok_error == "missing_tiktok_from_source_profile"
+    assert result.lead_summaries[0].sender_tiktok is None
+    assert sheets._statuses[2] == "Processed"
+
+
+def test_instagram_source_with_discovered_tiktok_uses_resolved_target_url() -> None:
+    sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://www.instagram.com/ig_user", creator_tier="Micro", status="")
+    ]
+    firestore = FakeFirestore()
+    scraper = InstagramWithTiktokScraper()
+    tiktok_sender = CapturingTiktokSender()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=tiktok_sender,
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.processed == 1
+    assert tiktok_sender.targets == ["https://www.tiktok.com/@discovered_tt"]
+    assert result.lead_summaries[0].sender_tiktok == "@ethan"
+
+
+def test_invalid_creator_url_maps_to_specific_status_not_runtime_error() -> None:
+    class InvalidUrlScraper(FakeScraper):
+        def scrape(self, payload: Any) -> ScrapeResponse:
+            _ = payload
+            raise InvalidCreatorUrlError("Invalid Instagram URL, could not extract handle: https://www.instagram.com/p/xyz")
+
+    sheets = FakeSheets()
+    sheets.fetch_unprocessed = lambda batch_size, row_index=None: [  # type: ignore[method-assign]
+        LeadRow(row_index=2, creator_url="https://www.instagram.com/p/xyz", creator_tier="Micro", status="")
+    ]
+    firestore = FakeFirestore()
+    scraper = InvalidUrlScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=FakeRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.failed == 1
+    assert sheets._statuses[2] == "failed_invalid_creator_url"
+    assert result.lead_summaries[0].final_status == "failed_invalid_creator_url"

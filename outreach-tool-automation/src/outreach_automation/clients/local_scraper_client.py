@@ -24,6 +24,7 @@ _INSTAGRAM_URL_RE = re.compile(
 _HANDLE_RE = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 _BLOCKED_HANDLES = {"media", "instagram", "com", "www"}
 _IGNORE_EMAILS = {"example@example.com", "email@example.com", "your@email.com"}
+_TIKTOK_URL_RE = re.compile(r"(?:https?://)?(?:www\.)?tiktok\.com/@([A-Za-z0-9_.-]+)", re.I)
 _LINK_HUB_DOMAINS = {
     "linktr.ee",
     "beacons.ai",
@@ -49,6 +50,14 @@ class ProfileNotFoundError(RuntimeError):
     """Raised when SearchAPI cannot resolve a TikTok profile for a handle."""
 
 
+class InvalidCreatorUrlError(ValueError):
+    """Raised when creator URL points to a supported source but cannot be parsed."""
+
+
+class UnsupportedCreatorUrlError(ValueError):
+    """Raised when creator URL source platform is unsupported."""
+
+
 @dataclass(frozen=True, slots=True)
 class LocalScrapeSettings:
     searchapi_key: str
@@ -63,25 +72,39 @@ class LocalScrapeClient:
         self._settings = settings
 
     def scrape(self, payload: ScrapePayload) -> ScrapeResponse:
-        username = _extract_tiktok_username(payload.creator_url)
-        if not username:
-            raise ValueError(f"Invalid TikTok URL, could not extract handle: {payload.creator_url}")
+        source = _parse_creator_source(payload.creator_url)
+        username = source.handle
+        if source.platform == "tiktok":
+            profile = self._fetch_tiktok_profile(username=username)
+            ig_handle = _extract_ig_handle_from_profile(
+                profile=profile,
+                username=username,
+                same_username_fallback=self._settings.same_username_fallback,
+            )
+            tiktok_handle = username
+            profile_links = _extract_profile_links(platform=source.platform, profile=profile)
+        elif source.platform == "instagram":
+            profile = self._fetch_instagram_profile(username=username)
+            ig_handle = _extract_ig_handle_from_instagram_profile(profile=profile, username=username)
+            tiktok_handle = _extract_tiktok_handle_from_profile(profile=profile)
+            profile_links = _extract_profile_links(platform=source.platform, profile=profile)
+        else:
+            raise UnsupportedCreatorUrlError(f"Unsupported creator URL source: {payload.creator_url}")
 
-        profile = self._fetch_tiktok_profile(username=username)
         name = _display_name(profile, username=username)
         email = _extract_email(profile.get("bio", "") or "")
-        ig_handle = _extract_ig_handle_from_profile(
-            profile=profile,
-            username=username,
-            same_username_fallback=self._settings.same_username_fallback,
-        )
-        bio_link = str(profile.get("bio_link", "") or "")
-        if bio_link and (not email or not ig_handle):
-            link_email, link_ig = _extract_contact_from_link_page(bio_link)
-            if not email and link_email:
-                email = link_email
-            if not ig_handle and link_ig:
-                ig_handle = link_ig
+        if profile_links and (not email or not ig_handle or (source.platform == "instagram" and not tiktok_handle)):
+            for link_url in profile_links:
+                if not link_url:
+                    continue
+                link_email, link_ig, link_tt = _extract_contact_from_link_page(link_url)
+                if not email and link_email:
+                    email = link_email
+                if not ig_handle and link_ig:
+                    ig_handle = link_ig
+                if source.platform == "instagram" and not tiktok_handle and link_tt:
+                    tiktok_handle = link_tt
+
         templates = _load_templates(
             app_key=payload.app,
             templates_dir=self._settings.templates_dir,
@@ -97,7 +120,7 @@ class LocalScrapeClient:
             email_body_text=comms.email_text.strip(),
             ig_handle=ig_handle or None,
             creator_name=name,
-            tiktok_handle=username,
+            tiktok_handle=tiktok_handle or None,
         )
 
     def _fetch_tiktok_profile(self, *, username: str) -> dict[str, Any]:
@@ -129,6 +152,34 @@ class LocalScrapeClient:
             raise last_exc
         raise RuntimeError("SearchAPI fetch failed without exception")
 
+    def _fetch_instagram_profile(self, *, username: str) -> dict[str, Any]:
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(
+                    _SEARCHAPI_URL,
+                    params={
+                        "engine": "instagram_profile",
+                        "username": username,
+                        "api_key": self._settings.searchapi_key,
+                    },
+                    timeout=self._settings.request_timeout_seconds,
+                )
+                response.raise_for_status()
+                result = response.json()
+                profile = result.get("profile")
+                if not isinstance(profile, dict):
+                    raise ProfileNotFoundError(f"SearchAPI returned no profile for instagram @{username}")
+                return profile
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= 3 or not _is_retryable_searchapi_error(exc):
+                    raise
+                time.sleep(random.uniform(0.4, 0.8) * (2 ** (attempt - 1)))
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("SearchAPI fetch failed without exception")
+
 
 @dataclass(frozen=True, slots=True)
 class _RenderedComms:
@@ -137,13 +188,37 @@ class _RenderedComms:
     email_text: str
 
 
-def _extract_tiktok_username(url: str) -> str | None:
-    path = (urlparse(url).path or "").strip()
-    match = re.search(r"/@([A-Za-z0-9_.-]+)", path)
-    if not match:
-        return None
-    handle = match.group(1).strip().lstrip("@")
-    return handle or None
+@dataclass(frozen=True, slots=True)
+class _SourceTarget:
+    platform: str
+    handle: str
+
+
+def _parse_creator_source(url: str) -> _SourceTarget:
+    parsed = urlparse((url or "").strip())
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").strip()
+    if "tiktok.com" in host:
+        match = re.search(r"/@([A-Za-z0-9_.-]+)", path)
+        if not match:
+            raise InvalidCreatorUrlError(f"Invalid TikTok URL, could not extract handle: {url}")
+        handle = match.group(1).strip().lstrip("@")
+        if not handle:
+            raise InvalidCreatorUrlError(f"Invalid TikTok URL, empty handle: {url}")
+        return _SourceTarget(platform="tiktok", handle=handle)
+    if "instagram.com" in host:
+        match = re.search(
+            r"^/(?!p/|reel/|stories/|explore/|direct/|accounts/)([A-Za-z0-9_.]+)(?:/|$)",
+            path,
+            re.I,
+        )
+        if not match:
+            raise InvalidCreatorUrlError(f"Invalid Instagram URL, could not extract handle: {url}")
+        handle = (match.group(1) or "").strip().lstrip("@")
+        if not _is_valid_handle(handle):
+            raise InvalidCreatorUrlError(f"Invalid Instagram URL handle: {url}")
+        return _SourceTarget(platform="instagram", handle=handle)
+    raise UnsupportedCreatorUrlError(f"Unsupported creator URL: {url}")
 
 
 def _is_retryable_searchapi_error(exc: Exception) -> bool:
@@ -157,13 +232,13 @@ def _is_retryable_searchapi_error(exc: Exception) -> bool:
     return False
 
 
-def _extract_contact_from_link_page(link_url: str) -> tuple[str, str]:
+def _extract_contact_from_link_page(link_url: str) -> tuple[str, str, str]:
     parsed = urlparse((link_url or "").strip())
     if parsed.scheme not in {"http", "https"}:
-        return "", ""
+        return "", "", ""
     host = (parsed.netloc or "").lower().replace("www.", "")
     if host not in _LINK_HUB_DOMAINS:
-        return "", ""
+        return "", "", ""
 
     try:
         response = requests.get(
@@ -191,13 +266,14 @@ def _extract_contact_from_link_page(link_url: str) -> tuple[str, str]:
 
         html = b"".join(chunks).decode("utf-8", errors="ignore")
         if not html:
-            return "", ""
+            return "", "", ""
         decoded = unquote(html)
         email = _extract_email(html) or _extract_email(decoded)
         ig = _extract_ig_from_text(html) or _extract_ig_from_text(decoded)
-        return email, ig
+        tt = _extract_tiktok_handle_from_text(html) or _extract_tiktok_handle_from_text(decoded)
+        return email, ig, tt
     except Exception:
-        return "", ""
+        return "", "", ""
 
 
 def _extract_email(text: str) -> str:
@@ -243,6 +319,27 @@ def _extract_ig_from_text(value: str) -> str:
     return handle if _is_valid_handle(handle) else ""
 
 
+def _extract_tiktok_handle_from_text(value: str) -> str:
+    if not value:
+        return ""
+    url_match = _TIKTOK_URL_RE.search(value)
+    if url_match:
+        handle = (url_match.group(1) or "").strip().lstrip("@")
+        if _is_valid_handle(handle):
+            return handle
+    for pattern in (
+        r"(?:^|[\s,;|])(?:tt|tiktok)\s*[:\-]\s*@?([A-Za-z0-9_.]{1,30})\b",
+        r"(?:^|[\s,;|])(?:tt|tiktok)\s+@([A-Za-z0-9_.]{1,30})\b",
+    ):
+        match = re.search(pattern, value, re.I)
+        if not match:
+            continue
+        handle = (match.group(1) or "").strip().lstrip("@")
+        if _is_valid_handle(handle):
+            return handle
+    return ""
+
+
 def _extract_ig_handle_from_profile(
     *,
     profile: dict[str, Any],
@@ -276,6 +373,31 @@ def _extract_ig_handle_from_profile(
     return ""
 
 
+def _extract_ig_handle_from_instagram_profile(*, profile: dict[str, Any], username: str) -> str:
+    profile_username = str(profile.get("username") or "").strip().lstrip("@")
+    if _is_valid_handle(profile_username):
+        return profile_username
+    if _is_valid_handle(username):
+        return username
+    bio = str(profile.get("bio", "") or "")
+    from_text = _extract_ig_from_text(bio)
+    if from_text:
+        return from_text
+    return ""
+
+
+def _extract_tiktok_handle_from_profile(*, profile: dict[str, Any]) -> str:
+    bio = str(profile.get("bio", "") or "")
+    from_text = _extract_tiktok_handle_from_text(bio)
+    if from_text:
+        return from_text
+    for link_url in _extract_profile_links(platform="instagram", profile=profile):
+        from_link = _extract_tiktok_handle_from_text(link_url)
+        if from_link:
+            return from_link
+    return ""
+
+
 def _display_name(profile: dict[str, Any], *, username: str) -> str:
     tt_username = str(profile.get("username") or "").strip()
     if tt_username:
@@ -284,6 +406,29 @@ def _display_name(profile: dict[str, Any], *, username: str) -> str:
     if name and name.lower() not in {"tiktok", "tiktok - make your day"}:
         return name
     return username.lower()
+
+
+def _extract_profile_links(*, platform: str, profile: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    if platform == "tiktok":
+        bio_link = str(profile.get("bio_link", "") or "").strip()
+        if bio_link:
+            out.append(bio_link)
+        return out
+
+    # Instagram SearchAPI payload: `external_link` and optional `bio_links` list.
+    external_link = str(profile.get("external_link", "") or "").strip()
+    if external_link:
+        out.append(external_link)
+    bio_links = profile.get("bio_links")
+    if isinstance(bio_links, list):
+        for item in bio_links:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("url", "") or "").strip()
+            if value:
+                out.append(value)
+    return out
 
 
 def _load_templates(

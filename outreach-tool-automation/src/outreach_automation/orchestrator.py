@@ -7,7 +7,11 @@ from typing import Protocol
 from uuid import uuid4
 
 from outreach_automation.account_router import RoutedAccounts
-from outreach_automation.clients.local_scraper_client import ProfileNotFoundError
+from outreach_automation.clients.local_scraper_client import (
+    InvalidCreatorUrlError,
+    ProfileNotFoundError,
+    UnsupportedCreatorUrlError,
+)
 from outreach_automation.models import (
     Account,
     ChannelResult,
@@ -99,7 +103,7 @@ class InstagramSenderProto(Protocol):
 class TiktokSenderProto(Protocol):
     def send(
         self,
-        creator_url: str,
+        target_tiktok_url: str | None,
         dm_text: str,
         account: Account | None,
         *,
@@ -359,16 +363,21 @@ class Orchestrator:
             ig_handle = scrape.ig_handle
             creator_name = scrape.creator_name
             tiktok_handle = scrape.tiktok_handle
+            target_tiktok_url = _build_tiktok_target_url(
+                scraped_tiktok_handle=scrape.tiktok_handle,
+                lead_creator_url=lead.creator_url,
+            )
+            should_attempt_tiktok = self._enable_tiktok and bool((target_tiktok_url or "").strip())
 
             routed_tiktok = self._router.route_selected(
                 enable_email=False,
                 enable_instagram=False,
-                enable_tiktok=self._enable_tiktok,
+                enable_tiktok=should_attempt_tiktok,
                 tiktok_tier=tier,
             )
             sender_tiktok = routed_tiktok.tiktok.handle if routed_tiktok.tiktok else None
             deferred_tiktok_routing = (
-                self._enable_tiktok
+                should_attempt_tiktok
                 and routed_tiktok.tiktok is None
                 and routed_tiktok.tiktok_route_error is not None
             )
@@ -389,12 +398,15 @@ class Orchestrator:
                 sender_ig = routed_primary.instagram.handle if routed_primary.instagram else None
 
                 if self._enable_tiktok:
-                    tiktok_result = self._tiktok_sender.send(
-                        creator_url=lead.creator_url,
-                        dm_text=scrape.dm_text,
-                        account=routed_tiktok.tiktok,
-                        dry_run=dry_run,
-                    )
+                    if should_attempt_tiktok:
+                        tiktok_result = self._tiktok_sender.send(
+                            target_tiktok_url=target_tiktok_url,
+                            dm_text=scrape.dm_text,
+                            account=routed_tiktok.tiktok,
+                            dry_run=dry_run,
+                        )
+                    else:
+                        tiktok_result = ChannelResult(status="skipped", error_code="missing_tiktok_from_source_profile")
                 else:
                     tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
@@ -468,6 +480,26 @@ class Orchestrator:
             job_error = str(exc)
             job_status = "completed"
             return_value = "skipped"
+        except UnsupportedCreatorUrlError as exc:
+            final_status = "skipped_unsupported_creator_url"
+            _LOG.info(
+                "lead skipped because creator URL source is unsupported",
+                extra={"row_index": lead.row_index, "url": lead.creator_url},
+            )
+            self._safe_finalize_lead(lead, final_status, preserve_creator_link=False)
+            job_error = str(exc)
+            job_status = "completed"
+            return_value = "skipped"
+        except InvalidCreatorUrlError as exc:
+            final_status = "failed_invalid_creator_url"
+            _LOG.info(
+                "lead failed because creator URL is invalid for source parsing",
+                extra={"row_index": lead.row_index, "url": lead.creator_url},
+            )
+            self._safe_finalize_lead(lead, final_status, preserve_creator_link=False)
+            job_error = str(exc)
+            job_status = "dead"
+            return_value = "failed"
         except Exception as exc:
             final_status = self._runtime_status_for_exception(exc)
             _LOG.exception(
@@ -521,6 +553,10 @@ class Orchestrator:
         message = str(exc).lower()
         if "searchapi returned no profile" in message:
             return "skipped_profile_not_found"
+        if "unsupported creator url" in message:
+            return "skipped_unsupported_creator_url"
+        if "invalid instagram url" in message or "invalid tiktok url" in message:
+            return "failed_invalid_creator_url"
         if "missing app template file" in message:
             return "failed_missing_scrape_template"
         if "missing required environment variable" in message:
@@ -572,3 +608,13 @@ class Orchestrator:
             status="dead",
         )
         self._firestore.write_job(str(uuid4()), record)
+
+
+def _build_tiktok_target_url(*, scraped_tiktok_handle: str | None, lead_creator_url: str) -> str | None:
+    handle = (scraped_tiktok_handle or "").strip().lstrip("@")
+    if handle:
+        return f"https://www.tiktok.com/@{handle}"
+    lead_url = (lead_creator_url or "").strip()
+    if "tiktok.com/" in lead_url.lower():
+        return lead_url
+    return None

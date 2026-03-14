@@ -263,3 +263,102 @@ def test_local_scraper_ignores_brand_tag_mentions_for_ig(tmp_path: Path, monkeyp
         )
     )
     assert result.ig_handle is None
+
+
+def test_local_scraper_supports_instagram_source_and_extracts_tiktok_from_bio(tmp_path: Path, monkeypatch: Any) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    _make_template_script(scripts_dir / "regen.py")
+
+    def fake_get(*args: Any, **kwargs: Any) -> _FakeResponse:
+        _ = (args, kwargs)
+        return _FakeResponse(
+            {
+                "profile": {
+                    "username": "igcreator",
+                    "name": "IG Creator",
+                    "bio": "DM me for brand deals | tiktok: @igcreator_tt | igcreator@mail.com",
+                    "external_link": "",
+                    "bio_links": [],
+                }
+            }
+        )
+
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
+
+    client = LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key="dummy",
+            request_timeout_seconds=10,
+            same_username_fallback=False,
+            templates_dir=scripts_dir,
+            outreach_apps_json=None,
+        )
+    )
+    result = client.scrape(
+        ScrapePayload(
+            app="regen",
+            creator_url="https://www.instagram.com/igcreator",
+            category="Micro",
+            sender_profile="ethan",
+        )
+    )
+
+    assert result.ig_handle == "igcreator"
+    assert result.tiktok_handle == "igcreator_tt"
+    assert result.email_to == "igcreator@mail.com"
+
+
+def test_local_scraper_supports_instagram_source_and_extracts_tiktok_from_link_page(tmp_path: Path, monkeypatch: Any) -> None:
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    _make_template_script(scripts_dir / "regen.py")
+
+    class _StreamResponse(_FakeResponse):
+        def __init__(self, body: str) -> None:
+            super().__init__({})
+            self._body = body
+
+        def iter_content(self, chunk_size: int = 8192) -> Iterator[bytes]:
+            data = self._body.encode("utf-8")
+            for i in range(0, len(data), chunk_size):
+                yield data[i : i + chunk_size]
+
+    def fake_get(*args: Any, **kwargs: Any) -> Any:
+        url = args[0] if args else kwargs.get("url", "")
+        if "searchapi.io" in str(url):
+            return _FakeResponse(
+                {
+                    "profile": {
+                        "username": "iglink",
+                        "name": "IG Link",
+                        "bio": "no tiktok in bio",
+                        "external_link": "https://linktr.ee/iglink",
+                        "bio_links": [{"url": "https://linktr.ee/iglink"}],
+                    }
+                }
+            )
+        return _StreamResponse('<a href="https://www.tiktok.com/@iglink_tt">tt</a>')
+
+    monkeypatch.setattr("outreach_automation.clients.local_scraper_client.requests.get", fake_get)
+
+    client = LocalScrapeClient(
+        LocalScrapeSettings(
+            searchapi_key="dummy",
+            request_timeout_seconds=10,
+            same_username_fallback=False,
+            templates_dir=scripts_dir,
+            outreach_apps_json=None,
+        )
+    )
+    result = client.scrape(
+        ScrapePayload(
+            app="regen",
+            creator_url="https://www.instagram.com/iglink",
+            category="Micro",
+            sender_profile="ethan",
+        )
+    )
+
+    assert result.ig_handle == "iglink"
+    assert result.tiktok_handle == "iglink_tt"

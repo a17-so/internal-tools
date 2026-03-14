@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from outreach_automation.models import Account, Platform, Tier
 
@@ -53,7 +53,7 @@ class AccountRouter:
         self._skipped_counts: dict[str, int] = {}
         self._tt_round_robin_cursor = 0
 
-    _TT_HANDLE_BY_TIER: dict[Tier, tuple[str, ...]] = {
+    _TT_HANDLE_BY_TIER: ClassVar[dict[Tier, tuple[str, ...]]] = {
         Tier.MACRO: ("@regenapp",),
         Tier.AI_INFLUENCER: ("@abhaychebium",),
         Tier.MICRO: ("@advaithakella", "@ekam_m3hat"),

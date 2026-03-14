@@ -11,13 +11,13 @@ from typing import Any, ClassVar
 
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
+from outreach_automation.node_runtime import suppress_node_deprecation_warnings
 from outreach_automation.selectors import (
     INSTAGRAM_DM_INPUTS,
     INSTAGRAM_INBOX_SEARCH_INPUTS,
     INSTAGRAM_MESSAGE_BUTTONS,
     INSTAGRAM_THREAD_ROWS,
 )
-from outreach_automation.node_runtime import suppress_node_deprecation_warnings
 from outreach_automation.session_manager import SessionManager
 
 _LOG = logging.getLogger(__name__)

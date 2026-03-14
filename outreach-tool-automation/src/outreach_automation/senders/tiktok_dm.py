@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 from outreach_automation.dm_format import normalize_dm_text
 from outreach_automation.models import Account, ChannelResult, Platform
 from outreach_automation.selectors import TIKTOK_DM_INPUTS, TIKTOK_SEND_BUTTONS
+from outreach_automation.node_runtime import suppress_node_deprecation_warnings
 from outreach_automation.session_manager import SessionManager
 
 
@@ -108,6 +109,7 @@ class TiktokDmSender:
         attach_mode: bool,
         cdp_url: str | None,
     ) -> None:
+        suppress_node_deprecation_warnings()
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover

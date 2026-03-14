@@ -17,6 +17,7 @@ from outreach_automation.selectors import (
     INSTAGRAM_MESSAGE_BUTTONS,
     INSTAGRAM_THREAD_ROWS,
 )
+from outreach_automation.node_runtime import suppress_node_deprecation_warnings
 from outreach_automation.session_manager import SessionManager
 
 _LOG = logging.getLogger(__name__)
@@ -107,6 +108,7 @@ class InstagramDmSender:
         attach_mode: bool,
         cdp_url: str | None,
     ) -> None:
+        suppress_node_deprecation_warnings()
         try:
             from playwright.async_api import async_playwright
         except ImportError as exc:  # pragma: no cover

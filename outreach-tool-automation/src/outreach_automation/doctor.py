@@ -68,7 +68,7 @@ def _run_checks(settings: Settings) -> list[CheckResult]:
         )
 
     out.append(_check_ig_attach(settings))
-    out.append(_check_tiktok_attach(settings))
+    out.append(_check_tiktok_attach(settings, firestore_client))
     out.extend(_check_gmail_config(settings))
     return out
 
@@ -252,7 +252,9 @@ def _missing_profile_dirs(
     return missing
 
 
-def _check_tiktok_attach(settings: Settings) -> CheckResult:
+def _check_tiktok_attach(
+    settings: Settings, firestore_client: FirestoreClient | None = None
+) -> CheckResult:
     if not settings.tiktok_attach_mode:
         return CheckResult("tiktok_attach_mode", True, "Disabled", blocking=False)
     mode = getattr(settings, "tiktok_cycling_mode", "attach_single_browser")
@@ -287,9 +289,30 @@ def _check_tiktok_attach(settings: Settings) -> CheckResult:
                 "TIKTOK_ATTACH_ACCOUNT_CDP_URLS missing",
                 blocking=True,
             )
+        active_handles: list[str] = []
+        if firestore_client is not None:
+            active_handles = [
+                (acc.handle or "").strip().lower()
+                for acc in firestore_client.list_active_accounts(Platform.TIKTOK)
+                if (acc.handle or "").strip()
+            ]
+        scoped_map: dict[str, str] = {}
+        if active_handles:
+            for handle in active_handles:
+                cdp_url = cdp_map.get(handle) or cdp_map.get(f"@{handle.lstrip('@')}")
+                if cdp_url:
+                    scoped_map[handle] = cdp_url
+        else:
+            scoped_map = cdp_map
+
         unreachable: list[str] = []
         invalid: list[str] = []
-        for handle, cdp_url in cdp_map.items():
+        missing_active: list[str] = []
+        if active_handles:
+            for handle in active_handles:
+                if handle not in scoped_map:
+                    missing_active.append(handle)
+        for handle, cdp_url in scoped_map.items():
             parsed = urlparse(cdp_url)
             host = parsed.hostname
             port = parsed.port
@@ -298,13 +321,14 @@ def _check_tiktok_attach(settings: Settings) -> CheckResult:
                 continue
             if not _is_socket_reachable(host, port):
                 unreachable.append(f"{handle}={cdp_url}")
-        ok = not invalid and not unreachable
+        ok = not invalid and not unreachable and not missing_active
         blocking = (not ok) and (not settings.tiktok_attach_auto_start)
         if ok:
-            detail = f"accounts={len(cdp_map)} reachable=true"
+            ignored = max(0, len(cdp_map) - len(scoped_map))
+            detail = f"accounts={len(scoped_map)} reachable=true ignored_inactive={ignored}"
         else:
             detail = (
-                f"invalid={invalid} unreachable={unreachable} auto_start={settings.tiktok_attach_auto_start}"
+                f"missing_active={missing_active} invalid={invalid} unreachable={unreachable} auto_start={settings.tiktok_attach_auto_start}"
             )
         return CheckResult("tiktok_attach_mode", ok, detail, blocking=blocking)
     return CheckResult("tiktok_attach_mode", False, "Unsupported attach mode config", blocking=True)

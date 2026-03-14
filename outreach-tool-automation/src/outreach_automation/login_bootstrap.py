@@ -5,6 +5,7 @@ import subprocess
 
 from outreach_automation.clients.firestore_client import FirestoreClient
 from outreach_automation.models import Account, Platform
+from outreach_automation.node_runtime import suppress_node_deprecation_warnings
 from outreach_automation.session_manager import SessionManager
 from outreach_automation.settings import load_settings
 
@@ -69,6 +70,7 @@ def _bootstrap_account(platform: Platform, account: Account, session_manager: Se
         input("Complete login + 2FA in the opened Chrome window, then press Enter here to continue: ")
         return
 
+    suppress_node_deprecation_warnings()
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover

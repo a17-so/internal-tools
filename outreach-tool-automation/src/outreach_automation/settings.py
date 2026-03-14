@@ -31,6 +31,7 @@ class Settings:
     raw_leads_status_column: str | None
     log_level: str
     batch_size: int
+    unbounded_batch_size: int
     run_lock_ttl_seconds: int
     reset_counters_on_run_exit: bool
     sender_profile: str
@@ -151,6 +152,7 @@ def load_settings(*, dotenv_path: str | None = None) -> Settings:
         raw_leads_status_column=os.getenv("RAW_LEADS_STATUS_COLUMN", "").strip() or None,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         batch_size=int(os.getenv("BATCH_SIZE", "100")),
+        unbounded_batch_size=int(os.getenv("UNBOUNDED_BATCH_SIZE", "5000")),
         run_lock_ttl_seconds=int(os.getenv("RUN_LOCK_TTL_SECONDS", "1800")),
         reset_counters_on_run_exit=os.getenv("RESET_COUNTERS_ON_RUN_EXIT", "false").lower() == "true",
         sender_profile=os.getenv("SENDER_PROFILE", "default"),

@@ -132,8 +132,8 @@ class FakeRouter:
     def route_all(self) -> RoutedAccounts:
         return self.route_selected(enable_email=True, enable_instagram=True, enable_tiktok=True)
 
-    def has_available(self, platform: Platform) -> bool:
-        _ = platform
+    def has_available(self, platform: Platform, *, tiktok_tier: Any | None = None) -> bool:
+        _ = (platform, tiktok_tier)
         return True
 
     def route_selected(
@@ -142,7 +142,9 @@ class FakeRouter:
         enable_email: bool,
         enable_instagram: bool,
         enable_tiktok: bool,
+        tiktok_tier: Any | None = None,
     ) -> RoutedAccounts:
+        _ = tiktok_tier
         return RoutedAccounts(
             email=Account(
                 id="e1",
@@ -500,3 +502,42 @@ def test_tracking_append_failure_is_reported_but_run_still_processed() -> None:
     assert result.processed == 1
     assert result.failed == 0
     assert result.tracking_append_failed_links == ["https://tiktok.com/@user"]
+
+
+def test_tiktok_tier_deferred_keeps_creator_link_for_retry() -> None:
+    class DeferredTiktokRouter(FakeRouter):
+        def route_selected(
+            self,
+            *,
+            enable_email: bool,
+            enable_instagram: bool,
+            enable_tiktok: bool,
+            tiktok_tier: Any | None = None,
+        ) -> RoutedAccounts:
+            _ = (enable_email, enable_instagram, enable_tiktok, tiktok_tier)
+            return RoutedAccounts(email=None, instagram=None, tiktok=None, tiktok_route_error="deferred_tiktok_sender_capped")
+
+    sheets = FakeSheets()
+    firestore = FakeFirestore()
+    scraper = FakeScraper()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=DeferredTiktokRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=FakeTiktokSender(),
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.skipped == 1
+    assert result.lead_summaries[0].final_status == "pending_tomorrow"
+    assert result.lead_summaries[0].tiktok_error == "deferred_tiktok_sender_capped"
+    assert sheets._statuses[2] == "pending_tomorrow"
+    assert sheets.cleared_rows == []
+    assert len(firestore.jobs) == 1
+    assert firestore.jobs[0][1].status == "completed"

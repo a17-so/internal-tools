@@ -21,6 +21,8 @@ from outreach_automation.tier_resolver import (
         ("Themepage", Tier.THEMEPAGE),
         ("Theme Page", Tier.THEMEPAGE),
         ("theme-pages", Tier.THEMEPAGE),
+        ("AI Influencer", Tier.AI_INFLUENCER),
+        ("ai_influencer", Tier.AI_INFLUENCER),
     ],
 )
 def test_resolve_tier(raw: str, expected: Tier) -> None:
@@ -37,7 +39,7 @@ def test_invalid_tier() -> None:
         resolve_tier("nano")
 
 
-@pytest.mark.parametrize("raw", ["YT Creator", "yt_creator", "AI Influencer", "ai-influencer"])
+@pytest.mark.parametrize("raw", ["YT Creator", "yt_creator"])
 def test_deferred_unsupported_tier(raw: str) -> None:
     with pytest.raises(UnsupportedTierDeferredError):
         resolve_tier(raw)

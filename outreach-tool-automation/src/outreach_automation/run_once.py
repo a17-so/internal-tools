@@ -70,7 +70,9 @@ def main() -> int:
 
     try:
         started_at = datetime.now(UTC)
-        effective_batch = args.batch_size or args.max_leads or settings.batch_size
+        explicit_batch = args.batch_size or args.max_leads
+        unbounded_mode = explicit_batch is None and args.lead_row_index is None
+        effective_batch = explicit_batch or (settings.unbounded_batch_size if unbounded_mode else settings.batch_size)
         dry_run = False if args.live else args.dry_run or settings.dry_run
         enabled_channels = _parse_channels(args.channels)
 
@@ -193,7 +195,8 @@ def main() -> int:
                 return 130
             print(
                 f"processed={result.processed} failed={result.failed} skipped={result.skipped} "
-                f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))}"
+                f"dry_run={dry_run} channels={','.join(sorted(enabled_channels))} "
+                f"mode={'unbounded' if unbounded_mode else 'bounded'}"
             )
             if result.failed_tiktok_links:
                 print("failed_tiktok_links:")

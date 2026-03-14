@@ -16,6 +16,7 @@ from outreach_automation.models import (
     Platform,
     ScrapePayload,
     ScrapeResponse,
+    Tier,
 )
 from outreach_automation.status_mapper import final_sheet_status
 from outreach_automation.tier_resolver import (
@@ -61,13 +62,14 @@ class FirestoreClientProto(Protocol):
 
 class AccountRouterProto(Protocol):
     def route_all(self) -> RoutedAccounts: ...
-    def has_available(self, platform: Platform) -> bool: ...
+    def has_available(self, platform: Platform, *, tiktok_tier: Tier | None = None) -> bool: ...
     def route_selected(
         self,
         *,
         enable_email: bool,
         enable_instagram: bool,
         enable_tiktok: bool,
+        tiktok_tier: Tier | None = None,
     ) -> RoutedAccounts: ...
 
 
@@ -362,41 +364,48 @@ class Orchestrator:
                 enable_email=self._enable_email,
                 enable_instagram=self._enable_instagram,
                 enable_tiktok=self._enable_tiktok,
+                tiktok_tier=tier,
             )
             sender_email = routed.email.handle if routed.email else None
             sender_ig = routed.instagram.handle if routed.instagram else None
             sender_tiktok = routed.tiktok.handle if routed.tiktok else None
 
-            if self._enable_tiktok:
-                tiktok_result = self._tiktok_sender.send(
-                    creator_url=lead.creator_url,
-                    dm_text=scrape.dm_text,
-                    account=routed.tiktok,
-                    dry_run=dry_run,
-                )
+            deferred_tiktok_routing = self._enable_tiktok and routed.tiktok is None and routed.tiktok_route_error is not None
+            if deferred_tiktok_routing:
+                tiktok_result = ChannelResult(status="pending_tomorrow", error_code=routed.tiktok_route_error)
+                ig_result = ChannelResult(status="skipped", error_code=routed.tiktok_route_error)
+                email_result = ChannelResult(status="skipped", error_code=routed.tiktok_route_error)
             else:
-                tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
+                if self._enable_tiktok:
+                    tiktok_result = self._tiktok_sender.send(
+                        creator_url=lead.creator_url,
+                        dm_text=scrape.dm_text,
+                        account=routed.tiktok,
+                        dry_run=dry_run,
+                    )
+                else:
+                    tiktok_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
-            if self._enable_instagram:
-                ig_result = self._ig_sender.send(
-                    ig_handle=scrape.ig_handle,
-                    dm_text=scrape.dm_text,
-                    account=routed.instagram,
-                    dry_run=dry_run,
-                )
-            else:
-                ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
+                if self._enable_instagram:
+                    ig_result = self._ig_sender.send(
+                        ig_handle=scrape.ig_handle,
+                        dm_text=scrape.dm_text,
+                        account=routed.instagram,
+                        dry_run=dry_run,
+                    )
+                else:
+                    ig_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
-            if self._enable_email:
-                email_result = self._email_sender.send(
-                    to_email=scrape.email_to,
-                    subject=scrape.email_subject,
-                    body=scrape.email_body_text,
-                    account=routed.email,
-                    dry_run=dry_run,
-                )
-            else:
-                email_result = ChannelResult(status="skipped", error_code="channel_disabled")
+                if self._enable_email:
+                    email_result = self._email_sender.send(
+                        to_email=scrape.email_to,
+                        subject=scrape.email_subject,
+                        body=scrape.email_body_text,
+                        account=routed.email,
+                        dry_run=dry_run,
+                    )
+                else:
+                    email_result = ChannelResult(status="skipped", error_code="channel_disabled")
 
             if routed.instagram and ig_result.error_code == "ig_blocked":
                 self._firestore.mark_account_cooling(routed.instagram.id)
@@ -420,7 +429,8 @@ class Orchestrator:
                 except Exception:
                     _LOG.exception("failed to append outreach tracking row", extra={"url": lead.creator_url})
                     tracking_append_failed_link = lead.creator_url
-            self._safe_finalize_lead(lead, final_status)
+            preserve_creator_link = tiktok_result.status == "pending_tomorrow"
+            self._safe_finalize_lead(lead, final_status, preserve_creator_link=preserve_creator_link)
 
             if final_status == "Processed":
                 return_value = "processed"
@@ -429,7 +439,10 @@ class Orchestrator:
             else:
                 return_value = "failed"
 
-            if return_value != "processed":
+            if final_status.startswith("pending"):
+                job_status = "completed"
+                job_error = final_status
+            elif return_value != "processed":
                 job_status = "dead"
                 job_error = final_status
 
@@ -439,7 +452,7 @@ class Orchestrator:
                 "lead skipped because profile was not found",
                 extra={"row_index": lead.row_index, "url": lead.creator_url},
             )
-            self._safe_finalize_lead(lead, final_status)
+            self._safe_finalize_lead(lead, final_status, preserve_creator_link=final_status.startswith("pending"))
             job_error = str(exc)
             job_status = "completed"
             return_value = "skipped"
@@ -449,7 +462,7 @@ class Orchestrator:
                 "lead processing runtime failure",
                 extra={"row_index": lead.row_index, "url": lead.creator_url},
             )
-            self._safe_finalize_lead(lead, final_status)
+            self._safe_finalize_lead(lead, final_status, preserve_creator_link=final_status.startswith("pending"))
             job_error = str(exc)
             job_status = "dead"
             self._firestore.mark_dead_job(str(uuid4()), reason=str(exc))
@@ -514,9 +527,9 @@ class Orchestrator:
         except Exception:
             _LOG.exception("failed to clear creator link", extra={"row_index": lead.row_index, "url": lead.creator_url})
 
-    def _safe_finalize_lead(self, lead: LeadRow, status: str) -> None:
+    def _safe_finalize_lead(self, lead: LeadRow, status: str, *, preserve_creator_link: bool = False) -> None:
         finalize = getattr(self._sheets, "finalize_lead", None)
-        if callable(finalize):
+        if callable(finalize) and not preserve_creator_link:
             try:
                 finalize(lead=lead, status=status)
                 return
@@ -526,7 +539,8 @@ class Orchestrator:
                     extra={"row_index": lead.row_index, "url": lead.creator_url, "status": status},
                 )
         self._safe_update_status(lead.row_index, status)
-        self._safe_clear_creator_link(lead)
+        if not preserve_creator_link:
+            self._safe_clear_creator_link(lead)
 
     def _write_validation_job(self, lead: LeadRow, status: str, dry_run: bool) -> None:
         now = datetime.now(UTC)

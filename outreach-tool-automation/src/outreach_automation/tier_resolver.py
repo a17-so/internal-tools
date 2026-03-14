@@ -13,6 +13,9 @@ _ALLOWED: dict[str, Tier] = {
     "theme page": Tier.THEMEPAGE,
     "themepages": Tier.THEMEPAGE,
     "theme-pages": Tier.THEMEPAGE,
+    "ai influencer": Tier.AI_INFLUENCER,
+    "ai-influencer": Tier.AI_INFLUENCER,
+    "ai_influencer": Tier.AI_INFLUENCER,
 }
 
 
@@ -36,9 +39,6 @@ _DEFERRED_UNSUPPORTED = {
     "yt creator",
     "yt-creator",
     "yt_creator",
-    "ai influencer",
-    "ai-influencer",
-    "ai_influencer",
 }
 
 

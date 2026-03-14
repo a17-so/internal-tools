@@ -1,5 +1,5 @@
 from outreach_automation.account_router import AccountRouter
-from outreach_automation.models import Account, AccountStatus, Platform
+from outreach_automation.models import Account, AccountStatus, Platform, Tier
 
 
 class FakeFirestore:
@@ -20,25 +20,48 @@ class FakeFirestore:
                 Account(
                     id="tt1",
                     platform=Platform.TIKTOK,
-                    handle="@sender",
+                    handle="@regen.app",
                     status=AccountStatus.ACTIVE,
-                    daily_sent=1,
-                    daily_limit=10,
+                    daily_sent=0,
+                    daily_limit=25,
                 ),
                 Account(
                     id="tt2",
                     platform=Platform.TIKTOK,
-                    handle="@backup",
+                    handle="@abhaychebium",
                     status=AccountStatus.ACTIVE,
-                    daily_sent=2,
-                    daily_limit=10,
+                    daily_sent=0,
+                    daily_limit=25,
+                ),
+                Account(
+                    id="tt3",
+                    platform=Platform.TIKTOK,
+                    handle="@advaithakella",
+                    status=AccountStatus.ACTIVE,
+                    daily_sent=0,
+                    daily_limit=25,
+                ),
+                Account(
+                    id="tt4",
+                    platform=Platform.TIKTOK,
+                    handle="@ekam_m3hat",
+                    status=AccountStatus.ACTIVE,
+                    daily_sent=0,
+                    daily_limit=25,
                 ),
             ],
         }
         self.claims: list[tuple[str, int]] = []
 
-    def list_eligible_accounts(self, platform: Platform) -> list[Account]:
+    def list_active_accounts(self, platform: Platform) -> list[Account]:
         return list(self._accounts.get(platform, []))
+
+    def list_eligible_accounts(self, platform: Platform) -> list[Account]:
+        out: list[Account] = []
+        for account in self._accounts.get(platform, []):
+            if account.daily_sent < account.daily_limit:
+                out.append(account)
+        return out
 
     def claim_account(self, account_id: str, expected_daily_sent: int) -> bool:
         self.claims.append((account_id, expected_daily_sent))
@@ -87,7 +110,6 @@ def test_non_strict_sender_pinning_allows_fallback() -> None:
     )
     routed = router.route(Platform.TIKTOK)
     assert routed is not None
-    assert routed.handle == "@sender"
     telemetry = router.telemetry()
     assert telemetry.skipped_counts["tiktok:preferred_fallback"] == 1
 
@@ -96,33 +118,93 @@ def test_readiness_filter_skips_unready_and_claims_ready_account() -> None:
     firestore = FakeFirestore()
 
     def _is_ready(platform: Platform, account: Account) -> tuple[bool, str | None]:
-        if platform == Platform.TIKTOK and account.handle == "@sender":
+        if platform == Platform.TIKTOK and account.handle == "@regen.app":
             return False, "missing_session"
         return True, None
 
     router = AccountRouter(firestore, is_account_ready=_is_ready)
-    routed = router.route(Platform.TIKTOK)
-    assert routed is not None
-    assert routed.handle == "@backup"
+    routed = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.MACRO,
+    )
+    assert routed.tiktok is None
+    assert routed.tiktok_route_error == "deferred_tiktok_sender_unavailable"
     telemetry = router.telemetry()
     assert telemetry.skipped_counts["tiktok:unready:missing_session"] == 1
-    assert telemetry.selected_counts["tiktok:@backup"] == 1
 
 
-def test_tiktok_fill_then_cycle_prefers_lowest_id_until_limit() -> None:
-    firestore = FakeFirestore()
-    router = AccountRouter(firestore, tiktok_fill_then_cycle=True)
-    first = router.route(Platform.TIKTOK)
-    second = router.route(Platform.TIKTOK)
-    assert first is not None and second is not None
-    assert first.handle == "@sender"
-    assert second.handle == "@sender"
-
-
-def test_has_available_respects_strict_pinning() -> None:
-    router = AccountRouter(
-        FakeFirestore(),
-        tiktok_handle="@missing",
-        strict_sender_pinning=True,
+def test_tiktok_tier_routes_macro_to_regen_app() -> None:
+    router = AccountRouter(FakeFirestore())
+    routed = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.MACRO,
     )
-    assert router.has_available(Platform.TIKTOK) is False
+    assert routed.tiktok is not None
+    assert routed.tiktok.handle == "@regen.app"
+    assert routed.tiktok_route_error is None
+
+
+def test_tiktok_tier_routes_ai_to_abhay() -> None:
+    router = AccountRouter(FakeFirestore())
+    routed = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.AI_INFLUENCER,
+    )
+    assert routed.tiktok is not None
+    assert routed.tiktok.handle == "@abhaychebium"
+    assert routed.tiktok_route_error is None
+
+
+def test_tiktok_tier_routes_micro_pool_round_robin() -> None:
+    router = AccountRouter(FakeFirestore())
+    first = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.MICRO,
+    )
+    second = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.MICRO,
+    )
+    assert first.tiktok is not None
+    assert second.tiktok is not None
+    assert {first.tiktok.handle, second.tiktok.handle} == {"@advaithakella", "@ekam_m3hat"}
+
+
+def test_tiktok_tier_returns_capped_error_when_tier_pool_is_exhausted() -> None:
+    firestore = FakeFirestore()
+    for idx, account in enumerate(firestore._accounts[Platform.TIKTOK]):
+        if account.handle == "@abhaychebium":
+            firestore._accounts[Platform.TIKTOK][idx] = Account(
+                id=account.id,
+                platform=account.platform,
+                handle=account.handle,
+                status=account.status,
+                daily_sent=account.daily_limit,
+                daily_limit=account.daily_limit,
+            )
+            break
+
+    router = AccountRouter(firestore)
+    routed = router.route_selected(
+        enable_email=False,
+        enable_instagram=False,
+        enable_tiktok=True,
+        tiktok_tier=Tier.AI_INFLUENCER,
+    )
+    assert routed.tiktok is None
+    assert routed.tiktok_route_error == "deferred_tiktok_sender_capped"
+
+
+def test_has_available_respects_tier_mapping() -> None:
+    router = AccountRouter(FakeFirestore())
+    assert router.has_available(Platform.TIKTOK, tiktok_tier=Tier.MACRO) is True

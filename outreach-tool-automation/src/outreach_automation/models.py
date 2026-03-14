@@ -12,6 +12,7 @@ class Tier(StrEnum):
     SUBMICRO = "Submicro"
     AMBASSADOR = "Ambassador"
     THEMEPAGE = "Themepage"
+    AI_INFLUENCER = "AI Influencer"
 
 
 class Platform(StrEnum):

@@ -266,6 +266,8 @@ class SheetsClient:
             "submicro": "Submicros",
             "ambassador": "Ambassadors",
             "themepage": "Theme Pages",
+            "ai influencer": "AI Influencers",
+            "ai_influencer": "AI Influencers",
         }
         if normalized not in mapping:
             raise ValueError(f"Unsupported category for sheet append: {category}")

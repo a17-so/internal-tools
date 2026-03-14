@@ -38,8 +38,8 @@
   {
     "id": "ig_2",
     "platform": "instagram",
-    "handle": "@ig_sender_2",
-    "status": "active",
+    "handle": "@ethan.peps",
+    "status": "flagged",
     "daily_sent": 0,
     "daily_limit": 25,
     "last_reset": null

@@ -357,7 +357,7 @@ def _default_from_name(sender_profile: str) -> str:
 
 
 def _render_comms(*, templates: dict[str, dict[str, str]], category: str, creator_name: str) -> _RenderedComms:
-    key = (category or "").strip().lower()
+    key = (category or "").strip().lower().replace("-", "_").replace(" ", "_")
     entry = templates.get(key) or templates.get("submicro") or next(iter(templates.values()), {})
     subject = str(entry.get("subject") or "")
     email_md = str(entry.get("email_md") or "")

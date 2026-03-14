@@ -67,9 +67,12 @@ Recommended routing defaults:
 - TikTok cycling mode:
   - `TIKTOK_ATTACH_MODE=true`
   - `TIKTOK_CYCLING_MODE=attach_per_account_browser`
-  - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223,@ekam_m3hat=http://127.0.0.1:9224`
-  - `TIKTOK_FILL_THEN_CYCLE=true` (use first account until limit, then next)
-  - Keep active TikTok accounts at `daily_limit=25` for `25/25/25` run behavior.
+  - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223,@ekam_m3hat=http://127.0.0.1:9224,@abhaychebium=http://127.0.0.1:9225,@advaithakella=http://127.0.0.1:9226`
+  - Tier routing is fixed in automation code:
+    - `Macro -> @regen.app`
+    - `AI Influencer -> @abhaychebium`
+    - `Micro/Submicro/Ambassador/Themepage -> round robin @advaithakella, @ekam_m3hat`
+  - Keep active TikTok accounts at `daily_limit=25`.
 - Instagram attach mode (recommended to avoid separate Playwright windows):
   - `IG_ATTACH_MODE=true`
   - `IG_CDP_URL=http://127.0.0.1:9232`
@@ -95,7 +98,7 @@ Helper script:
 
 ```bash
 ./ops/open_platform_profile.sh tiktok @regenapp
-./ops/open_platform_profile.sh instagram @ethan.peps
+./ops/open_platform_profile.sh instagram @regenhealth.app
 ```
 
 For per-account TikTok attach mode, start one debug Chrome per account:
@@ -104,6 +107,8 @@ For per-account TikTok attach mode, start one debug Chrome per account:
 ./ops/start_tiktok_account_debug.sh @regen.app 9222
 ./ops/start_tiktok_account_debug.sh @regenapp 9223
 ./ops/start_tiktok_account_debug.sh @ekam_m3hat 9224
+./ops/start_tiktok_account_debug.sh @abhaychebium 9225
+./ops/start_tiktok_account_debug.sh @advaithakella 9226
 ```
 
 If using Instagram attach mode, start one IG debug profile:
@@ -122,7 +127,7 @@ Log in + 2FA manually, then close that Chrome window. Credentials are stored in 
 Alternative bootstrap command:
 
 ```bash
-python -m outreach_automation.login_bootstrap --platform instagram --account-handle @ethan.peps
+python -m outreach_automation.login_bootstrap --platform instagram --account-handle @regenhealth.app
 python -m outreach_automation.login_bootstrap --platform tiktok --account-handle @regenapp
 ```
 

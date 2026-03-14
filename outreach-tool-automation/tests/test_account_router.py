@@ -20,7 +20,7 @@ class FakeFirestore:
                 Account(
                     id="tt1",
                     platform=Platform.TIKTOK,
-                    handle="@regen.app",
+                    handle="@regenapp",
                     status=AccountStatus.ACTIVE,
                     daily_sent=0,
                     daily_limit=25,
@@ -118,7 +118,7 @@ def test_readiness_filter_skips_unready_and_claims_ready_account() -> None:
     firestore = FakeFirestore()
 
     def _is_ready(platform: Platform, account: Account) -> tuple[bool, str | None]:
-        if platform == Platform.TIKTOK and account.handle == "@regen.app":
+        if platform == Platform.TIKTOK and account.handle == "@regenapp":
             return False, "missing_session"
         return True, None
 
@@ -144,7 +144,7 @@ def test_tiktok_tier_routes_macro_to_regen_app() -> None:
         tiktok_tier=Tier.MACRO,
     )
     assert routed.tiktok is not None
-    assert routed.tiktok.handle == "@regen.app"
+    assert routed.tiktok.handle == "@regenapp"
     assert routed.tiktok_route_error is None
 
 

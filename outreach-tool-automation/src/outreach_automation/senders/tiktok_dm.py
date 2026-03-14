@@ -63,6 +63,7 @@ class TiktokDmSender:
                     handle=handle,
                     dm_text=dm_text,
                     profile_dir=profile_dir,
+                    expected_sender_handle=account.handle,
                     attach_mode=self._attach_mode,
                     cdp_url=selected_cdp_url,
                 )
@@ -70,6 +71,8 @@ class TiktokDmSender:
             return ChannelResult(status="sent")
         except Exception as exc:
             message = str(exc).lower()
+            if "tiktok account mismatch" in message:
+                return ChannelResult(status="pending_tomorrow", error_code="tiktok_sender_identity_mismatch")
             if "missing tiktok auth" in message:
                 return ChannelResult(status="failed", error_code="missing_tiktok_auth")
             if "missing tiktok target thread" in message:
@@ -100,6 +103,7 @@ class TiktokDmSender:
         handle: str,
         dm_text: str,
         profile_dir: Path | None,
+        expected_sender_handle: str,
         *,
         attach_mode: bool,
         cdp_url: str | None,
@@ -139,6 +143,13 @@ class TiktokDmSender:
                             await extra.close()
                 close_context = True
             try:
+                current_sender_handle = await _resolve_current_sender_handle(page)
+                expected = _normalize_handle(expected_sender_handle)
+                if current_sender_handle and _normalize_handle(current_sender_handle) != expected:
+                    raise RuntimeError(
+                        f"tiktok account mismatch: expected {expected}, got {_normalize_handle(current_sender_handle)}"
+                    )
+
                 await page.goto(f"https://www.tiktok.com/@{handle}", wait_until="domcontentloaded")
                 await _settle_creator_profile_page(page)
                 if await _needs_login(page):
@@ -296,6 +307,21 @@ async def _needs_login(page: Any) -> bool:
         return True
     login_cta = page.locator("button:has-text('Log in'):visible, a:has-text('Log in'):visible")
     return int(await login_cta.count()) > 0
+
+
+async def _resolve_current_sender_handle(page: Any) -> str | None:
+    await page.goto("https://www.tiktok.com/profile", wait_until="domcontentloaded")
+    await page.wait_for_timeout(1200)
+    if await _needs_login(page):
+        return None
+    return _extract_handle(page.url)
+
+
+def _normalize_handle(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized.startswith("@"):
+        normalized = normalized[1:]
+    return normalized
 
 
 def _extract_handle(url: str) -> str | None:

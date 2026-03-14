@@ -54,7 +54,7 @@ class AccountRouter:
         self._tt_round_robin_cursor = 0
 
     _TT_HANDLE_BY_TIER: dict[Tier, tuple[str, ...]] = {
-        Tier.MACRO: ("@regen.app",),
+        Tier.MACRO: ("@regenapp",),
         Tier.AI_INFLUENCER: ("@abhaychebium",),
         Tier.MICRO: ("@advaithakella", "@ekam_m3hat"),
         Tier.SUBMICRO: ("@advaithakella", "@ekam_m3hat"),

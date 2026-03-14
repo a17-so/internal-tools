@@ -69,7 +69,7 @@ Recommended routing defaults:
   - `TIKTOK_CYCLING_MODE=attach_per_account_browser`
   - `TIKTOK_ATTACH_ACCOUNT_CDP_URLS=@regen.app=http://127.0.0.1:9222,@regenapp=http://127.0.0.1:9223,@ekam_m3hat=http://127.0.0.1:9224,@abhaychebium=http://127.0.0.1:9225,@advaithakella=http://127.0.0.1:9226`
   - Tier routing is fixed in automation code:
-    - `Macro -> @regen.app`
+    - `Macro -> @regenapp`
     - `AI Influencer -> @abhaychebium`
     - `Micro/Submicro/Ambassador/Themepage -> round robin @advaithakella, @ekam_m3hat`
   - Keep active TikTok accounts at `daily_limit=25`.
@@ -147,6 +147,24 @@ Look for:
 - readiness matrix entries with `"ready": true`
 
 ## Operational Commands
+
+### One-command startup (recommended)
+
+```bash
+./ops/start_outreach_machine.sh
+```
+
+This will:
+- verify/refresh Google ADC auth (opens browser only if needed),
+- start IG/TikTok debug Chrome instances from `.env` attach mappings if they are not reachable,
+- run `doctor`,
+- print the final run command.
+
+Run everything in one shot:
+
+```bash
+./ops/start_outreach_machine.sh --run -- --live --channels email,instagram,tiktok --verbose-summary
+```
 
 ### Run
 

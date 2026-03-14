@@ -496,6 +496,8 @@ def _default_from_name(sender_profile: str) -> str:
         return "Abhay Chebium"
     if normalized == "advaith":
         return "Advaith"
+    if normalized == "ekam":
+        return "Ekam"
     if not normalized:
         return "Team"
     return normalized.replace("_", " ").replace("-", " ").title()

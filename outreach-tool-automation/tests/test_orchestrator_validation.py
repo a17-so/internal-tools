@@ -225,6 +225,7 @@ class FakeTiktokSender:
 class CapturingTiktokSender:
     def __init__(self) -> None:
         self.targets: list[str | None] = []
+        self.dm_texts: list[str] = []
 
     def send(
         self,
@@ -234,8 +235,9 @@ class CapturingTiktokSender:
         *,
         dry_run: bool,
     ) -> ChannelResult:
-        _ = (dm_text, account, dry_run)
+        _ = (account, dry_run)
         self.targets.append(target_tiktok_url)
+        self.dm_texts.append(dm_text)
         if not target_tiktok_url:
             return ChannelResult(status="skipped", error_code="missing_tiktok_from_source_profile")
         return ChannelResult(status="sent")
@@ -679,3 +681,59 @@ def test_invalid_creator_url_maps_to_specific_status_not_runtime_error() -> None
     assert result.failed == 1
     assert sheets._statuses[2] == "failed_invalid_creator_url"
     assert result.lead_summaries[0].final_status == "failed_invalid_creator_url"
+
+
+def test_tiktok_dm_uses_selected_sender_name_for_non_brand_accounts() -> None:
+    class EkamTiktokRouter(FakeRouter):
+        def route_selected(
+            self,
+            *,
+            enable_email: bool,
+            enable_instagram: bool,
+            enable_tiktok: bool,
+            tiktok_tier: Any | None = None,
+        ) -> RoutedAccounts:
+            routed = super().route_selected(
+                enable_email=enable_email,
+                enable_instagram=enable_instagram,
+                enable_tiktok=enable_tiktok,
+                tiktok_tier=tiktok_tier,
+            )
+            if routed.tiktok is not None:
+                routed.tiktok.handle = "@ekam_m3hat"
+            return routed
+
+    class SignoffScraper(FakeScraper):
+        def scrape(self, payload: Any) -> ScrapeResponse:
+            _ = payload
+            return ScrapeResponse(
+                dm_text="hey creator,\n\npaid promo?\n\n- Ethan from the REGEN App\n",
+                email_to="test@example.com",
+                email_subject="subj",
+                email_body_text="body\n\n- Ethan from the REGEN App (regenhealth.app)\n",
+                ig_handle="ig_user",
+                creator_name="creator",
+                tiktok_handle="discovered_tt",
+            )
+
+    sheets = FakeSheets()
+    firestore = FakeFirestore()
+    scraper = SignoffScraper()
+    tiktok_sender = CapturingTiktokSender()
+
+    orchestrator = Orchestrator(
+        sheets_client=sheets,
+        scrape_client=scraper,
+        firestore_client=firestore,
+        account_router=EkamTiktokRouter(),
+        email_sender=FakeEmailSender(),
+        ig_sender=FakeIgSender(),
+        tiktok_sender=tiktok_sender,
+        sender_profile="ethan",
+        scrape_app="regen",
+    )
+
+    result = orchestrator.run(batch_size=1, dry_run=False)
+    assert result.processed == 1
+    assert len(tiktok_sender.dm_texts) == 1
+    assert "- Ekam from the REGEN App" in tiktok_sender.dm_texts[0]

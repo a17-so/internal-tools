@@ -399,9 +399,13 @@ class Orchestrator:
 
                 if self._enable_tiktok:
                     if should_attempt_tiktok:
+                        tiktok_dm_text = _dm_text_for_tiktok_sender(
+                            base_dm_text=scrape.dm_text,
+                            sender_tiktok_handle=routed_tiktok.tiktok.handle if routed_tiktok.tiktok else None,
+                        )
                         tiktok_result = self._tiktok_sender.send(
                             target_tiktok_url=target_tiktok_url,
-                            dm_text=scrape.dm_text,
+                            dm_text=tiktok_dm_text,
                             account=routed_tiktok.tiktok,
                             dry_run=dry_run,
                         )
@@ -618,3 +622,38 @@ def _build_tiktok_target_url(*, scraped_tiktok_handle: str | None, lead_creator_
     if "tiktok.com/" in lead_url.lower():
         return lead_url
     return None
+
+
+def _dm_text_for_tiktok_sender(*, base_dm_text: str, sender_tiktok_handle: str | None) -> str:
+    sender_name = _display_name_for_tiktok_handle(sender_tiktok_handle)
+    if not sender_name:
+        return base_dm_text
+    lines = base_dm_text.splitlines()
+    for idx in range(len(lines) - 1, -1, -1):
+        stripped = lines[idx].strip()
+        if not stripped.startswith("- "):
+            continue
+        marker = " from the "
+        lower = stripped.lower()
+        marker_pos = lower.find(marker)
+        if marker_pos <= 1 or " app" not in lower[marker_pos:]:
+            continue
+        suffix = stripped[marker_pos:]
+        lines[idx] = f"- {sender_name}{suffix}"
+        return "\n".join(lines)
+    return base_dm_text
+
+
+def _display_name_for_tiktok_handle(handle: str | None) -> str | None:
+    normalized = (handle or "").strip().lower()
+    if not normalized:
+        return None
+    if not normalized.startswith("@"):
+        normalized = f"@{normalized}"
+    mapping = {
+        "@regenapp": "Ethan",
+        "@abhaychebium": "Abhay Chebium",
+        "@advaithakella": "Advaith",
+        "@ekam_m3hat": "Ekam",
+    }
+    return mapping.get(normalized)
